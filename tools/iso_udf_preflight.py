@@ -165,8 +165,8 @@ def _partition_maps(block: bytes) -> set[int]:
                 raise ValueError("LVD has unsupported Type 2 partition identifier.")
             volume_sequence = int.from_bytes(part_map[36:38], "little")
             partition_number = int.from_bytes(part_map[38:40], "little")
-        if volume_sequence == 0:
-            raise ValueError("LVD partition map has zero volume sequence number.")
+        if volume_sequence != 1:
+            raise ValueError("LVD partition map references unsupported volume sequence (expected 1).")
         references.add(partition_number)
         offset += length
     if offset != table_length:
