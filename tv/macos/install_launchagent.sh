@@ -4,7 +4,13 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 MEDIA_ROOT="${1:-$HOME/Movies/DiscForge}"
 PORT="${2:-8098}"
+BIND_IP="${3:-}"
 PYTHON="$(command -v python3)"
+# Do not start unattended host services on the internet-facing/wildcard interface.
+if [[ -z "$BIND_IP" ]] || ! "$PYTHON" "$REPO/tv_server/private_bind.py" "$BIND_IP" >/dev/null; then
+  echo "Usage: $0 MEDIA_ROOT [PORT] PRIVATE_LAN_IPV4 (e.g. 192.168.1.25)" >&2
+  exit 2
+fi
 [[ -d "$MEDIA_ROOT" ]] || { echo "No media directory: $MEDIA_ROOT" >&2; exit 1; }
 if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
   echo "Port $PORT is already in use. Stop the manually started server first." >&2
@@ -12,7 +18,7 @@ if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
 fi
 mkdir -p "$HOME/.discforge-tv" "$HOME/Library/LaunchAgents"
 chmod 700 "$HOME/.discforge-tv"
-export REPO MEDIA_ROOT PORT PYTHON
+export REPO MEDIA_ROOT PORT PYTHON BIND_IP
 python3 - <<'PY'
 import os, plistlib
 from pathlib import Path
@@ -21,7 +27,7 @@ target = home / 'Library/LaunchAgents/ru.discforge.tv.server.plist'
 config = {
     'Label': 'ru.discforge.tv.server',
     'ProgramArguments': [os.environ['PYTHON'], '-m', 'tv_server', '--media-root',
-                         os.path.abspath(os.environ['MEDIA_ROOT']), '--host', '0.0.0.0',
+                         os.path.abspath(os.environ['MEDIA_ROOT']), '--host', os.environ['BIND_IP'],
                          '--port', os.environ['PORT'], '--no-print-token'],
     'WorkingDirectory': os.environ['REPO'],
     'RunAtLoad': True, 'KeepAlive': {'SuccessfulExit': False},

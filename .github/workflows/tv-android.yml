@@ -5,6 +5,12 @@ on:
       - 'tv/android/**'
       - 'tv_server/**'
       - 'tests/test_tv_server.py'
+      - 'tests/test_private_bind.py'
+      - 'tv/docker/**'
+      - 'tv/macos/**'
+      - 'tests/test_private_bind.py'
+      - 'tv/docker/**'
+      - 'tv/macos/**'
       - '.github/workflows/tv-android.yml'
   pull_request:
     paths:
@@ -24,6 +30,8 @@ jobs:
           python-version: '3.12'
       - name: Test streaming API
         run: python -m unittest discover -s tests -p 'test_tv_server.py' -v
+      - name: Verify LAN host bind policy
+        run: python -m unittest discover -s tests -p 'test_private_bind.py' -v
       - name: Compile server
         run: python -m py_compile tv_server/server.py
       - name: Syntax-check Mac launch agent installer
@@ -81,4 +89,5 @@ jobs:
       - name: Check Compose definition
         run: |
           cp tv/docker/.env.example tv/docker/.env
+          echo 'DISCFORGE_LAN_BIND_IP=192.168.50.204' >> tv/docker/.env
           docker compose -f tv/docker/compose.yaml config --quiet
