@@ -46,10 +46,14 @@ def iso_fixture(path: Path, *, revision=0x0250, nsr=b'NSR03', anchor=True,
                 avdp[4] ^= 1
             handle.seek(256 * udf.SECTOR_SIZE)
             handle.write(avdp)
-        payload = bytearray(226)
+        payload = bytearray(430)
         payload[196:200] = block_size.to_bytes(4, 'little')  # LVD offset 212
         payload[201:201 + len(udf.UDF_DOMAIN)] = udf.UDF_DOMAIN  # LVD offset 217
         payload[224:226] = revision.to_bytes(2, 'little')  # LVD offset 240
+        # ECMA-167 LVD offsets 264/268/440: one Type 1 map for PD number 0.
+        payload[248:252] = (6).to_bytes(4, 'little')
+        payload[252:256] = (1).to_bytes(4, 'little')
+        payload[424:430] = b'\x01\x06\x01\x00\x00\x00'
         handle.seek(32 * udf.SECTOR_SIZE)
         handle.write(descriptor(6, 32, bytes(payload)))
         for lba, tag in ((33, 1), (34, 5), (35, 8)):

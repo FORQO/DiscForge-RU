@@ -127,9 +127,51 @@ def _anchors(handle, count: int) -> list[tuple[int, tuple[int, int] | None, tupl
     return candidates
 
 
+
+def _partition_maps(block: bytes) -> set[int]:
+    """Check bounded LVD partition maps, not filesystem or metadata contents."""
+    table_length = int.from_bytes(block[264:268], "little")
+    map_count = int.from_bytes(block[268:272], "little")
+    if not table_length or not map_count:
+        raise ValueError("LVD has no partition maps.")
+    if table_length > SECTOR_SIZE - 440 or map_count > table_length // 6:
+        raise ValueError("LVD partition map table exceeds descriptor bounds.")
+    if int.from_bytes(block[10:12], "little") < 424 + table_length:
+        raise ValueError("LVD CRC does not cover partition maps.")
+    table = block[440:440 + table_length]
+    offset = 0
+    references: set[int] = set()
+    for _ in range(map_count):
+        if offset + 2 > table_length:
+            raise ValueError("LVD partition map count/length mismatch.")
+        map_type, length = table[offset], table[offset + 1]
+        expected_length = {1: 6, 2: 64}.get(map_type)
+        if expected_length is None or length != expected_length or offset + length > table_length:
+            raise ValueError("LVD has invalid partition map type or length.")
+        part_map = table[offset:offset + length]
+        if map_type == 1:
+            volume_sequence = int.from_bytes(part_map[2:4], "little")
+            partition_number = int.from_bytes(part_map[4:6], "little")
+        else:
+            # Type 2 mappings may be virtual, sparable or metadata partitions;
+            # only their structure and physical partition reference are checked.
+            if not part_map[5:28].rstrip(b"\x00"):
+                raise ValueError("LVD Type 2 partition map has no identifier.")
+            volume_sequence = int.from_bytes(part_map[36:38], "little")
+            partition_number = int.from_bytes(part_map[38:40], "little")
+        if volume_sequence == 0:
+            raise ValueError("LVD partition map has zero volume sequence number.")
+        references.add(partition_number)
+        offset += length
+    if offset != table_length:
+        raise ValueError("LVD partition map count/length mismatch.")
+    return references
+
 def _revision(handle, count: int, start: int, sectors: int) -> int:
     """Find a valid LVD and read its UDF revision (EntityID suffix, LE)."""
     revision = None
+    partition_numbers: set[int] = set()
+    map_references: set[int] = set()
     seen_primary = seen_partition = terminated = False
     for lba in range(start, start + sectors):
         block = _sector(handle, lba, count)
@@ -157,6 +199,7 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
             if part_length == 0 or part_start >= count or part_length > count - part_start:
                 raise ValueError("Partition Descriptor has empty or out-of-bounds partition.")
             seen_partition = True
+            partition_numbers.add(int.from_bytes(block[22:24], "little"))
         elif tag_id == 6:  # Logical Volume Descriptor
             if int.from_bytes(block[212:216], "little") != SECTOR_SIZE:
                 raise ValueError("LVD logical block size is not 2048.")
@@ -166,6 +209,7 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
             if revision is not None and revision != candidate_revision:
                 raise ValueError("Conflicting UDF revisions in Logical Volume Descriptors.")
             revision = candidate_revision
+            map_references.update(_partition_maps(block))
     if revision is None:
         raise ValueError("No valid Logical Volume Descriptor in VDS.")
     missing = []
@@ -177,6 +221,8 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
         missing.append("Terminating Descriptor")
     if missing:
         raise ValueError("Incomplete VDS; missing " + ", ".join(missing) + ".")
+    if not map_references.issubset(partition_numbers):
+        raise ValueError("LVD partition map references a missing Partition Descriptor.")
     return revision
 
 
