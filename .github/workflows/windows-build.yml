@@ -6,6 +6,8 @@ on:
       - 'bdmv_preflight.py'
       - 'core.py'
       - 'tests/test_bdmv_preflight.py'
+      - 'tests/test_bdmv_adaptation_fields.py'
+      - 'tests/test_bdmv_m2ts_packets.py'
       - '.github/workflows/windows-build.yml'
   push:
     tags: [ 'v*' ]

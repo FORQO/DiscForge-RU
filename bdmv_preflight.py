@@ -16,6 +16,56 @@ COLLECTIONS = {"PLAYLIST": ("*.mpls", b"MPLS"),
                "CLIPINF": ("*.clpi", b"HDMV"),
                "STREAM": ("*.m2ts", None)}
 
+def _check_m2ts_adaptation(ts: bytes) -> str | None:
+    """Check length-delimited adaptation fields in sampled 188-byte packets."""
+    control = (ts[3] >> 4) & 3
+    if control == 0:
+        return "Reserved M2TS adaptation_field_control"
+    if ts[3] & 0xC0:
+        return "M2TS transport_scrambling_control unsupported in clear authoring"
+    if control == 1:
+        return None
+    length = ts[4]
+    if control == 2 and length != 183:
+        return "M2TS adaptation_field_length must be 183 for adaptation-only packets"
+    if control == 3 and length > 182:
+        return "M2TS adaptation_field_length exceeds TS packet"
+    if length == 0:
+        return None
+    end = 5 + length
+    flags = ts[5]
+    cursor = 6
+    for flag, size in ((0x10, 6), (0x08, 6), (0x04, 1)):
+        if flags & flag:
+            if cursor + size > end:
+                return "M2TS adaptation field truncated PCR/OPCR/splice data"
+            cursor += size
+    if flags & 0x02:
+        if cursor >= end:
+            return "M2TS adaptation field missing private_data_length"
+        count = ts[cursor]
+        cursor += 1
+        if cursor + count > end:
+            return "M2TS adaptation field truncated private data"
+        cursor += count
+    if flags & 0x01:
+        if cursor >= end:
+            return "M2TS adaptation field missing extension_length"
+        count = ts[cursor]
+        cursor += 1
+        if cursor + count > end:
+            return "M2TS adaptation field truncated extension"
+        if count:
+            extension_end = cursor + count
+            extension_flags = ts[cursor]
+            cursor += 1
+            for flag, size in ((0x80, 2), (0x40, 3), (0x20, 5)):
+                if extension_flags & flag:
+                    if cursor + size > extension_end:
+                        return "M2TS adaptation field truncated extension payload"
+                    cursor += size
+    return None
+
 def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) -> None:
     """Bounded, deterministic M2TS transport-header sampling.
 
@@ -29,22 +79,14 @@ def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) ->
     })
     for index in indices:
         handle.seek(index * 192 + 4)
-        header = handle.read(5)
-        if len(header) < 5 or header[0] != 0x47:
+        ts = handle.read(188)
+        if len(ts) != 188 or ts[0] != 0x47:
             reason = "Missing M2TS sync/header"
-        elif header[1] & 0x80:
+        elif ts[1] & 0x80:
             reason = "M2TS transport_error_indicator set"
         else:
-            adaptation = (header[3] >> 4) & 0x03
-            if adaptation == 0:
-                reason = "Reserved M2TS adaptation_field_control"
-            elif header[3] & 0xC0:
-                reason = "M2TS transport_scrambling_control unsupported in clear authoring"
-            elif adaptation == 2 and header[4] != 183:
-                reason = "M2TS adaptation_field_length must be 183 for adaptation-only packets"
-            elif adaptation == 3 and header[4] > 182:
-                reason = "M2TS adaptation_field_length exceeds TS packet"
-            else:
+            reason = _check_m2ts_adaptation(ts)
+            if reason is None:
                 continue
         errors.append(f"{reason} at packet {index}: {filename}")
         return

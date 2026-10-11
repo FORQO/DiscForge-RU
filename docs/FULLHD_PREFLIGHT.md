@@ -13,3 +13,8 @@ require an adaptation-field length of exactly 183 bytes; shorter lengths
 leave unaccounted-for bytes, even though they fit within the 188-byte packet.
 Transport scrambling-control bits must be zero for unencrypted DiscForge RU
 output; the preflight does not decrypt or recover protected video.
+
+Sampled transport packets also check that PCR, OPCR, splice countdown, private
+adaptation data, extension length and extension-specific LTW/piecewise rate/
+seamless splice bytes fit their advertised adaptation-field lengths. This
+remains a bounded sampled syntax check rather than full TS/PES validation.
