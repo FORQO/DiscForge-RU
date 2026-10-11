@@ -151,6 +151,7 @@ class MainActivity : Activity() {
 
     private fun requestLibrary(base: String, key: String): JSONArray {
         val connection = URL(base + "/api/v1/library").openConnection() as HttpURLConnection
+        LanHttpPolicy.configure(connection)
         connection.connectTimeout = 2200
         connection.readTimeout = 5000
         connection.setRequestProperty("X-DiscForge-Token", key)
@@ -297,6 +298,7 @@ class MainActivity : Activity() {
         worker.execute {
             val bitmap = try {
                 val connection = URL(address).openConnection() as HttpURLConnection
+                LanHttpPolicy.configure(connection)
                 connection.connectTimeout = 2000
                 connection.readTimeout = 3500
                 connection.setRequestProperty("X-DiscForge-Token", key)

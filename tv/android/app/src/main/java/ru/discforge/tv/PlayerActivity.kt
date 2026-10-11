@@ -10,7 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -67,7 +67,7 @@ class PlayerActivity : Activity() {
         }
         // A relative-path hash may be the same on two different PC servers.
         mediaKey = WatchProgress.bookmarkKeyByToken(token, id)
-        val http = DefaultHttpDataSource.Factory().setDefaultRequestProperties(
+        val http = OkHttpDataSource.Factory(LanHttpPolicy.streamingClient()).setDefaultRequestProperties(
             mapOf("X-DiscForge-Token" to token))
         val sourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
         val player = ExoPlayer.Builder(this).setMediaSourceFactory(sourceFactory).build()
