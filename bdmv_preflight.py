@@ -16,6 +16,35 @@ COLLECTIONS = {"PLAYLIST": ("*.mpls", b"MPLS"),
                "CLIPINF": ("*.clpi", b"HDMV"),
                "STREAM": ("*.m2ts", None)}
 
+def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) -> None:
+    """Bounded, deterministic M2TS transport-header sampling.
+
+    Every packet has a 4-byte arrival timestamp followed by 188 TS bytes.
+    This does not prove that all packets, codecs or Blu-ray timing are valid.
+    """
+    centers = (0, count // 4, count // 2, 3 * count // 4, count - 1)
+    indices = sorted({
+        index for center in centers
+        for index in range(max(0, center - 2), min(count, center + 3))
+    })
+    for index in indices:
+        handle.seek(index * 192 + 4)
+        header = handle.read(5)
+        if len(header) < 5 or header[0] != 0x47:
+            reason = "Missing M2TS sync/header"
+        elif header[1] & 0x80:
+            reason = "M2TS transport_error_indicator set"
+        else:
+            adaptation = (header[3] >> 4) & 0x03
+            if adaptation == 0:
+                reason = "Reserved M2TS adaptation_field_control"
+            elif adaptation in (2, 3) and header[4] > (183 if adaptation == 2 else 182):
+                reason = "M2TS adaptation_field_length exceeds TS packet"
+            else:
+                continue
+        errors.append(f"{reason} at packet {index}: {filename}")
+        return
+
 @dataclass
 class Report:
     root: str
@@ -92,14 +121,11 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
                         if length % 192 != 0:
                             errors.append(f"M2TS not 192-byte aligned: {path.name}")
                         else:
-                            # Blu-ray M2TS packets: 4-byte arrival timestamp + 188-byte TS.
-                            # Sample first, middle and last packet without scanning a full BD50.
+                            # Inspect bounded short windows, including adjacent packets,
+                            # rather than trusting only three isolated sync bytes.
                             count = length // 192
                             with path.open("rb") as handle:
-                                for index in sorted({0, count // 2, count - 1}):
-                                    handle.seek(index * 192 + 4)
-                                    if handle.read(1) != b"\x47":
-                                        errors.append(f"Missing M2TS sync at packet {index}: {path.name}")
+                                _check_m2ts_packets(handle, count, path.name, errors)
                     elif magic is not None:
                         with path.open("rb") as handle:
                             header = handle.read(8)

@@ -133,7 +133,7 @@ class AuthoringTests(unittest.TestCase):
                     ('index.bdmv', b'INDX'), ('MovieObject.bdmv', b'MOBJ'),
                     ('PLAYLIST/00000.mpls', b'MPLS'), ('CLIPINF/00000.clpi', b'HDMV')):
                     (bdmv / relative).write_bytes(magic + b'0200')
-                (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + bytes([0x47]) + bytes(187))
+                (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + b"\x47\x1f\xff\x10" + bytes(184))
 
             with patch('core._require_binary'), patch('core.run_command', side_effect=encode), \
                  patch('core.run_tsmuxer', side_effect=mux):
