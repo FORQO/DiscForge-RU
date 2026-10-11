@@ -71,7 +71,13 @@ def _vrs(handle, count: int) -> bool:
     """Find ordered BEA01 / NSR03 / TEA01 recognition sequence."""
     state = 0
     for lba in range(16, min(count, 64)):
-        identifier = _sector(handle, lba, count)[1:6]
+        block = _sector(handle, lba, count)
+        identifier = block[1:6]
+        # ECMA-167 Volume Structure Descriptors require type 0 and version 1.
+        # Checking identifiers alone can mistake malformed VRS sectors for UDF.
+        if identifier in (b"BEA01", b"NSR03", b"TEA01"):
+            if block[0] != 0 or block[6] != 1:
+                return False
         if state == 0 and identifier == b"BEA01":
             state = 1
         elif state == 1 and identifier == b"NSR03":
