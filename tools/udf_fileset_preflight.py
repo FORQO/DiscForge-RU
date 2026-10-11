@@ -126,12 +126,30 @@ def _check_vds(handle, image_sectors: int, start: int, sectors: int) -> tuple[in
         root_lba = _physical_lba(root_ad, maps, partitions, image_sectors,
                                  "Root directory ICB")
         root = udf._sector(handle, root_lba, image_sectors)
-        if udf._tag(root, root_ad[1]) not in (261, 266):
+        entry_tag = udf._tag(root, root_ad[1])
+        if entry_tag not in (261, 266):
             raise ValueError("Root ICB does not reference a File Entry.")
-        if int.from_bytes(root[10:12], "little") < 20:
-            raise ValueError("Root File Entry CRC does not cover ICB file type.")
+        # FE and Extended FE have distinct fixed fields. In particular, the
+        # extended-attribute and allocation-descriptor byte counts must be
+        # covered by the descriptor CRC, not merely the ICB file-type byte.
+        header_size = 176 if entry_tag == 261 else 216
+        if root_ad[0] < header_size:
+            raise ValueError("Root ICB extent is smaller than the File Entry header.")
+        crc_end = 16 + int.from_bytes(root[10:12], "little")
+        if crc_end < header_size:
+            raise ValueError("Root File Entry CRC does not cover the full entry header.")
         if root[27] != 4:
             raise ValueError("Root File Entry is not a directory.")
+        ea_offset, alloc_offset = ((168, 172) if entry_tag == 261 else (208, 212))
+        ea_length = int.from_bytes(root[ea_offset:ea_offset + 4], "little")
+        alloc_length = int.from_bytes(root[alloc_offset:alloc_offset + 4], "little")
+        entry_end = header_size + ea_length + alloc_length
+        if entry_end > udf.SECTOR_SIZE:
+            raise ValueError("Root File Entry exceeds one sector; unsupported layout.")
+        if entry_end > root_ad[0]:
+            raise ValueError("Root File Entry exceeds the advertised ICB extent.")
+        if crc_end < entry_end:
+            raise ValueError("Root File Entry CRC does not cover allocation descriptors.")
         found.append((fsd_lba, root_lba))
     if len(set(found)) != 1:
         raise ValueError("Logical Volume Descriptors disagree about the root directory.")

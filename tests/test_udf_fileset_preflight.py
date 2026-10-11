@@ -16,7 +16,8 @@ def long_ad(length=udf.SECTOR_SIZE, lbn=5, reference=0):
 
 
 def install_fileset(path: Path, *, fsd_ad=None, root_ad=None, root_type=4,
-                    fsd_tag=256, fsd_revision=0x0250):
+                    root_tag=261, root_crc_length=None, root_ea_length=0,
+                    root_allocation_length=0, fsd_tag=256, fsd_revision=0x0250):
     """PD 0 maps 80..229, FSD LBN 5 => physical 85, root LBN 6 => 86."""
     if fsd_ad is None:
         fsd_ad = long_ad()
@@ -35,10 +36,16 @@ def install_fileset(path: Path, *, fsd_ad=None, root_ad=None, root_type=4,
         fsd_data[424:426] = fsd_revision.to_bytes(2, "little")
         handle.seek(85 * udf.SECTOR_SIZE)
         handle.write(descriptor(fsd_tag, 5, bytes(fsd_data)))
-        entry_data = bytearray(64)
+        # ECMA-167 FE (261) has a 176-byte fixed header, EFE (266) 216.
+        entry_data = bytearray((176 if root_tag == 261 else 216) - 16)
         entry_data[11] = root_type  # ICBTag.FileType, descriptor byte 27.
+        ea_offset, alloc_offset = ((152, 156) if root_tag == 261 else (192, 196))
+        entry_data[ea_offset:ea_offset + 4] = root_ea_length.to_bytes(4, "little")
+        entry_data[alloc_offset:alloc_offset + 4] = root_allocation_length.to_bytes(4, "little")
+        if root_crc_length is not None:
+            entry_data = entry_data[:root_crc_length]
         handle.seek(86 * udf.SECTOR_SIZE)
-        handle.write(descriptor(261, 6, bytes(entry_data)))
+        handle.write(descriptor(root_tag, 6, bytes(entry_data)))
 
 
 class Type1FileSetTests(unittest.TestCase):
@@ -134,6 +141,55 @@ class Type1FileSetTests(unittest.TestCase):
             report = fileset.inspect(image)
             self.assertFalse(report.valid)
             self.assertIn("missing, short", " ".join(report.errors))
+
+
+    def test_extended_file_entry_directory_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "image.iso"
+            self.make(image, root_tag=266)
+            self.assertTrue(fileset.inspect(image).valid)
+
+    def test_short_root_icb_extent_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "image.iso"
+            self.make(image, root_ad=long_ad(length=100, lbn=6))
+            report = fileset.inspect(image)
+            self.assertFalse(report.valid)
+            self.assertIn("smaller than the File Entry header", " ".join(report.errors))
+
+    def test_root_entry_crc_must_cover_fixed_fields(self):
+        for tag in (261, 266):
+            with self.subTest(tag=tag), tempfile.TemporaryDirectory() as temp:
+                image = Path(temp) / "image.iso"
+                self.make(image, root_tag=tag, root_crc_length=40)
+                report = fileset.inspect(image)
+                self.assertFalse(report.valid)
+                self.assertIn("full entry header", " ".join(report.errors))
+
+    def test_root_entry_allocation_must_fit_advertised_icb_extent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "image.iso"
+            self.make(image, root_ad=long_ad(length=176, lbn=6),
+                      root_allocation_length=16)
+            report = fileset.inspect(image)
+            self.assertFalse(report.valid)
+            self.assertIn("advertised ICB extent", " ".join(report.errors))
+
+    def test_root_entry_allocation_must_fit_one_sector(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "image.iso"
+            self.make(image, root_allocation_length=2000)
+            report = fileset.inspect(image)
+            self.assertFalse(report.valid)
+            self.assertIn("exceeds one sector", " ".join(report.errors))
+
+    def test_root_entry_crc_must_cover_allocation_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "image.iso"
+            self.make(image, root_allocation_length=16)
+            report = fileset.inspect(image)
+            self.assertFalse(report.valid)
+            self.assertIn("CRC does not cover allocation", " ".join(report.errors))
 
 
 if __name__ == "__main__":
