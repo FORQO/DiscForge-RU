@@ -32,6 +32,23 @@ class MetadataPartitionMapTests(unittest.TestCase):
             replace_map(image, metadata_map(b""))
             self.assertFalse(udf.inspect(image).valid)
 
+    def test_known_udf_type2_identifiers_only(self):
+        # Recognize map identifiers without asserting validity of partition contents.
+        cases = (
+            (b"*UDF Metadata Partition", True),
+            (b"*UDF Virtual Partition", True),
+            (b"*UDF Sparable Partition", True),
+            (b"*UDF Unknown Partition", False),
+            (b"*UDF Metadata Partitio", False),
+        )
+        for identifier, valid in cases:
+            with self.subTest(identifier=identifier), tempfile.TemporaryDirectory() as tmp:
+                image = Path(tmp) / "test.iso"
+                iso_fixture(image)
+                replace_map(image, metadata_map(identifier))
+                report = udf.inspect(image)
+                self.assertEqual(report.valid, valid, report.errors)
+
     def test_backup_vds_when_main_map_invalid(self):
         with tempfile.TemporaryDirectory() as tmp:
             image = Path(tmp) / "test.iso"

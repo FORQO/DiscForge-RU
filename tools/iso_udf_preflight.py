@@ -15,6 +15,11 @@ SECTOR_SIZE = 2048
 CAPACITIES = {"BD25": 25_000_000_000, "BD50": 50_000_000_000}
 UDF_DOMAIN = b"*OSTA UDF Compliant"
 MAX_VDS_SECTORS = 256
+UDF_TYPE2_PARTITION_IDS = frozenset((
+    b"*UDF Virtual Partition",
+    b"*UDF Sparable Partition",
+    b"*UDF Metadata Partition",
+))
 
 
 @dataclass
@@ -155,8 +160,9 @@ def _partition_maps(block: bytes) -> set[int]:
         else:
             # Type 2 mappings may be virtual, sparable or metadata partitions;
             # only their structure and physical partition reference are checked.
-            if not part_map[5:28].rstrip(b"\x00"):
-                raise ValueError("LVD Type 2 partition map has no identifier.")
+            identifier = part_map[5:28].rstrip(b"\x00")
+            if identifier not in UDF_TYPE2_PARTITION_IDS:
+                raise ValueError("LVD has unsupported Type 2 partition identifier.")
             volume_sequence = int.from_bytes(part_map[36:38], "little")
             partition_number = int.from_bytes(part_map[38:40], "little")
         if volume_sequence == 0:
@@ -184,6 +190,10 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
                          6: "Logical Volume Descriptor", 8: "Terminating Descriptor"}
             name = tag_names.get(int.from_bytes(block[:2], "little"), "VDS descriptor")
             raise ValueError(f"Invalid {name} at sector {lba}: {exc}") from exc
+        if tag_id == 3:
+            raise ValueError("VDS continuation via Volume Descriptor Pointer is unsupported.")
+        if tag_id not in (1, 4, 5, 6, 7, 8):
+            raise ValueError(f"Unexpected descriptor type {tag_id} in VDS.")
         if tag_id == 8:  # Terminating Descriptor
             terminated = True
             break
