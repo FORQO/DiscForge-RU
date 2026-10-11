@@ -204,6 +204,10 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
             # Reject unprotected or out-of-bounds partition extents.
             if int.from_bytes(block[10:12], "little") < 180:
                 raise ValueError("Partition Descriptor CRC does not cover partition bounds.")
+            # ECMA-167 3/10.5: regid Partition Contents at bytes 24:56.
+            # UDF 2.50 partitions must identify the NSR03 layout.
+            if block[25:48].rstrip(b"\x00") != b"+NSR03":
+                raise ValueError("Partition Descriptor contents must identify +NSR03.")
             part_start = int.from_bytes(block[188:192], "little")
             part_length = int.from_bytes(block[192:196], "little")
             if part_length == 0 or part_start >= count or part_length > count - part_start:

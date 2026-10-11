@@ -7,7 +7,7 @@
 - Основная или резервная точка привязки UDF (AVDP) и ограниченные Main/Reserve VDS.
 - Контрольные суммы тегов и CRC-16 проверяемых дескрипторов.
 - Logical Volume Descriptor: размер блока 2048 и UDF 2.50 (ревизия 0x0250).
-- Partition Descriptor: CRC защищает границы раздела; начало и длина раздела должны находиться внутри ISO.
+- Partition Descriptor: CRC защищает границы раздела; начало и длина раздела должны находиться внутри ISO. Identifier поля Partition Contents обязан быть `+NSR03` (UDF 2.50 / ECMA-167).
 - LVD Partition Maps: непустая таблица карт Type 1/Type 2, согласованность размеров, CRC и ссылок на Partition Descriptor.
 - Type 2 Partition Maps: принимаются только распознаваемые идентификаторы UDF Virtual, Sparable и Metadata Partition.
 - VDS: неизвестные типы дескрипторов отклоняются; продолжение через VDP пока не обрабатывается.

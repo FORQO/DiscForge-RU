@@ -15,6 +15,7 @@ def descriptor(tag: int, lba: int, data: bytes = b'') -> bytes:
         # Synthetic Partition Descriptor: partition [80, 230) in a 300-sector ISO.
         # Start and length are at ECMA-167 descriptor byte offsets 188 and 192.
         partition = bytearray(180)
+        partition[9:15] = b'+NSR03'  # PD regid identifier at descriptor bytes 25:31.
         partition[172:176] = (80).to_bytes(4, 'little')
         partition[176:180] = (150).to_bytes(4, 'little')
         data = bytes(partition)
@@ -128,6 +129,22 @@ class ISOUDFFullHDTests(unittest.TestCase):
             report = udf.inspect(image)
             self.assertFalse(report.valid)
             self.assertTrue(any('Logical Volume Descriptor' in e for e in report.errors))
+
+    def test_rejects_non_nsr03_partition_contents_with_valid_crc(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / 'test.iso'
+            iso_fixture(image)
+            with image.open('r+b') as handle:
+                handle.seek(34 * udf.SECTOR_SIZE)
+                original = handle.read(udf.SECTOR_SIZE)
+                crc_length = int.from_bytes(original[10:12], 'little')
+                payload = bytearray(original[16:16 + crc_length])
+                payload[9:15] = b'+NSR02'
+                handle.seek(34 * udf.SECTOR_SIZE)
+                handle.write(descriptor(5, 34, bytes(payload)))
+            report = udf.inspect(image)
+            self.assertFalse(report.valid)
+            self.assertIn('+NSR03', ' '.join(report.errors))
 
     def test_rejects_lvd_crc_excluding_revision(self):
         block = bytearray(descriptor(6, 32, bytes(226)))
