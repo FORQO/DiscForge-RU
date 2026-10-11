@@ -45,8 +45,9 @@ def iso_fixture(path: Path, *, revision=0x0250, nsr=b'NSR03', anchor=True,
         payload[224:226] = revision.to_bytes(2, 'little')  # LVD offset 240
         handle.seek(32 * udf.SECTOR_SIZE)
         handle.write(descriptor(6, 32, bytes(payload)))
-        handle.seek(33 * udf.SECTOR_SIZE)
-        handle.write(descriptor(8, 33))
+        for lba, tag in ((33, 1), (34, 5), (35, 8)):
+            handle.seek(lba * udf.SECTOR_SIZE)
+            handle.write(descriptor(tag, lba))
 
 
 class ISOUDFFullHDTests(unittest.TestCase):
@@ -73,6 +74,38 @@ class ISOUDFFullHDTests(unittest.TestCase):
             report = udf.inspect(image)
             self.assertTrue(report.valid, report.errors)
             self.assertTrue(any('backup anchor' in w for w in report.warnings))
+
+    def test_rejects_incomplete_vds_metadata(self):
+        for missing_lba, name in ((33, 'Primary Volume Descriptor'),
+                                  (34, 'Partition Descriptor'),
+                                  (35, 'Terminating Descriptor')):
+            with self.subTest(missing=name), tempfile.TemporaryDirectory() as temp:
+                image = Path(temp) / 'test.iso'
+                iso_fixture(image)
+                with image.open('r+b') as handle:
+                    handle.seek(missing_lba * udf.SECTOR_SIZE)
+                    handle.write(bytes(udf.SECTOR_SIZE))
+                report = udf.inspect(image)
+                self.assertFalse(report.valid)
+                self.assertIn(name, ' '.join(report.errors))
+
+    def test_valid_reserve_vds_when_main_lacks_partition(self):
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / 'test.iso'
+            iso_fixture(image)
+            self._install_reserve_vds(image)
+            # Restore the Main LVD before removing its Partition Descriptor.
+            with image.open('r+b') as handle:
+                handle.seek(64 * udf.SECTOR_SIZE)
+                reserve_lvd = handle.read(udf.SECTOR_SIZE)
+                crc_len = int.from_bytes(reserve_lvd[10:12], 'little')
+                handle.seek(32 * udf.SECTOR_SIZE)
+                handle.write(descriptor(6, 32, reserve_lvd[16:16 + crc_len]))
+                handle.seek(34 * udf.SECTOR_SIZE)
+                handle.write(bytes(udf.SECTOR_SIZE))
+            report = udf.inspect(image)
+            self.assertTrue(report.valid, report.errors)
+            self.assertTrue(any('Reserve VDS' in w for w in report.warnings))
 
     def test_rejects_corrupted_lvd_crc(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -201,8 +234,9 @@ class ISOUDFFullHDTests(unittest.TestCase):
             payload = original[16:16 + crc_length]
             handle.seek(64 * udf.SECTOR_SIZE)
             handle.write(descriptor(6, 64, payload))
-            handle.seek(65 * udf.SECTOR_SIZE)
-            handle.write(descriptor(8, 65))
+            for lba, tag in ((65, 1), (66, 5), (67, 8)):
+                handle.seek(lba * udf.SECTOR_SIZE)
+                handle.write(descriptor(tag, lba))
             main_start = 400 if bad_main_extent else 32
             reserve_start = 400 if bad_reserve_extent else 64
             avdp = (

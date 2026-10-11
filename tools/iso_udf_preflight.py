@@ -129,6 +129,8 @@ def _anchors(handle, count: int) -> list[tuple[int, tuple[int, int] | None, tupl
 
 def _revision(handle, count: int, start: int, sectors: int) -> int:
     """Find a valid LVD and read its UDF revision (EntityID suffix, LE)."""
+    revision = None
+    seen_primary = seen_partition = terminated = False
     for lba in range(start, start + sectors):
         block = _sector(handle, lba, count)
         try:
@@ -136,15 +138,30 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
         except ValueError:
             continue
         if tag_id == 8:  # Terminating Descriptor
+            terminated = True
             break
-        if tag_id != 6:  # Logical Volume Descriptor
-            continue
-        if int.from_bytes(block[212:216], "little") != SECTOR_SIZE:
-            raise ValueError("LVD logical block size is not 2048.")
-        if block[217:240].rstrip(b"\x00") != UDF_DOMAIN:
-            raise ValueError("LVD has no OSTA UDF domain identifier.")
-        return int.from_bytes(block[240:242], "little")
-    raise ValueError("No valid Logical Volume Descriptor in Main VDS.")
+        if tag_id == 1:  # Primary Volume Descriptor
+            seen_primary = True
+        elif tag_id == 5:  # Partition Descriptor
+            seen_partition = True
+        elif tag_id == 6:  # Logical Volume Descriptor
+            if int.from_bytes(block[212:216], "little") != SECTOR_SIZE:
+                raise ValueError("LVD logical block size is not 2048.")
+            if block[217:240].rstrip(b"\x00") != UDF_DOMAIN:
+                raise ValueError("LVD has no OSTA UDF domain identifier.")
+            revision = int.from_bytes(block[240:242], "little")
+    if revision is None:
+        raise ValueError("No valid Logical Volume Descriptor in VDS.")
+    missing = []
+    if not seen_primary:
+        missing.append("Primary Volume Descriptor")
+    if not seen_partition:
+        missing.append("Partition Descriptor")
+    if not terminated:
+        missing.append("Terminating Descriptor")
+    if missing:
+        raise ValueError("Incomplete VDS; missing " + ", ".join(missing) + ".")
+    return revision
 
 
 def inspect(path: str | Path, profile: str = "BD25") -> Report:
