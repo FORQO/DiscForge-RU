@@ -96,8 +96,13 @@ def _vds_extent(block: bytes, offset: int, count: int) -> tuple[int, int] | None
     return None
 
 
-def _anchor(handle, count: int) -> tuple[int, tuple[int, int] | None, tuple[int, int] | None]:
-    """Return anchor LBA plus independently bounded Main and Reserve VDS."""
+def _anchors(handle, count: int) -> list[tuple[int, tuple[int, int] | None, tuple[int, int] | None]]:
+    """Collect bounded VDS extents from primary and backup anchors.
+
+    An intact anchor can still reference an unusable VDS, so retain backup
+    candidates until a valid LVD has been found.
+    """
+    candidates = []
     for lba in dict.fromkeys((256, count - 1, count - 257)):
         if not 0 <= lba < count:
             continue
@@ -108,10 +113,12 @@ def _anchor(handle, count: int) -> tuple[int, tuple[int, int] | None, tuple[int,
             main = _vds_extent(block, 16, count)
             reserve = _vds_extent(block, 24, count)
             if main is not None or reserve is not None:
-                return lba, main, reserve
+                candidates.append((lba, main, reserve))
         except ValueError:
             continue
-    raise ValueError("No valid UDF anchor or bounded Main/Reserve VDS extent.")
+    if not candidates:
+        raise ValueError("No valid UDF anchor or bounded Main/Reserve VDS extent.")
+    return candidates
 
 
 def _revision(handle, count: int, start: int, sectors: int) -> int:
@@ -162,22 +169,25 @@ def inspect(path: str | Path, profile: str = "BD25") -> Report:
                     if not _vrs(handle, count):
                         errors.append("Missing ordered BEA01/NSR03/TEA01 UDF VRS.")
                     else:
-                        anchor_lba, main_vds, reserve_vds = _anchor(handle, count)
-                        if anchor_lba != 256:
-                            warnings.append("Primary UDF anchor missing; used backup anchor.")
                         last_error = None
-                        for label, extent in (("Main", main_vds), ("Reserve", reserve_vds)):
-                            if extent is None:
-                                continue
-                            try:
-                                value = _revision(handle, count, *extent)
-                            except ValueError as exc:
-                                last_error = exc
-                                continue
-                            if label == "Reserve":
-                                warnings.append("Main VDS invalid or missing; used Reserve VDS.")
-                            break
-                        else:
+                        value = None
+                        for anchor_lba, main_vds, reserve_vds in _anchors(handle, count):
+                            for label, extent in (("Main", main_vds), ("Reserve", reserve_vds)):
+                                if extent is None:
+                                    continue
+                                try:
+                                    value = _revision(handle, count, *extent)
+                                except ValueError as exc:
+                                    last_error = exc
+                                    continue
+                                if anchor_lba != 256:
+                                    warnings.append("Primary anchor/VDS unusable; used backup anchor.")
+                                if label == "Reserve":
+                                    warnings.append("Main VDS invalid or missing; used Reserve VDS.")
+                                break
+                            if value is not None:
+                                break
+                        if value is None:
                             raise ValueError(f"No valid Logical Volume Descriptor in Main/Reserve VDS: {last_error}")
                         revision = f"0x{value:04x}"
                         if value != 0x0250:
