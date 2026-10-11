@@ -133,10 +133,15 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
     seen_primary = seen_partition = terminated = False
     for lba in range(start, start + sectors):
         block = _sector(handle, lba, count)
+        if not any(block):
+            continue
         try:
             tag_id = _tag(block, lba)
-        except ValueError:
-            continue
+        except ValueError as exc:
+            tag_names = {1: "Primary Volume Descriptor", 5: "Partition Descriptor",
+                         6: "Logical Volume Descriptor", 8: "Terminating Descriptor"}
+            name = tag_names.get(int.from_bytes(block[:2], "little"), "VDS descriptor")
+            raise ValueError(f"Invalid {name} at sector {lba}: {exc}") from exc
         if tag_id == 8:  # Terminating Descriptor
             terminated = True
             break
