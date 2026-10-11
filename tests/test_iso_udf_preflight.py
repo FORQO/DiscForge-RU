@@ -11,6 +11,13 @@ from tools import iso_udf_preflight as udf
 
 
 def descriptor(tag: int, lba: int, data: bytes = b'') -> bytes:
+    if tag == 5 and not data:
+        # Synthetic Partition Descriptor: partition [80, 230) in a 300-sector ISO.
+        # Start and length are at ECMA-167 descriptor byte offsets 188 and 192.
+        partition = bytearray(180)
+        partition[172:176] = (80).to_bytes(4, 'little')
+        partition[176:180] = (150).to_bytes(4, 'little')
+        data = bytes(partition)
     block = bytearray(udf.SECTOR_SIZE)
     block[0:2] = tag.to_bytes(2, 'little')
     block[2:4] = (3).to_bytes(2, 'little')

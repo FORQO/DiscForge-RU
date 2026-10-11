@@ -143,6 +143,14 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
         if tag_id == 1:  # Primary Volume Descriptor
             seen_primary = True
         elif tag_id == 5:  # Partition Descriptor
+            # ECMA-167 3/10.5: partition start/length at bytes 188/192.
+            # Reject unprotected or out-of-bounds partition extents.
+            if int.from_bytes(block[10:12], "little") < 180:
+                raise ValueError("Partition Descriptor CRC does not cover partition bounds.")
+            part_start = int.from_bytes(block[188:192], "little")
+            part_length = int.from_bytes(block[192:196], "little")
+            if part_length == 0 or part_start >= count or part_length > count - part_start:
+                raise ValueError("Partition Descriptor has empty or out-of-bounds partition.")
             seen_partition = True
         elif tag_id == 6:  # Logical Volume Descriptor
             if int.from_bytes(block[212:216], "little") != SECTOR_SIZE:
