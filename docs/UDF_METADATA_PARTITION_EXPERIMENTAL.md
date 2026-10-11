@@ -7,8 +7,8 @@ CRC-covered list of *recorded*, sector-aligned short allocation descriptors.
 Each extent is checked against the containing physical partition and image
 bounds. References cannot cross an allocation boundary in one request.
 
-This is an **opt-in building block only** and is not yet connected to the
-FSD/root-directory inspector or the authoring/publishing path. Handling of
+The resolver is connected to the **opt-in FSD/root-directory inspector** for
+Metadata Partition Type 2 maps; the authoring/publishing gate is unchanged. Handling of
 virtual/sparable maps, metadata mirrors, sparse extents, AD chains, full UDF
 directory traversal, BDMV verification, and BD-J/HDMV menus remains pending.
 No conclusion about hardware compatibility or Blu-ray playback is implied.
