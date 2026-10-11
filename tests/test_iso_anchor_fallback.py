@@ -36,8 +36,9 @@ class BackupAnchorFallbackTests(unittest.TestCase):
                 payload_size = int.from_bytes(original[10:12], 'little')
                 handle.seek(64 * udf.SECTOR_SIZE)
                 handle.write(descriptor(6, 64, original[16:16 + payload_size]))
-                handle.seek(65 * udf.SECTOR_SIZE)
-                handle.write(descriptor(8, 65))
+                for lba, tag in ((65, 1), (66, 5), (67, 8)):
+                    handle.seek(lba * udf.SECTOR_SIZE)
+                    handle.write(descriptor(tag, lba))
                 handle.seek(32 * udf.SECTOR_SIZE + 240)
                 handle.write(b'\x60')  # corrupt primary LVD CRC
                 handle.seek(299 * udf.SECTOR_SIZE)
@@ -58,8 +59,9 @@ class BackupAnchorFallbackTests(unittest.TestCase):
                 payload[201:201 + len(udf.UDF_DOMAIN)] = udf.UDF_DOMAIN
                 payload[224:226] = (0x0250).to_bytes(2, 'little')
                 handle.write(descriptor(6, 64, bytes(payload)))
-                handle.seek(65 * udf.SECTOR_SIZE)
-                handle.write(descriptor(8, 65))
+                for lba, tag in ((65, 1), (66, 5), (67, 8)):
+                    handle.seek(lba * udf.SECTOR_SIZE)
+                    handle.write(descriptor(tag, lba))
                 handle.seek(299 * udf.SECTOR_SIZE)
                 handle.write(descriptor(2, 299, length + (64).to_bytes(4, 'little')))
             report = udf.inspect(image)
