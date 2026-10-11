@@ -5,8 +5,8 @@ services:
       dockerfile: tv/docker/Dockerfile
     restart: unless-stopped
     ports:
-      - "8098:8098/tcp"
-      - "8099:8099/udp"
+      - "${DISCFORGE_LAN_BIND_IP:?Specify NAS private LAN IPv4 in .env}:8098:8098/tcp"
+      - "${DISCFORGE_LAN_BIND_IP:?Specify NAS private LAN IPv4 in .env}:8099:8099/udp"
     volumes:
       - "${DISCFORGE_MEDIA_PATH:?Set media path in .env}:/media:ro"
       - "${DISCFORGE_CONFIG_PATH:?Set config path in .env}:/config"
