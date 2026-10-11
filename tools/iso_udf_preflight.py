@@ -149,7 +149,10 @@ def _revision(handle, count: int, start: int, sectors: int) -> int:
                 raise ValueError("LVD logical block size is not 2048.")
             if block[217:240].rstrip(b"\x00") != UDF_DOMAIN:
                 raise ValueError("LVD has no OSTA UDF domain identifier.")
-            revision = int.from_bytes(block[240:242], "little")
+            candidate_revision = int.from_bytes(block[240:242], "little")
+            if revision is not None and revision != candidate_revision:
+                raise ValueError("Conflicting UDF revisions in Logical Volume Descriptors.")
+            revision = candidate_revision
     if revision is None:
         raise ValueError("No valid Logical Volume Descriptor in VDS.")
     missing = []
