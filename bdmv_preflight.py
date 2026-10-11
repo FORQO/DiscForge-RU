@@ -38,7 +38,11 @@ def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) ->
             adaptation = (header[3] >> 4) & 0x03
             if adaptation == 0:
                 reason = "Reserved M2TS adaptation_field_control"
-            elif adaptation in (2, 3) and header[4] > (183 if adaptation == 2 else 182):
+            elif header[3] & 0xC0:
+                reason = "M2TS transport_scrambling_control unsupported in clear authoring"
+            elif adaptation == 2 and header[4] != 183:
+                reason = "M2TS adaptation_field_length must be 183 for adaptation-only packets"
+            elif adaptation == 3 and header[4] > 182:
                 reason = "M2TS adaptation_field_length exceeds TS packet"
             else:
                 continue

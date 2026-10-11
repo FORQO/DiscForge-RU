@@ -7,9 +7,10 @@ from bdmv_preflight import inspect
 from test_bdmv_preflight import fixture
 
 
-def packet(*, tei=False, control=1, adaptation_length=0):
+def packet(*, tei=False, control=1, adaptation_length=0, scrambling=0):
     ts = bytearray(188)
-    ts[0:4] = bytes((0x47, 0x9f if tei else 0x1f, 0xff, control << 4))
+    ts[0:4] = bytes((0x47, 0x9f if tei else 0x1f, 0xff,
+                      (control << 4) | (scrambling << 6)))
     ts[4] = adaptation_length
     return bytes(4) + bytes(ts)
 
@@ -41,6 +42,30 @@ class M2TSHeaderTests(unittest.TestCase):
         result = self.check(packet(control=2, adaptation_length=184))
         self.assertFalse(result.structurally_valid)
         self.assertIn("adaptation_field_length", " ".join(result.errors))
+
+    def test_adaptation_only_must_fill_remaining_packet(self):
+        # AFC=2 leaves no payload; exactly 183 adaptation bytes are required.
+        for length in (0, 1, 182, 184):
+            with self.subTest(length=length):
+                result = self.check(packet(control=2, adaptation_length=length))
+                self.assertFalse(result.structurally_valid)
+                self.assertIn("adaptation_field_length", " ".join(result.errors))
+
+    def test_clear_authored_stream_rejects_scrambled_headers(self):
+        for scrambling in (1, 2, 3):
+            with self.subTest(scrambling=scrambling):
+                result = self.check(packet(scrambling=scrambling))
+                self.assertFalse(result.structurally_valid)
+                self.assertIn("transport_scrambling_control", " ".join(result.errors))
+
+    def test_clear_adaptation_only_packet_supported(self):
+        result = self.check(packet(control=2, adaptation_length=183))
+        self.assertTrue(result.structurally_valid, result.errors)
+
+    def test_scrambled_packet_near_end_rejected(self):
+        result = self.check(packet() * 39 + packet(scrambling=2))
+        self.assertFalse(result.structurally_valid)
+        self.assertIn("packet 39", " ".join(result.errors))
 
     def test_adaptation_with_payload_length_limit(self):
         self.assertTrue(self.check(packet(control=3, adaptation_length=182)).structurally_valid)
