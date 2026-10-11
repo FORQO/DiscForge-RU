@@ -15,7 +15,9 @@ class VDSDescriptorTypeTests(unittest.TestCase):
                 iso_fixture(image)
                 with image.open("r+b") as stream:
                     stream.seek(35 * udf.SECTOR_SIZE)
-                    stream.write(descriptor(tag, 35, b"checked payload"))
+                    payload = ((16 * udf.SECTOR_SIZE).to_bytes(4, "little")
+                               + (32).to_bytes(4, "little")) if tag == 2 else b"checked payload"
+                    stream.write(descriptor(tag, 35, payload))
                     stream.seek(36 * udf.SECTOR_SIZE)
                     stream.write(descriptor(8, 36))
                 report = udf.inspect(image)
