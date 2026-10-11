@@ -7,6 +7,7 @@ from test_iso_udf_preflight import descriptor, iso_fixture
 
 def write_pd(path, lba, start, length, crc_length=180):
     data = bytearray(180)
+    data[9:15] = b'+NSR03'  # Valid Partition Contents Identifier (ECMA-167).
     data[172:176] = start.to_bytes(4, "little")
     data[176:180] = length.to_bytes(4, "little")
     with path.open("r+b") as handle:
