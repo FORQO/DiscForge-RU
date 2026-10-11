@@ -5,6 +5,8 @@ on:
     paths:
       - 'bdmv_preflight.py'
       - 'tools/iso_udf_preflight.py'
+      - 'tools/udf_fileset_preflight.py'
+      - 'tests/test_udf_fileset_preflight.py'
       - 'tests/test_iso_udf_preflight.py'
       - 'tests/test_iso_pipeline.py'
       - 'core.py'
