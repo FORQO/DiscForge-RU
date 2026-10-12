@@ -23,6 +23,15 @@ jobs:
       - name: Build
         shell: pwsh
         run: python -m PyInstaller --noconfirm --clean --windowed --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
+      - name: Launch packaged application offscreen
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'discforge-smoke.json'
+          $process = Start-Process -FilePath '.\dist\DiscForge_RU\DiscForge_RU.exe' -ArgumentList @('--self-test', $report) -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Packaged app timed out' }
+          if ($process.ExitCode -ne 0) { throw "Packaged app exited with $($process.ExitCode)" }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (-not $result.passed) { throw 'Packaged app smoke test failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: DiscForge_RU_win_alpha
