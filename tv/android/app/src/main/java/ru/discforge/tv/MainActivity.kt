@@ -158,7 +158,7 @@ class MainActivity : Activity() {
             if (connection.responseCode != 200) {
                 throw IllegalStateException("HTTP " + connection.responseCode + ". Проверьте код.")
             }
-            val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val body = connection.inputStream.use { LanCatalogBody.read(it, connection.contentLengthLong) }
             return JSONObject(body).getJSONArray("items")
         } finally {
             connection.disconnect()
