@@ -73,6 +73,9 @@ def validate_playlist(path: Path, clip_ids: set[str], stream_ids: set[str]) -> t
     if play_item_count == 0:
         errors.append(f"MPLS playlist has no PlayItems: {name}")
     cursor = start + 6
+    # PlayListMark timestamps use the referenced PlayItem's 45-kHz clock,
+    # not an offset on the concatenated playlist timeline.
+    item_intervals: list[tuple[int, int]] = []
 
     def check_clip(raw: bytes, item: int) -> None:
         if len(raw) != 5 or not raw.isascii() or not raw.isdigit():
@@ -97,7 +100,10 @@ def validate_playlist(path: Path, clip_ids: set[str], stream_ids: set[str]) -> t
         check_clip(item[:5], item_index)
         if item[5:9] != b"M2TS":
             errors.append(f"MPLS PlayItem {item_index} has unsupported codec identifier: {name}")
-        if int.from_bytes(item[12:16], "big") >= int.from_bytes(item[16:20], "big"):
+        in_time = int.from_bytes(item[12:16], "big")
+        out_time = int.from_bytes(item[16:20], "big")
+        item_intervals.append((in_time, out_time))
+        if in_time >= out_time:
             errors.append(f"MPLS PlayItem {item_index} has non-positive IN/OUT interval: {name}")
         if item[10] & 0x10:  # multi-angle flag
             if item_length < 34:
@@ -126,4 +132,18 @@ def validate_playlist(path: Path, clip_ids: set[str], stream_ids: set[str]) -> t
                 ref_item = u16(record + 2)
                 if ref_item >= play_item_count:
                     errors.append(f"MPLS PlayListMark {index} references invalid PlayItem {ref_item}: {name}")
+                    continue
+                mark_type = data[record + 1]
+                if mark_type == 1:  # Entry mark: a chapter in a PlayItem.
+                    mark_time = u32(record + 4)
+                    in_time, out_time = item_intervals[ref_item]
+                    if not in_time <= mark_time < out_time:
+                        errors.append(
+                            f"MPLS chapter mark {index} timestamp {mark_time} outside "
+                            f"PlayItem {ref_item} interval [{in_time}, {out_time}): {name}"
+                        )
+                elif mark_type != 2:
+                    errors.append(f"MPLS PlayListMark {index} has invalid mark type {mark_type}: {name}")
+                else:
+                    warnings.append(f"MPLS link-point mark {index} timing not validated: {name}")
     return errors, warnings

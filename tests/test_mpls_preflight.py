@@ -51,6 +51,61 @@ class PlaylistPreflightTests(unittest.TestCase):
         errs, _ = self.inspect(minimal_mpls(mark_item=7))
         self.assertIn('references invalid PlayItem', ' '.join(errs))
 
+    def test_valid_chapter_timestamp_inside_nonzero_clip_interval(self):
+        data = bytearray(minimal_mpls())
+        data[64:68] = (9000).to_bytes(4, 'big')  # PlayItem IN_time
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 10:marks + 14] = (10000).to_bytes(4, 'big')
+        self.assertEqual(self.inspect(bytes(data))[0], [])
+
+    def test_chapter_before_in_time_is_rejected(self):
+        data = bytearray(minimal_mpls())
+        data[64:68] = (10000).to_bytes(4, 'big')
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 10:marks + 14] = (9999).to_bytes(4, 'big')
+        self.assertIn('outside PlayItem', ' '.join(self.inspect(bytes(data))[0]))
+
+    def test_chapter_at_out_time_is_rejected(self):
+        data = bytearray(minimal_mpls())
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 10:marks + 14] = (45000).to_bytes(4, 'big')
+        self.assertIn('outside PlayItem', ' '.join(self.inspect(bytes(data))[0]))
+
+    def test_chapter_inside_upper_bound_is_valid(self):
+        data = bytearray(minimal_mpls())
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 10:marks + 14] = (44999).to_bytes(4, 'big')
+        self.assertEqual(self.inspect(bytes(data))[0], [])
+
+    def test_invalid_mark_type_is_rejected(self):
+        data = bytearray(minimal_mpls())
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 7] = 0  # mark type: 1=entry, 2=link
+        self.assertIn('invalid mark type', ' '.join(self.inspect(bytes(data))[0]))
+
+    def test_link_mark_timing_is_not_misclassified_as_chapter(self):
+        data = bytearray(minimal_mpls())
+        marks = int.from_bytes(data[12:16], 'big')
+        data[marks + 7] = 2
+        data[marks + 10:marks + 14] = (90000).to_bytes(4, 'big')
+        errors, warnings = self.inspect(bytes(data))
+        self.assertEqual(errors, [])
+        self.assertTrue(any('link-point' in message for message in warnings))
+
+    def test_bdmv_gate_rejects_out_of_range_chapter(self):
+        from bdmv_preflight import inspect
+        from test_bdmv_preflight import fixture
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fixture(root)
+            payload = bytearray(minimal_mpls())
+            marks = int.from_bytes(payload[12:16], 'big')
+            payload[marks + 10:marks + 14] = (45000).to_bytes(4, 'big')
+            (root / 'BDMV/PLAYLIST/00000.mpls').write_bytes(payload)
+            result = inspect(root)
+            self.assertFalse(result.structurally_valid)
+            self.assertIn('chapter mark', ' '.join(result.errors))
+
     def test_truncated_marks(self):
         data = bytearray(minimal_mpls())
         mark_start = int.from_bytes(data[12:16], 'big')

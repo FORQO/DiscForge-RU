@@ -23,3 +23,19 @@ mandatory before any compatibility claim.
 
 Run \`python -m unittest discover -s tests -v\` and inspect
 \`bdmv_preflight.py\` JSON output for diagnostics.
+
+
+### Chapter mark timing checks
+
+For 2D Full HD playlists, entry marks (mark type 1) are chapters. Their
+`mark_time_stamp` and the referenced PlayItem's `IN_time` and `OUT_time` are
+all in the **same clip-local 45 kHz clock**, not a cumulative playlist clock.
+Each entry mark must satisfy `IN_time <= mark_time_stamp < OUT_time`.
+Timestamps before the referenced PlayItem or at/after its OUT boundary fail
+BDMV preflight, as do reserved or unknown mark types. Mark type 2 (link point)
+is recognized but its timing semantics are not checked; a warning is emitted.
+
+These checks detect obviously unreachable chapter navigation targets, not
+whether a chapter is on a decodable frame, if the title is reachable from a
+menu, or if remote-control navigation works. The new cases are based on
+synthetic MPLS records, not real authored discs.
