@@ -21,6 +21,7 @@ from bdmv_preflight import inspect as inspect_bdmv
 from tools.iso_udf_preflight import inspect as inspect_iso
 from disc_menu import MenuDesign, install_menu
 from windows_iso import create_iso
+from tools.audio_tracks import AudioTrack, AudioTrackError, parse_audio_tracks, select_audio_track
 
 SUPPORTED = {'.mkv', '.mp4', '.mov', '.m2ts', '.mts', '.ts', '.avi'}
 CAPACITIES = {'BD25': 25_000_000_000, 'BD50': 50_000_000_000}
@@ -45,6 +46,7 @@ class MediaInfo:
     audio_channels: int
     audio_tracks: int
     subtitle_tracks: int
+    audio_details: tuple[AudioTrack, ...] = ()
 
     @property
     def is_hdr(self) -> bool:
@@ -80,6 +82,10 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
         s.get('disposition', {}).get('attached_pic') if isinstance(s.get('disposition'), dict) else False
     )]
     audios = [s for s in streams if s.get('codec_type') == 'audio']
+    try:
+        audio_details = parse_audio_tracks(data)
+    except AudioTrackError as exc:
+        raise DiscForgeError('ffprobe вернул некорректные данные аудиодорожек: ' + str(exc)) from exc
     subs = [s for s in streams if s.get('codec_type') == 'subtitle']
     if not videos:
         raise DiscForgeError('В файле не обнаружен видеопоток.')
@@ -112,7 +118,7 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
         video_color_transfer=str(v.get('color_transfer') or '').lower(),
         audio_codec=str(a.get('codec_name') or 'нет'),
         audio_channels=nonnegative_int(a.get('channels'), 'аудиоканалы'),
-        audio_tracks=len(audios), subtitle_tracks=len(subs),
+        audio_tracks=len(audios), subtitle_tracks=len(subs), audio_details=audio_details,
     )
 
 
@@ -153,9 +159,12 @@ def make_video_command(ffmpeg: str, src: str, dst: str, bitrate: int, nvenc: boo
     return cmd
 
 
-def make_audio_command(ffmpeg: str, src: str, dst: str, channels: int) -> list[str]:
+def make_audio_command(ffmpeg: str, src: str, dst: str, channels: int,
+                       audio_index: int = 0) -> list[str]:
+    if type(audio_index) is not int or audio_index < 0:
+        raise DiscForgeError('Некорректный индекс аудиодорожки.')
     return [ffmpeg, '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1',
-            '-i', src, '-map', '0:a:0', '-vn', '-sn', '-dn', '-c:a', 'ac3', '-b:a', '640k',
+            '-i', src, '-map', f'0:a:{audio_index}', '-vn', '-sn', '-dn', '-c:a', 'ac3', '-b:a', '640k',
             '-ar', '48000', '-ac', '6' if channels > 2 else '2', '-f', 'ac3', dst]
 
 
@@ -346,7 +355,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                    cancel: threading.Event, log: Callable[[str], None],
                    progress: Callable[[int], None],
                    chapters: Sequence[float] | None = None,
-                   menu: MenuDesign | None = None) -> Path:
+                   menu: MenuDesign | None = None,
+                   audio_index: int = 0) -> Path:
     """Encode to BD-oriented H.264 + AC3, then author BDMV directory or image.
 
     This is the first compatible-oriented implementation, NOT independently verified BD spec compliance.
@@ -357,6 +367,20 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         raise DiscForgeError('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.')
     if cancel.is_set():
         raise DiscForgeError('Операция отменена пользователем.')
+    # Reject invalid audio requests before creating output files or launching FFmpeg.
+    if type(audio_index) is not int or audio_index < 0 or (
+        info.audio_tracks and audio_index >= info.audio_tracks
+    ) or (not info.audio_tracks and audio_index != 0):
+        raise DiscForgeError(f'Аудиодорожка {audio_index!r} недоступна (всего: {info.audio_tracks}).')
+    selected_channels = info.audio_channels
+    if info.audio_tracks and info.audio_details:
+        try:
+            selected = select_audio_track(info.audio_details, audio_index)
+        except AudioTrackError as exc:
+            raise DiscForgeError('Некорректный выбор аудиодорожки: ' + str(exc)) from exc
+        selected_channels = selected.channels
+    elif audio_index != 0:
+        raise DiscForgeError('Для выбора дорожки заново проанализируйте исходный файл.')
     if chapters is not None:
         validate_chapters(chapters, info.duration)
     if menu is not None:
@@ -388,7 +412,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         run_command(make_video_command(ffmpeg, info.path, str(video), bitrate, nvenc),
                     'Кодирование видео', 0, 84 if audio else 92, info.duration, cancel, log, progress)
         if audio:
-            run_command(make_audio_command(ffmpeg, info.path, str(audio), info.audio_channels),
+            log(f'Используется исходная аудиодорожка {audio_index + 1} из {info.audio_tracks}.')
+            run_command(make_audio_command(ffmpeg, info.path, str(audio), selected_channels, audio_index),
                         'Кодирование аудио', 84, 8, info.duration, cancel, log, progress)
         write_meta(meta, video, audio, chapters)
         if cancel.is_set():

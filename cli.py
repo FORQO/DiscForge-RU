@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--folder', action='store_true', help='Создать BDMV вместо ISO')
     b.add_argument('--nvenc', action='store_true', help='Экспериментальный режим NVIDIA NVENC')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
+    b.add_argument('--audio-index', type=int, default=None,
+                   help='Номер исходной аудиодорожки (начиная с 0); кодируется одна дорожка AC-3')
     b.add_argument('--menu-title', help='Добавить экспериментальное меню BD-J с этим названием (требует PySide6)')
     b.add_argument('--menu-theme', choices=['midnight', 'cinema'], default='midnight')
     args = p.parse_args(argv)
@@ -50,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'probe':
             print(json.dumps(dataclasses.asdict(info), ensure_ascii=False, indent=2))
         else:
+            if args.audio_index is not None and not info.audio_tracks:
+                raise DiscForgeError('В исходном файле отсутствуют аудиодорожки.')
             chapters = None
             if args.chapter:
                 chapters = sorted(set([0.0, *args.chapter]))
@@ -68,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
             print('Меню BD-J экспериментальное.' if menu else 'Создаётся Blu-ray без меню.', file=sys.stderr)
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
-                                 lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu)
+                                 lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu,
+                                 audio_index=args.audio_index if args.audio_index is not None else 0)
             print('\nРезультат:', done)
         return 0
     except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:
