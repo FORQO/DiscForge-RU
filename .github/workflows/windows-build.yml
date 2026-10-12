@@ -4,6 +4,14 @@ on:
   pull_request:
     paths:
       - 'bdmv_preflight.py'
+      - 'tools/iso_udf_preflight.py'
+      - 'tools/udf_fileset_preflight.py'
+      - 'tools/udf_metadata_partition.py'
+      - 'tests/test_udf_fileset_type2.py'
+      - 'tests/test_udf_metadata_boundary_regressions.py'
+      - 'tests/test_udf_fileset_preflight.py'
+      - 'tests/test_iso_udf_preflight.py'
+      - 'tests/test_iso_pipeline.py'
       - 'core.py'
       - 'tests/test_bdmv_preflight.py'
       - '.github/workflows/windows-build.yml'
