@@ -17,7 +17,7 @@ jobs:
       - name: Install UI + packaging
         run: python -m pip install -r requirements.txt pyinstaller
       - name: Build macOS app
-        run: python -m PyInstaller --clean --noconfirm --windowed --name DiscForge-RU main.py
+        run: python -m PyInstaller --clean --noconfirm --windowed --add-data "assets:assets" --add-data "LICENSE:." --add-data "THIRD_PARTY_NOTICES.md:." --name DiscForge-RU main.py
       - name: Pack .app
         run: ditto -c -k --sequesterRsrc --keepParent dist/DiscForge-RU.app DiscForge-RU-macOS.zip
       - uses: actions/upload-artifact@v4

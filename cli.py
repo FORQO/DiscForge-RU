@@ -5,6 +5,7 @@ import argparse
 import dataclasses
 import json
 import math
+import os
 import sys
 import threading
 
@@ -26,12 +27,12 @@ def _chapter(value: str) -> float:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description='DiscForge RU alpha — Blu-ray без интерактивного меню')
+    p = argparse.ArgumentParser(description='DiscForge RU — авторинг Full HD Blu-ray')
     sub = p.add_subparsers(dest='command', required=True)
     a = sub.add_parser('probe', help='Анализ файла')
     a.add_argument('file')
     a.add_argument('--ffprobe', default='ffprobe')
-    b = sub.add_parser('build', help='Собрать тестовый ISO/BDMV без меню')
+    b = sub.add_parser('build', help='Собрать ISO/BDMV; меню включается через --menu-title')
     b.add_argument('file')
     b.add_argument('--profile', choices=sorted(CAPACITIES), default='BD25')
     b.add_argument('--output', default='DiscForge_Output')
@@ -41,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--folder', action='store_true', help='Создать BDMV вместо ISO')
     b.add_argument('--nvenc', action='store_true', help='Экспериментальный режим NVIDIA NVENC')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
+    b.add_argument('--menu-title', help='Добавить экспериментальное меню BD-J с этим названием (требует PySide6)')
+    b.add_argument('--menu-theme', choices=['midnight', 'cinema'], default='midnight')
     args = p.parse_args(argv)
     try:
         info = probe_media(args.file, args.ffprobe)
@@ -52,13 +55,23 @@ def main(argv: list[str] | None = None) -> int:
                 chapters = sorted(set([0.0, *args.chapter]))
                 if chapters[-1] >= info.duration:
                     raise DiscForgeError('Отметка главы должна быть меньше длительности фильма.')
-            print('ВНИМАНИЕ: версия alpha создаёт Blu-ray БЕЗ интерактивного меню.', file=sys.stderr)
+            menu = None
+            if args.menu_title is not None:
+                os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+                try:
+                    from PySide6.QtGui import QGuiApplication
+                except ImportError as exc:
+                    raise DiscForgeError('Для меню установите зависимости из requirements.txt.') from exc
+                from disc_menu import MenuDesign
+                app = QGuiApplication.instance() or QGuiApplication([])
+                menu = MenuDesign(args.menu_title, args.menu_theme)
+            print('Меню BD-J экспериментальное.' if menu else 'Создаётся Blu-ray без меню.', file=sys.stderr)
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
-                                 lambda n: print(f'\r{n}% ', end='', flush=True), chapters)
+                                 lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu)
             print('\nРезультат:', done)
         return 0
-    except (DiscForgeError, OSError) as exc:
+    except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:
         print('ОШИБКА:', exc, file=sys.stderr)
         return 1
 

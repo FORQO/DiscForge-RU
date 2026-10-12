@@ -18,9 +18,12 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from bdmv_preflight import inspect as inspect_bdmv
+from tools.iso_udf_preflight import inspect as inspect_iso
+from disc_menu import MenuDesign, install_menu
+from windows_iso import create_iso
 
 SUPPORTED = {'.mkv', '.mp4', '.mov', '.m2ts', '.mts', '.ts', '.avi'}
-CAPACITIES = {'BD25': 25_000_000_000, 'BD50': 50_000_000_000, 'BDXL100': 100_000_000_000}
+CAPACITIES = {'BD25': 25_000_000_000, 'BD50': 50_000_000_000}
 HDR_TRANSFERS = {'smpte2084', 'arib-std-b67'}
 
 
@@ -156,6 +159,24 @@ def make_audio_command(ffmpeg: str, src: str, dst: str, channels: int) -> list[s
             '-ar', '48000', '-ac', '6' if channels > 2 else '2', '-f', 'ac3', dst]
 
 
+def validate_chapters(chapters: Sequence[float], duration: float | None = None) -> None:
+    if not chapters:
+        raise DiscForgeError('Главы должны начинаться с отметки 00:00:00.')
+    try:
+        valid = all(not isinstance(t, bool) and isinstance(t, (int, float)) and
+                    math.isfinite(t) and t >= 0 for t in chapters)
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise DiscForgeError('В списке глав есть недопустимая отметка.')
+    if chapters[0] != 0:
+        raise DiscForgeError('Главы должны начинаться с отметки 00:00:00.')
+    if any(b <= a for a, b in zip(chapters, chapters[1:])):
+        raise DiscForgeError('Отметки глав должны идти по возрастанию.')
+    if duration is not None and chapters[-1] >= duration:
+        raise DiscForgeError('Отметка главы должна быть меньше длительности фильма.')
+
+
 def write_meta(path: Path, video: Path, audio: Path | None,
                chapters: Sequence[float] | None = None) -> None:
     # Convert to slash separators; absolute paths are encoded as UTF-8 and quoted.
@@ -164,12 +185,7 @@ def write_meta(path: Path, video: Path, audio: Path | None,
     if chapters is None:
         opts = '--auto-chapters=10'
     else:
-        if not chapters or abs(chapters[0]) > 0.001:
-            raise DiscForgeError('Главы должны начинаться с отметки 00:00:00.')
-        if any(t < 0 or not math.isfinite(t) for t in chapters):
-            raise DiscForgeError('В списке глав есть недопустимая отметка.')
-        if any(b <= a for a, b in zip(chapters, chapters[1:])):
-            raise DiscForgeError('Отметки глав должны идти по возрастанию.')
+        validate_chapters(chapters)
         def fmt(sec: float) -> str:
             millis = round(sec * 1000)
             h, rest = divmod(millis, 3600000)
@@ -211,6 +227,8 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                 duration: float, cancel: threading.Event,
                 log: Callable[[str], None], progress: Callable[[int], None]) -> None:
     log(f'{stage}...')
+    if cancel.is_set():
+        raise DiscForgeError('Операция отменена пользователем.')
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -256,7 +274,10 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                 errors.append(line)
                 if len(errors) > 25:
                     errors.pop(0)
-        returncode = proc.wait()
+        while proc.poll() is None:
+            if cancel.wait(0.1):
+                raise DiscForgeError('Операция отменена пользователем.')
+        returncode = proc.returncode
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         if returncode != 0:
@@ -276,6 +297,8 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
 def run_tsmuxer(tsmuxer: str, meta: Path, destination: Path, cancel: threading.Event,
                  log: Callable[[str], None]) -> None:
     """Run tsMuxer with cancellation and bounded stderr capture."""
+    if cancel.is_set():
+        raise DiscForgeError('Операция отменена пользователем.')
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         proc = subprocess.Popen([tsmuxer, str(meta), str(destination)],
@@ -313,13 +336,17 @@ def run_tsmuxer(tsmuxer: str, meta: Path, destination: Path, cancel: threading.E
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        reader.join(timeout=2)
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 
 def create_bluray(info: MediaInfo, profile: str, output_root: str,
                    ffmpeg: str, tsmuxer: str, iso: bool, nvenc: bool,
                    cancel: threading.Event, log: Callable[[str], None],
                    progress: Callable[[int], None],
-                   chapters: Sequence[float] | None = None) -> Path:
+                   chapters: Sequence[float] | None = None,
+                   menu: MenuDesign | None = None) -> Path:
     """Encode to BD-oriented H.264 + AC3, then author BDMV directory or image.
 
     This is the first compatible-oriented implementation, NOT independently verified BD spec compliance.
@@ -328,14 +355,30 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         raise DiscForgeError('Исходный файл не найден.')
     if info.is_hdr:
         raise DiscForgeError('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.')
+    if cancel.is_set():
+        raise DiscForgeError('Операция отменена пользователем.')
+    if chapters is not None:
+        validate_chapters(chapters, info.duration)
+    if menu is not None:
+        if not isinstance(menu, MenuDesign):
+            raise DiscForgeError('Некорректное меню проекта.')
+        if iso and os.name != 'nt':
+            raise DiscForgeError('ISO с меню пока доступен на Windows. Выберите папку BDMV.')
+        chapters = list(chapters) if chapters is not None else [0.0] + list(range(600, int(info.duration), 600))
+        if len(chapters) > 999:
+            raise DiscForgeError('Меню поддерживает не более 999 глав.')
     _require_binary(ffmpeg, 'FFmpeg')
     _require_binary(tsmuxer, 'tsMuxeR')
     bitrate = bitrate_plan(info.duration, profile, info.audio_tracks > 0)
     root = Path(output_root).expanduser()
     root.mkdir(parents=True, exist_ok=True)
+    estimated_stream = info.duration * (bitrate + (640_000 if info.audio_tracks else 0)) / 8 * 1.08
+    required = int(estimated_stream * (3 if iso and menu is not None else 2)) + 256_000_000
+    if shutil.disk_usage(root).free < required:
+        raise DiscForgeError(f'Недостаточно места для сборки. Освободите примерно {required/1e9:.1f} ГБ в выходной папке.')
     target = unique_target(root, info.name, iso)
     log(f'Профиль: {profile}, видео: {bitrate/1e6:.1f} Мбит/с, выход: {target}')
-    log('ВНИМАНИЕ: эта альфа-версия создаёт Blu-ray БЕЗ интерактивного меню.')
+    log('Меню BD-J: экспериментальный режим; требуется проверка на плеере.' if menu else 'Диск без интерактивного меню.')
     log('Предупреждение: кадры будут приведены к 23,976 fps; конвертация может повлиять на плавность.')
     with tempfile.TemporaryDirectory(prefix='DiscForge_work_', dir=root) as tmp:
         work = Path(tmp)
@@ -351,14 +394,18 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         # Author to an intermediate output first; move to destination only on success.
-        author_target = work / ('disc.iso' if iso else 'disc')
+        author_target = work / ('disc.iso' if iso and menu is None else 'disc')
         log('Формирование структуры Blu-ray через tsMuxer...')
         run_tsmuxer(tsmuxer, meta, author_target, cancel, log)
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         if not author_target.exists():
             raise DiscForgeError('tsMuxer не создал выходной файл/папку.')
-        if iso:
+        if menu is not None:
+            log('Создаём интерактивное меню BD-J…')
+            install_menu(author_target, menu, list(chapters))
+            progress(94)
+        if iso and menu is None:
             size = author_target.stat().st_size
         else:
             size = sum(f.stat().st_size for f in author_target.rglob('*') if f.is_file())
@@ -366,13 +413,24 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                 raise DiscForgeError('tsMuxer не создал каталог BDMV.')
         if size > CAPACITIES[profile]:
             raise DiscForgeError(f'Размер результата {size / 1e9:.2f} ГБ превышает {profile}. Файлы болванки не затронуты.')
-        # Never publish an invalid Full HD folder as a ready-to-burn BDMV.
-        # ISO images require a separate UDF/ISO inspection and are not certified here.
-        if not iso and profile in ('BD25', 'BD50'):
+        # Validate the authored folder before packaging and before publishing.
+        if not iso or menu is not None:
             report = inspect_bdmv(author_target, profile)
             if not report.structurally_valid:
                 raise DiscForgeError('Проверка BDMV не пройдена: ' + '; '.join(report.errors[:8]))
             log('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.')
+        if menu is not None and iso:
+            image = work / 'disc.iso'
+            create_iso(author_target, image, CAPACITIES[profile], cancel, log)
+            author_target = image
+            size = image.stat().st_size
+        if iso:
+            report = inspect_iso(author_target, profile)
+            if not report.valid:
+                raise DiscForgeError('Проверка ISO UDF 2.50 не пройдена: ' + '; '.join(report.errors[:8]))
+            log('Метаданные UDF 2.50 проверены; воспроизведение требует отдельного теста.')
+        if cancel.is_set():
+            raise DiscForgeError('Операция отменена пользователем.')
         shutil.move(str(author_target), str(target))
         progress(100)
         log(f'Готово: {target} ({size/1e9:.2f} ГБ).')

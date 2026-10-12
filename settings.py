@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import shutil
+import tempfile
 
 def config_dir(platform: str, home: Path, appdata: str | None) -> Path:
     if platform == 'darwin':
@@ -17,6 +18,12 @@ CFG = config_dir(sys.platform, Path.home(), os.getenv('APPDATA')) / 'settings.js
 
 
 def find_binary(name: str) -> str:
+    app_root = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+    executable = name + '.exe' if sys.platform == 'win32' else name
+    for folder in (app_root / 'tools', app_root / 'bin'):
+        candidate = folder / executable
+        if candidate.is_file():
+            return str(candidate)
     # Finder-launched .app bundles often omit Homebrew from PATH.
     if sys.platform == 'darwin':
         for root in ('/opt/homebrew/bin', '/usr/local/bin'):
@@ -46,6 +53,22 @@ def load():
     return current
 
 
+def write_json(path: Path, value) -> None:
+    text = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         prefix='.' + path.name + '.', delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def save(value):
-    CFG.parent.mkdir(parents=True, exist_ok=True)
-    CFG.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+    write_json(CFG, value)

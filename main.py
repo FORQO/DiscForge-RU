@@ -5,12 +5,14 @@ The alpha creates chapter-enabled BDMV/ISO but deliberately does NOT claim menu 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QAction, QColor, QFont
+from PySide6.QtGui import QAction, QColor, QFont, QDesktopServices
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -20,10 +22,13 @@ from PySide6.QtWidgets import (
 )
 
 from core import (CAPACITIES, SUPPORTED, DiscForgeError, MediaInfo,
-                  create_bluray, probe_media)
-from settings import load as load_settings, save as save_settings
+                  create_bluray, probe_media, validate_chapters)
+from settings import load as load_settings, save as save_settings, write_json
+from menu_editor import MenuEditor
+from disc_menu import MenuDesign, initialize_fonts
+from image_tools import ImageTools
 
-VERSION = '0.1.0-alpha'
+VERSION = '0.2.0-alpha'
 
 
 def timecode(seconds: float) -> str:
@@ -68,13 +73,14 @@ class BuildThread(QThread):
     finished_all = Signal(bool)
 
     def __init__(self, jobs: list[tuple[MediaInfo, list[float]]], config: dict, profile: str,
-                 as_iso: bool, nvenc: bool):
+                 as_iso: bool, nvenc: bool, menu: MenuDesign | None = None):
         super().__init__()
         self.jobs = jobs
         self.config = config
         self.profile = profile
         self.as_iso = as_iso
         self.nvenc = nvenc
+        self.menu = menu
         self.cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -94,6 +100,7 @@ class BuildThread(QThread):
                     self.config['tsmuxer'], self.as_iso, self.nvenc,
                     self.cancel_event, self.message.emit, self.progress_changed.emit,
                     chapters=chapters,
+                    menu=self.menu,
                 )
                 self.item_done.emit(media.path, str(target))
             except Exception as exc:
@@ -107,9 +114,12 @@ class BuildThread(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
+        initialize_fonts()
+        self.setFont(QFont('Noto Sans', 10))
         self.setWindowTitle('DiscForge RU — мастер Blu-ray | ' + VERSION)
         self.resize(1190, 760)
         self.setMinimumSize(920, 620)
+        self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
         self.chapters: dict[str, list[float]] = {}
         self.scan_thread: ScanThread | None = None
@@ -131,13 +141,13 @@ class Window(QMainWindow):
         heading.setObjectName('brand')
         header.addWidget(heading)
         header.addStretch()
-        tag = QLabel('OPEN SOURCE  ·  ALPHA 0.1')
+        tag = QLabel('БЕСПЛАТНО  ·  OPEN SOURCE  ·  0.2 ALPHA')
         tag.setObjectName('tag')
         header.addWidget(tag)
         root.addLayout(header)
 
-        warning = QLabel('ВЕРСИЯ ALPHA: создаёт структуру Blu-ray с главами, но пока БЕЗ интерактивного меню. '
-                         'BD-J / HDMV и совместимость с бытовыми плеерами находятся в разработке.')
+        warning = QLabel('Ваш фильм → главы и меню → Blu-ray. Меню BD-J экспериментальное: '
+                         'перед записью коллекции проверьте тестовый BD-RE на своём плеере.')
         warning.setWordWrap(True)
         warning.setObjectName('warning')
         root.addWidget(warning)
@@ -147,7 +157,7 @@ class Window(QMainWindow):
         left = QWidget()
         left_box = QVBoxLayout(left)
         left_box.setContentsMargins(0, 0, 4, 0)
-        left_box.addWidget(QLabel('ФИЛЬМЫ В ПРОЕКТЕ'))
+        left_box.addWidget(QLabel('ФИЛЬМЫ · КАЖДЫЙ НА ОТДЕЛЬНОМ ДИСКЕ'))
         self.movies = QListWidget()
         self.movies.currentItemChanged.connect(lambda *_: self._select_media())
         left_box.addWidget(self.movies, 1)
@@ -159,7 +169,7 @@ class Window(QMainWindow):
         line.addWidget(self.add_button, 1)
         line.addWidget(self.remove_button)
         left_box.addLayout(line)
-        self.details = QLabel('Добавьте MKV, MP4, MOV или другой видеофайл для анализа.')
+        self.details = QLabel('Перетащите видео в окно или нажмите «Добавить видео».')
         self.details.setObjectName('details')
         self.details.setWordWrap(True)
         self.details.setMinimumHeight(90)
@@ -176,7 +186,7 @@ class Window(QMainWindow):
         profile_box = QGroupBox('Параметры Blu-ray')
         form = QFormLayout(profile_box)
         self.profile = QComboBox()
-        self.profile.addItems(['BD25', 'BD50', 'BDXL100'])
+        self.profile.addItems(list(CAPACITIES))
         self.profile.setCurrentText('BD25')
         form.addRow('Ёмкость носителя:', self.profile)
         self.output_mode = QComboBox()
@@ -211,7 +221,7 @@ class Window(QMainWindow):
         info.setObjectName('hint')
         build_box.addWidget(info)
         build_box.addStretch()
-        self.tabs.addTab(build_tab, 'Сборка')
+        self.tabs.addTab(build_tab, '1 · Подготовка')
 
         chapter_tab = QWidget()
         chapter_box = QVBoxLayout(chapter_tab)
@@ -239,26 +249,13 @@ class Window(QMainWindow):
         note.setObjectName('hint')
         note.setWordWrap(True)
         chapter_box.addWidget(note)
-        self.tabs.addTab(chapter_tab, 'Главы')
+        self.tabs.addTab(chapter_tab, '2 · Главы')
 
-        menu_tab = QWidget()
-        menu_box = QVBoxLayout(menu_tab)
-        menu_box.setSpacing(12)
-        title = QLabel('Конструктор меню — следующий этап разработки')
-        title.setObjectName('section')
-        menu_box.addWidget(title)
-        menu_box.addWidget(QLabel('Здесь появятся: главный экран, выбор глав, звука, субтитров, '
-                                  'оформление кнопок и навигация с пульта.'))
-        self.menu_title = QLineEdit('Моя коллекция Blu-ray')
-        menu_box.addWidget(QLabel('Название проекта (сохраняется в .dfr.json):'))
-        menu_box.addWidget(self.menu_title)
-        support = QLabel('ВНИМАНИЕ: поле выше пока только метаданные проекта. '
-                         'Оно не записывает меню на диск. Мы не выдаём ISO без меню за готовый релиз.')
-        support.setWordWrap(True)
-        support.setObjectName('warning')
-        menu_box.addWidget(support)
-        menu_box.addStretch()
-        self.tabs.addTab(menu_tab, 'Меню (план)')
+        self.menu_editor = MenuEditor()
+        self.menu_title = self.menu_editor.title
+        self.tabs.addTab(self.menu_editor, '3 · Меню')
+        self.image_tools = ImageTools()
+        self.tabs.addTab(self.image_tools, '4 · Запись ISO')
 
         logbar = QHBoxLayout()
         logbar.addWidget(QLabel('ЖУРНАЛ РАБОТЫ'))
@@ -266,6 +263,9 @@ class Window(QMainWindow):
         clear = QPushButton('Очистить')
         clear.clicked.connect(lambda: self.log.clear())
         logbar.addWidget(clear)
+        open_output = QPushButton('Открыть результаты')
+        open_output.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path_fields['output'].text())))
+        logbar.addWidget(open_output)
         root.addLayout(logbar)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
@@ -306,7 +306,10 @@ class Window(QMainWindow):
         return {key: edit.text().strip() for key, edit in self.path_fields.items()}
 
     def _save_config(self) -> None:
-        save_settings(self._config())
+        try:
+            save_settings(self._config())
+        except OSError as exc:
+            self._message('Не удалось сохранить настройки: ' + str(exc))
 
     def _choose_path(self, key: str) -> None:
         if key == 'output':
@@ -340,6 +343,8 @@ class Window(QMainWindow):
         self.scan_thread.result.connect(self._scanned)
         self.scan_thread.finished.connect(self._refresh_buttons)
         self.scan_thread.start()
+        if self.movies.currentRow() < 0:
+            self.movies.setCurrentRow(0)
         self._refresh_buttons()
         self._message(f'Анализируем {len(fresh)} файлов…')
 
@@ -366,6 +371,7 @@ class Window(QMainWindow):
     def _select_media(self) -> None:
         path = self._selected_path()
         info = self.media.get(path or '')
+        self.menu_editor.set_chapters(self.chapters.get(path, [0.0]))
         self.chapter_list.clear()
         if not info:
             self.details.setText('Выберите успешно проанализированный фильм.')
@@ -464,20 +470,27 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'HDR пока не поддерживается',
                                 'Нельзя создавать обычный BD из HDR без правильного тонмаппинга.\n' + '\n'.join(bad))
             return
-        response = QMessageBox.question(self, 'Альфа-версия без меню',
-            'Будет создан Blu-ray с главами, но БЕЗ интерактивного меню.\n'
-            'Выбор языка и субтитров ещё не реализован.\n\nПродолжить создание тестового образа?',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        try:
+            menu = self.menu_editor.design()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Название меню', str(exc))
+            return
+        response = QMessageBox.question(self, 'Создание Blu-ray',
+            f'Дисков: {len(jobs)} · {self.profile.currentText()} · {self.output_mode.currentText()}\n'
+            + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
+            + 'Видео: Full HD 23,976 fps. Звук: первая дорожка AC-3.\n'
+            + 'Субтитры пока не переносятся. Исходники сохраняются.\n\nНачать сборку?',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if response != QMessageBox.Yes:
             return
         self.progress.setValue(0)
         self.build_thread = BuildThread(jobs, config, self.profile.currentText(),
                                         self.output_mode.currentIndex() == 0,
-                                        self.encoder.currentIndex() == 1)
+                                        self.encoder.currentIndex() == 1, menu)
         self.build_thread.message.connect(self._message)
         self.build_thread.progress_changed.connect(self.progress.setValue)
         self.build_thread.item_started.connect(lambda p: self._message('Начинаем: ' + Path(p).name))
-        self.build_thread.item_done.connect(lambda p, dest: self._message('ГОТОВО: ' + dest))
+        self.build_thread.item_done.connect(self._item_done)
         self.build_thread.failed.connect(lambda p, err: self._message('ОШИБКА ' + Path(p).name + ': ' + err))
         self.build_thread.finished_all.connect(self._build_finished)
         self.build_thread.finished.connect(self._refresh_buttons)
@@ -487,6 +500,12 @@ class Window(QMainWindow):
     def _build_finished(self, success: bool) -> None:
         self._message('Очередь завершена.' if success else 'Очередь завершилась с ошибками или была отменена.')
 
+    def _item_done(self, path: str, destination: str) -> None:
+        self._message('ГОТОВО: ' + destination)
+        if destination.lower().endswith('.iso'):
+            self.image_tools.path.setText(destination)
+            self.image_tools.profile.setCurrentText(self.build_thread.profile)
+
     def cancel_build(self) -> None:
         if self.build_thread and self.build_thread.isRunning():
             self._message('Запрошена отмена операции…')
@@ -494,6 +513,7 @@ class Window(QMainWindow):
 
     def _project_data(self) -> dict:
         return {'format_version': 1, 'title': self.menu_title.text(),
+                'menu': {'enabled': self.menu_editor.enabled.isChecked(), 'theme': self.menu_editor.theme.currentData()},
                 'files': [self.movies.item(i).data(Qt.UserRole) for i in range(self.movies.count())],
                 'chapters': self.chapters, 'profile': self.profile.currentText(),
                 'encoder': self.encoder.currentIndex(), 'as_iso': self.output_mode.currentIndex() == 0}
@@ -502,8 +522,12 @@ class Window(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, 'Сохранить проект', 'DiscForge_project.dfr.json',
                                              'DiscForge RU (*.dfr.json)')
         if path:
-            Path(path).write_text(json.dumps(self._project_data(), ensure_ascii=False, indent=2), encoding='utf-8')
-            self._message('Проект сохранён: ' + path)
+            try:
+                write_json(Path(path), self._project_data())
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, 'Ошибка сохранения', str(exc))
+            else:
+                self._message('Проект сохранён: ' + path)
 
     def open_project(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, 'Открыть проект', '', 'DiscForge RU (*.dfr.json)')
@@ -517,21 +541,37 @@ class Window(QMainWindow):
             raw = data.get('chapters', {})
             if not isinstance(raw, dict):
                 raise ValueError('Неверный раздел глав')
+            # Validate everything before discarding the current project.
+            profile = data.get('profile', 'BD25')
+            if not isinstance(profile, str) or profile not in CAPACITIES:
+                raise ValueError('Неизвестный профиль диска')
+            title = data.get('title', 'Мой Blu-ray')
+            menu = data.get('menu', {'enabled': False, 'theme': 'midnight'})
+            if not isinstance(menu, dict) or not isinstance(menu.get('enabled'), bool):
+                raise ValueError('Некорректные настройки меню')
+            MenuDesign(title, menu.get('theme', 'midnight'))
+            loaded_chapters = {}
+            normalized_paths = []
+            for p in paths:
+                normalized = str(Path(p).resolve())
+                normalized_paths.append(normalized)
+                v = raw.get(p, [0.0])
+                if not isinstance(v, list):
+                    raise ValueError('Неверный список глав')
+                validate_chapters(v)
+                loaded_chapters[normalized] = [float(x) for x in v]
             if not self.new_project():
                 return
             self.menu_title.setText(str(data.get('title', 'Моя коллекция Blu-ray')))
-            if data.get('profile') in CAPACITIES:
-                self.profile.setCurrentText(data['profile'])
+            self.menu_editor.enabled.setChecked(menu['enabled'])
+            self.menu_editor.theme.setCurrentIndex(self.menu_editor.theme.findData(menu.get('theme', 'midnight')))
+            self.profile.setCurrentText(profile)
             self.encoder.setCurrentIndex(1 if data.get('encoder') == 1 else 0)
             self.output_mode.setCurrentIndex(0 if data.get('as_iso', True) else 1)
-            for p in paths:
-                v = raw.get(p)
-                if isinstance(v, list) and v and v[0] == 0 and all(isinstance(x, (int, float)) for x in v):
-                    if all(a < b for a, b in zip(v, v[1:])) and all(x >= 0 for x in v):
-                        self.chapters[p] = [float(x) for x in v]
-            self._queue_scan(paths)
+            self.chapters.update(loaded_chapters)
+            self._queue_scan(normalized_paths)
             self._message('Проект открыт: ' + path)
-        except (OSError, ValueError, TypeError) as exc:
+        except (OSError, ValueError, TypeError, OverflowError, DiscForgeError) as exc:
             QMessageBox.warning(self, 'Ошибка проекта', str(exc))
 
     def new_project(self) -> bool:
@@ -544,17 +584,28 @@ class Window(QMainWindow):
         self.chapters.clear()
         self.chapter_list.clear()
         self.menu_title.setText('Моя коллекция Blu-ray')
+        self.menu_editor.enabled.setChecked(True)
+        self.menu_editor.theme.setCurrentIndex(0)
         self._select_media()
         return True
 
     def about(self) -> None:
         QMessageBox.about(self, 'DiscForge RU',
             f'DiscForge RU {VERSION}\nОткрытый исходный код (MIT).\n\n'
-            'Альфа: анализ, очередь, главы, BDMV/ISO.\n'
-            'Не реализовано: дисковое меню BD-J/HDMV, UHD-авторинг, запись на привод.')
+            'Анализ, очередь, главы, BDMV/ISO и экспериментальное меню BD-J.\n'
+            'Следующие этапы: несколько дорожек, субтитры, запись и UHD.')
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls() and not (self.build_thread and self.build_thread.isRunning()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        if not (self.build_thread and self.build_thread.isRunning()):
+            self._queue_scan([url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()])
+            event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:
-        if (self.build_thread and self.build_thread.isRunning()) or (
+        if self.image_tools.is_running() or (self.build_thread and self.build_thread.isRunning()) or (
                 self.scan_thread and self.scan_thread.isRunning()):
             QMessageBox.warning(self, 'Операция выполняется', 'Сначала завершите или отмените текущую операцию.')
             event.ignore()
@@ -589,11 +640,29 @@ QStatusBar { color: #9fb1c9; }
 
 
 def main() -> int:
+    # Packaging smoke test: exercise the same window and resources offscreen.
+    smoke_report = None
+    if len(sys.argv) == 3 and sys.argv[1] == '--self-test':
+        smoke_report = Path(sys.argv[2])
+        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
     app.setFont(QFont('Segoe UI', 10))
     w = Window()
+    if smoke_report is not None:
+        w.resize(1280, 880)
+        w.show()
+        app.processEvents()
+        resources = Path(__file__).parent
+        checks = {'window': w.tabs.count() == 4,
+                  'menu_image': not w.menu_editor.preview.image.isNull(),
+                  'xlet': (resources / 'assets/bdj/menu.jar').is_file(),
+                  'windows_iso': sys.platform != 'win32' or (resources / 'tools/windows_iso.ps1').is_file()}
+        write_json(smoke_report, {'version': VERSION, 'checks': checks, 'passed': all(checks.values())})
+        # Do not save user settings from a packaging test.
+        w.hide()
+        return 0 if all(checks.values()) else 1
     w.show()
     return app.exec()
 
