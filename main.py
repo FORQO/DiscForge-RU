@@ -73,7 +73,8 @@ class BuildThread(QThread):
     finished_all = Signal(bool)
 
     def __init__(self, jobs: list[tuple[MediaInfo, list[float]]], config: dict, profile: str,
-                 as_iso: bool, nvenc: bool, menu: MenuDesign | None = None):
+                 as_iso: bool, nvenc: bool, menu: MenuDesign | None = None,
+                 audio_selection: dict[str, int] | None = None):
         super().__init__()
         self.jobs = jobs
         self.config = config
@@ -81,6 +82,7 @@ class BuildThread(QThread):
         self.as_iso = as_iso
         self.nvenc = nvenc
         self.menu = menu
+        self.audio_selection = dict(audio_selection or {})
         self.cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -101,6 +103,7 @@ class BuildThread(QThread):
                     self.cancel_event, self.message.emit, self.progress_changed.emit,
                     chapters=chapters,
                     menu=self.menu,
+                    audio_index=self.audio_selection.get(media.path, 0),
                 )
                 self.item_done.emit(media.path, str(target))
             except Exception as exc:
@@ -122,6 +125,7 @@ class Window(QMainWindow):
         self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
         self.chapters: dict[str, list[float]] = {}
+        self.audio_selection: dict[str, int] = {}
         self.scan_thread: ScanThread | None = None
         self.build_thread: BuildThread | None = None
         self._build_ui()
@@ -195,6 +199,11 @@ class Window(QMainWindow):
         self.encoder = QComboBox()
         self.encoder.addItems(['CPU x264 — надёжнее', 'NVIDIA NVENC — быстрее, экспериментально'])
         form.addRow('Видеокодер:', self.encoder)
+        self.audio_track = QComboBox()
+        self.audio_track.addItem('Выберите фильм', 0)
+        self.audio_track.setEnabled(False)
+        self.audio_track.currentIndexChanged.connect(self._audio_changed)
+        form.addRow('Звуковая дорожка фильма:', self.audio_track)
         build_box.addWidget(profile_box)
 
         path_box = QGroupBox('Инструменты и выходная папка')
@@ -214,8 +223,8 @@ class Window(QMainWindow):
             row.addWidget(browse)
             paths.addRow(label, row)
         build_box.addWidget(path_box)
-        info = QLabel('Выход: видео H.264 1080p 23,976 кадр/с + первая аудиодорожка AC-3. '
-                      'Субтитры и остальные аудиодорожки пока не переносятся. '
+        info = QLabel('Выход: видео H.264 1080p 23,976 кадр/с + выбранная дорожка AC-3. '
+                      'Остальные аудиодорожки и субтитры пока не переносятся. '
                       'Сначала проверьте ISO на программном проигрывателе и бытовом плеере.')
         info.setWordWrap(True)
         info.setObjectName('hint')
@@ -358,6 +367,13 @@ class Window(QMainWindow):
         if info:
             self.media[path] = info
             self.chapters.setdefault(path, [0.0])
+            selected = self.audio_selection.get(path, 0)
+            if (type(selected) is not int or selected < 0 or
+                    (info.audio_tracks and selected >= info.audio_tracks) or
+                    (not info.audio_tracks and selected != 0) or
+                    (selected and len(info.audio_details) != info.audio_tracks)):
+                self.audio_selection[path] = 0
+                self._message(f'Аудиодорожка {selected!r} недоступна для {info.name}; выбрана первая.')
             self._message(f'OK: {info.name} — {timecode(info.duration)}; {info.width}×{info.height}')
         else:
             self._message(f'ОШИБКА {Path(path).name}: {error}')
@@ -368,9 +384,43 @@ class Window(QMainWindow):
         item = self.movies.currentItem()
         return item.data(Qt.UserRole) if item else None
 
+    def _refresh_audio_selector(self, path: str | None, info: MediaInfo | None) -> None:
+        self.audio_track.blockSignals(True)
+        try:
+            self.audio_track.clear()
+            if info is None:
+                self.audio_track.addItem('Выберите фильм', 0)
+            elif not info.audio_tracks:
+                self.audio_track.addItem('Без звука', 0)
+            else:
+                complete = len(info.audio_details) == info.audio_tracks
+                for index in range(info.audio_tracks):
+                    if complete:
+                        track = info.audio_details[index]
+                        label = (f'{index + 1} · {track.language.upper()} · '
+                                 f'{track.codec.upper()} · {track.channels} кан.')
+                    else:
+                        label = f'{index + 1} · аудиодорожка (метаданные недоступны)'
+                    self.audio_track.addItem(label, index)
+                saved = self.audio_selection.get(path or '', 0)
+                self.audio_track.setCurrentIndex(max(0, self.audio_track.findData(saved)))
+            self.audio_track.setEnabled(bool(info and info.audio_tracks > 1 and
+                                             len(info.audio_details) == info.audio_tracks))
+        finally:
+            self.audio_track.blockSignals(False)
+
+    def _audio_changed(self, row: int) -> None:
+        path = self._selected_path()
+        info = self.media.get(path or '')
+        if path and info and row >= 0:
+            selected = self.audio_track.itemData(row)
+            if type(selected) is int and 0 <= selected < info.audio_tracks:
+                self.audio_selection[path] = selected
+
     def _select_media(self) -> None:
         path = self._selected_path()
         info = self.media.get(path or '')
+        self._refresh_audio_selector(path, info)
         self.menu_editor.set_chapters(self.chapters.get(path, [0.0]))
         self.chapter_list.clear()
         if not info:
@@ -435,6 +485,7 @@ class Window(QMainWindow):
         path = item.data(Qt.UserRole)
         self.media.pop(path, None)
         self.chapters.pop(path, None)
+        self.audio_selection.pop(path, None)
         self._select_media()
         self._refresh_buttons()
 
@@ -445,6 +496,10 @@ class Window(QMainWindow):
         self.cancel_button.setEnabled(busy)
         self.add_button.setEnabled(not scanning and not busy)
         self.remove_button.setEnabled(not scanning and not busy and self.movies.currentItem() is not None)
+        info = self.media.get(self._selected_path() or '')
+        self.audio_track.setEnabled(bool(info and info.audio_tracks > 1 and
+                                         len(info.audio_details) == info.audio_tracks and
+                                         not busy and not scanning))
         self.statusBar().showMessage(
             f'Файлов: {len(self.media)}  |  Сканирование: {"да" if scanning else "нет"}  |  '
             f'Сборка: {"идёт" if busy else "нет"}')
@@ -465,6 +520,16 @@ class Window(QMainWindow):
             path = self.movies.item(i).data(Qt.UserRole)
             if path in self.media:
                 jobs.append((self.media[path], list(self.chapters[path])))
+        for info, _ in jobs:
+            selected = self.audio_selection.get(info.path, 0)
+            if (type(selected) is not int or selected < 0 or
+                    (info.audio_tracks and selected >= info.audio_tracks) or
+                    (not info.audio_tracks and selected != 0) or
+                    (selected and len(info.audio_details) != info.audio_tracks)):
+                QMessageBox.warning(self, 'Аудиодорожка недоступна',
+                                    f'Для {info.name} выбрана недоступная дорожка {selected!r}. '
+                                    'Выберите дорожку заново.')
+                return
         bad = [info.name for info, _ in jobs if info.is_hdr]
         if bad:
             QMessageBox.warning(self, 'HDR пока не поддерживается',
@@ -478,7 +543,7 @@ class Window(QMainWindow):
         response = QMessageBox.question(self, 'Создание Blu-ray',
             f'Дисков: {len(jobs)} · {self.profile.currentText()} · {self.output_mode.currentText()}\n'
             + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
-            + 'Видео: Full HD 23,976 fps. Звук: первая дорожка AC-3.\n'
+            + 'Видео: Full HD 23,976 fps. Звук: выбранная дорожка каждого фильма AC-3.\n'
             + 'Субтитры пока не переносятся. Исходники сохраняются.\n\nНачать сборку?',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if response != QMessageBox.Yes:
@@ -486,7 +551,9 @@ class Window(QMainWindow):
         self.progress.setValue(0)
         self.build_thread = BuildThread(jobs, config, self.profile.currentText(),
                                         self.output_mode.currentIndex() == 0,
-                                        self.encoder.currentIndex() == 1, menu)
+                                        self.encoder.currentIndex() == 1, menu,
+                                        {info.path: self.audio_selection.get(info.path, 0)
+                                         for info, _ in jobs})
         self.build_thread.message.connect(self._message)
         self.build_thread.progress_changed.connect(self.progress.setValue)
         self.build_thread.item_started.connect(lambda p: self._message('Начинаем: ' + Path(p).name))
@@ -515,7 +582,11 @@ class Window(QMainWindow):
         return {'format_version': 1, 'title': self.menu_title.text(),
                 'menu': {'enabled': self.menu_editor.enabled.isChecked(), 'theme': self.menu_editor.theme.currentData()},
                 'files': [self.movies.item(i).data(Qt.UserRole) for i in range(self.movies.count())],
-                'chapters': self.chapters, 'profile': self.profile.currentText(),
+                'chapters': self.chapters,
+                'audio_selection': {self.movies.item(i).data(Qt.UserRole):
+                                    self.audio_selection.get(self.movies.item(i).data(Qt.UserRole), 0)
+                                    for i in range(self.movies.count())},
+                'profile': self.profile.currentText(),
                 'encoder': self.encoder.currentIndex(), 'as_iso': self.output_mode.currentIndex() == 0}
 
     def save_project(self) -> None:
@@ -560,6 +631,15 @@ class Window(QMainWindow):
                     raise ValueError('Неверный список глав')
                 validate_chapters(v)
                 loaded_chapters[normalized] = [float(x) for x in v]
+            raw_audio = data.get('audio_selection', {})
+            if not isinstance(raw_audio, dict):
+                raise ValueError('Некорректные настройки аудиодорожек')
+            loaded_audio = {}
+            for source, index in raw_audio.items():
+                if (not isinstance(source, str) or source not in paths or
+                        type(index) is not int or index < 0):
+                    raise ValueError('Некорректный номер аудиодорожки в проекте')
+                loaded_audio[str(Path(source).resolve())] = index
             if not self.new_project():
                 return
             self.menu_title.setText(str(data.get('title', 'Моя коллекция Blu-ray')))
@@ -569,6 +649,7 @@ class Window(QMainWindow):
             self.encoder.setCurrentIndex(1 if data.get('encoder') == 1 else 0)
             self.output_mode.setCurrentIndex(0 if data.get('as_iso', True) else 1)
             self.chapters.update(loaded_chapters)
+            self.audio_selection.update(loaded_audio)
             self._queue_scan(normalized_paths)
             self._message('Проект открыт: ' + path)
         except (OSError, ValueError, TypeError, OverflowError, DiscForgeError) as exc:
@@ -582,6 +663,7 @@ class Window(QMainWindow):
         self.movies.clear()
         self.media.clear()
         self.chapters.clear()
+        self.audio_selection.clear()
         self.chapter_list.clear()
         self.menu_title.setText('Моя коллекция Blu-ray')
         self.menu_editor.enabled.setChecked(True)
