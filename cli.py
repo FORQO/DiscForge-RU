@@ -6,6 +6,7 @@ import dataclasses
 import json
 import math
 import os
+import re
 import sys
 import threading
 
@@ -26,6 +27,13 @@ def _chapter(value: str) -> float:
         raise argparse.ArgumentTypeError('Требуется время вида ЧЧ:ММ:СС[.ммм]') from exc
 
 
+def _audio_indices(value: str) -> tuple[int, ...]:
+    parts = [part.strip() for part in value.split(',')]
+    if not parts or any(not re.fullmatch(r'[0-9]+', part) for part in parts):
+        raise argparse.ArgumentTypeError('Укажите индексы аудиодорожек через запятую: 0,1')
+    return tuple(int(part) for part in parts)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description='DiscForge RU — авторинг Full HD Blu-ray')
     sub = p.add_subparsers(dest='command', required=True)
@@ -42,8 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--folder', action='store_true', help='Создать BDMV вместо ISO')
     b.add_argument('--nvenc', action='store_true', help='Экспериментальный режим NVIDIA NVENC')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
-    b.add_argument('--audio-index', type=int, default=None,
-                   help='Номер исходной аудиодорожки (начиная с 0); кодируется одна дорожка AC-3')
+    audio_options = b.add_mutually_exclusive_group()
+    audio_options.add_argument('--audio-index', type=int, default=None,
+                               help='Номер одной исходной аудиодорожки (с 0), AC-3')
+    audio_options.add_argument('--audio-indices', type=_audio_indices,
+                               help='Экспериментально: несколько исходных дорожек, например 0,2,1; '
+                                    'каждая кодируется отдельно в AC-3 (до 8)')
     b.add_argument('--menu-title', help='Добавить экспериментальное меню BD-J с этим названием (требует PySide6)')
     b.add_argument('--menu-theme', choices=['midnight', 'cinema'], default='midnight')
     args = p.parse_args(argv)
@@ -52,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'probe':
             print(json.dumps(dataclasses.asdict(info), ensure_ascii=False, indent=2))
         else:
-            if args.audio_index is not None and not info.audio_tracks:
+            if (args.audio_index is not None or args.audio_indices is not None) and not info.audio_tracks:
                 raise DiscForgeError('В исходном файле отсутствуют аудиодорожки.')
             chapters = None
             if args.chapter:
@@ -73,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
                                  lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu,
-                                 audio_index=args.audio_index if args.audio_index is not None else 0)
+                                 audio_index=args.audio_index if args.audio_index is not None else 0,
+                                 audio_indices=args.audio_indices)
             print('\nРезультат:', done)
         return 0
     except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:
