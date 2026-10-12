@@ -100,8 +100,8 @@ class AudioSelectionPipelineTests(unittest.TestCase):
 
     def test_cli_forwards_selected_audio_index(self):
         info = media("test.mkv")
-        with patch("cli.probe_media", return_value=info), patch(
-                "cli.create_bluray", return_value=Path("done")) as create, (
+        with (patch("cli.probe_media", return_value=info), patch(
+                "cli.create_bluray", return_value=Path("done")) as create,
                 contextlib.redirect_stdout(io.StringIO()),
                 contextlib.redirect_stderr(io.StringIO())):
             code = cli_main(["build", "test.mkv", "--audio-index", "1", "--folder"])
@@ -110,8 +110,8 @@ class AudioSelectionPipelineTests(unittest.TestCase):
 
     def test_cli_explicit_audio_on_silent_video_is_error(self):
         info = media("silent.mkv", with_audio=False)
-        with patch("cli.probe_media", return_value=info), patch(
-                "cli.create_bluray") as create, (
+        with (patch("cli.probe_media", return_value=info), patch(
+                "cli.create_bluray") as create,
                 contextlib.redirect_stdout(io.StringIO()),
                 contextlib.redirect_stderr(io.StringIO())):
             code = cli_main(["build", "silent.mkv", "--audio-index", "0"])
@@ -120,8 +120,8 @@ class AudioSelectionPipelineTests(unittest.TestCase):
 
     def test_cli_default_preserves_first_audio(self):
         info = media("test.mkv")
-        with patch("cli.probe_media", return_value=info), patch(
-                "cli.create_bluray", return_value=Path("done")) as create, (
+        with (patch("cli.probe_media", return_value=info), patch(
+                "cli.create_bluray", return_value=Path("done")) as create,
                 contextlib.redirect_stdout(io.StringIO()),
                 contextlib.redirect_stderr(io.StringIO())):
             code = cli_main(["build", "test.mkv", "--folder"])
