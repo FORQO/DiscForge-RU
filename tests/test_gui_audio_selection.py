@@ -95,7 +95,7 @@ class GUIAudioSelectionTests(unittest.TestCase):
         self.assertIn('Без звука', self.window.audio_track.currentText())
 
     def test_project_roundtrip_preserves_selection(self):
-        a = '/tmp/first.mkv'
+        a = str(Path('/tmp/first.mkv').resolve())
         self.add_movie(a, media(a))
         self.window.movies.setCurrentRow(0)
         self.window.audio_track.setCurrentIndex(1)
