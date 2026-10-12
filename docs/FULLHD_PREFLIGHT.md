@@ -18,3 +18,9 @@ Sampled transport packets also check that PCR, OPCR, splice countdown, private
 adaptation data, extension length and extension-specific LTW/piecewise rate/
 seamless splice bytes fit their advertised adaptation-field lengths. This
 remains a bounded sampled syntax check rather than full TS/PES validation.
+
+The four-byte M2TS TP_extra_header is also sampled. Its top two
+copy_permission_indicator bits must be zero for DiscForge RU's clear output;
+the remaining 30 bits are the arrival timestamp and are not interpreted as
+copy controls. This is a conservative authoring check, not a DRM detector,
+decryptor, or proof that unsampled source packets are unprotected.

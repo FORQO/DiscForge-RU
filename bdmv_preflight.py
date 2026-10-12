@@ -80,10 +80,14 @@ def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) ->
         for index in range(max(0, center - 2), min(count, center + 3))
     })
     for index in indices:
-        handle.seek(index * 192 + 4)
-        ts = handle.read(188)
-        if len(ts) != 188 or ts[0] != 0x47:
+        handle.seek(index * 192)
+        packet = handle.read(192)
+        ts = packet[4:]
+        if len(packet) != 192 or ts[0] != 0x47:
             reason = "Missing M2TS sync/header"
+        elif packet[0] & 0xC0:
+            # First two TP_extra_header bits are copy-permission indicators.
+            reason = "M2TS copy_permission_indicator nonzero in clear authoring"
         elif ts[1] & 0x80:
             reason = "M2TS transport_error_indicator set"
         else:
