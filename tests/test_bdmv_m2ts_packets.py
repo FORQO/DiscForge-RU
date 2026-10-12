@@ -5,6 +5,7 @@ from pathlib import Path
 
 from bdmv_preflight import inspect
 from test_bdmv_preflight import fixture
+from bdmv_fixtures import minimal_clpi
 
 
 def packet(*, tei=False, control=1, adaptation_length=0, scrambling=0):
@@ -21,6 +22,8 @@ class M2TSHeaderTests(unittest.TestCase):
             root = Path(temp)
             fixture(root)
             (root / "BDMV/STREAM/00000.m2ts").write_bytes(stream)
+            (root / "BDMV/CLIPINF/00000.clpi").write_bytes(
+                minimal_clpi(packets=max(1, len(stream) // 192)))
             return inspect(root)
 
     def test_valid_ts_header(self):
