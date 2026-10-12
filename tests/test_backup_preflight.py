@@ -60,6 +60,15 @@ class BackupPreflightTests(unittest.TestCase):
             self.assertEqual(self.inspect(bdmv)[0], [])
             self.assertIn("Missing BDMV/BACKUP", " ".join(self.inspect(bdmv)[1]))
 
+
+    def test_backup_regular_file_is_error_not_missing_warning(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp), backups=False)
+            (bdmv / "BACKUP").write_bytes(b"not a directory")
+            errors, warnings = self.inspect(bdmv)
+            self.assertIn("Invalid BDMV/BACKUP directory", errors)
+            self.assertEqual(warnings, [])
+
     def test_missing_single_backup_warns(self):
         with tempfile.TemporaryDirectory() as temp:
             bdmv = self.make_files(Path(temp))
@@ -81,6 +90,54 @@ class BackupPreflightTests(unittest.TestCase):
                 self.skipTest("Symlinks not available")
             errors, _ = self.inspect(bdmv)
             self.assertIn("Symlink forbidden", " ".join(errors))
+
+
+    def test_orphaned_backup_playlist_blocks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp))
+            (bdmv / "BACKUP/PLAYLIST/99999.mpls").write_bytes(b"stale playlist")
+            errors, warnings = self.inspect(bdmv)
+            self.assertIn("Orphaned BDMV/BACKUP/PLAYLIST/99999.mpls", errors)
+            self.assertEqual(warnings, [])
+
+    def test_orphaned_backup_clipinfo_blocks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp))
+            (bdmv / "BACKUP/CLIPINF/99999.clpi").write_bytes(b"stale clip")
+            errors, _ = self.inspect(bdmv)
+            self.assertIn("Orphaned BDMV/BACKUP/CLIPINF/99999.clpi", errors)
+
+    def test_invalid_backup_collection_directory_blocks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp))
+            duplicate = bdmv / "BACKUP/CLIPINF"
+            for child in duplicate.iterdir():
+                child.unlink()
+            duplicate.rmdir()
+            duplicate.write_text("not a directory", encoding="utf-8")
+            errors, _ = self.inspect(bdmv)
+            self.assertIn("Invalid BDMV/BACKUP/CLIPINF directory", errors)
+
+    def test_unrelated_backup_asset_is_not_assumed_to_be_navigation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp))
+            (bdmv / "BACKUP/PLAYLIST/.DS_Store").write_bytes(b"not an MPLS")
+            errors, warnings = self.inspect(bdmv)
+            self.assertEqual((errors, warnings), ([], []))
+
+    def test_symlinked_empty_backup_collection_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bdmv = self.make_files(Path(temp))
+            backup_dir = bdmv / "BACKUP/PLAYLIST"
+            for file in backup_dir.iterdir():
+                file.unlink()
+            backup_dir.rmdir()
+            try:
+                backup_dir.symlink_to(bdmv / "PLAYLIST", target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("Symlinks not available")
+            errors, _ = check_backup_metadata(bdmv, {"PLAYLIST": set(), "CLIPINF": {"00000"}})
+            self.assertIn("Symlink forbidden: BDMV/BACKUP/PLAYLIST", errors)
 
     def test_unrelated_stream_bytes_are_never_read(self):
         with tempfile.TemporaryDirectory() as temp:
