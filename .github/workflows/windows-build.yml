@@ -4,8 +4,18 @@ on:
   pull_request:
     paths:
       - 'bdmv_preflight.py'
+      - 'mpls_preflight.py'
+      - 'clpi_preflight.py'
+      - 'backup_preflight.py'
+      - 'tests/test_backup_preflight.py'
+      - 'tests/test_backup_gate.py'
+      - 'tests/test_clpi_preflight.py'
+      - 'tests/bdmv_fixtures.py'
+      - 'tests/test_mpls_preflight.py'
       - 'core.py'
       - 'tests/test_bdmv_preflight.py'
+      - 'tests/test_bdmv_adaptation_fields.py'
+      - 'tests/test_bdmv_m2ts_packets.py'
       - '.github/workflows/windows-build.yml'
   push:
     tags: [ 'v*' ]

@@ -9,6 +9,7 @@ from core import (DiscForgeError, bitrate_plan, CAPACITIES, parse_probe,
                   make_audio_command, make_video_command, write_meta, safe_name, unique_target,
                   run_command)
 from cli import _chapter
+from bdmv_fixtures import minimal_mpls, minimal_clpi
 
 DATA = {'format': {'duration': '5400.12', 'size': '1500000000'}, 'streams': [
     {'codec_type': 'video', 'codec_name': 'h264', 'width': 1920, 'height': 1080,
@@ -132,8 +133,9 @@ class AuthoringTests(unittest.TestCase):
                 for relative, magic in (
                     ('index.bdmv', b'INDX'), ('MovieObject.bdmv', b'MOBJ'),
                     ('PLAYLIST/00000.mpls', b'MPLS'), ('CLIPINF/00000.clpi', b'HDMV')):
-                    (bdmv / relative).write_bytes(magic + b'0200')
-                (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + bytes([0x47]) + bytes(187))
+                    (bdmv / relative).write_bytes(minimal_mpls() if relative.endswith('.mpls') else
+                                             minimal_clpi() if relative.endswith('.clpi') else magic + b'0200')
+                (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + b"\x47\x1f\xff\x10" + bytes(184))
 
             with patch('core._require_binary'), patch('core.run_command', side_effect=encode), \
                  patch('core.run_tsmuxer', side_effect=mux):
