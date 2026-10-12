@@ -1,7 +1,7 @@
 name: macOS alpha build
 on:
   push:
-    branches: [main, feature/macos-disc-burning]
+    branches: [main, feature/macos-disc-burning, ci/fullhd-mpls-platform-smoke-20261012]
   pull_request:
   workflow_dispatch:
 jobs:
