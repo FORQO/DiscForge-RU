@@ -118,8 +118,20 @@ def validate_playlist(path: Path, clip_ids: set[str], stream_ids: set[str]) -> t
                 check_clip(item[position:position + 5], item_index)
             warnings.append(f"MPLS multi-angle semantics not fully validated: {name}")
         cursor = item_end
+    # Parse only SubPath length envelopes. SubPath semantics (PID, STC, angles)
+    # remain unvalidated, but a declared record cannot extend beyond PlayList.
+    for subpath_index in range(subpath_count):
+        if cursor + 4 > end:
+            errors.append(f"MPLS missing SubPath {subpath_index} length: {name}")
+            return errors, warnings
+        subpath_length = u32(cursor)
+        subpath_end = cursor + 4 + subpath_length
+        if subpath_length < 4 or subpath_end > end:
+            errors.append(f"MPLS truncated SubPath {subpath_index}: {name}")
+            return errors, warnings
+        cursor = subpath_end
     if subpath_count:
-        warnings.append(f"MPLS contains {subpath_count} unvalidated SubPaths: {name}")
+        warnings.append(f"MPLS contains {subpath_count} bounded but unvalidated SubPaths: {name}")
 
     if marks:
         mark_start, mark_end = marks
