@@ -5,6 +5,8 @@ on:
     paths:
       - 'bdmv_preflight.py'
       - 'mpls_preflight.py'
+      - 'clpi_preflight.py'
+      - 'tests/test_clpi_preflight.py'
       - 'tests/bdmv_fixtures.py'
       - 'tests/test_mpls_preflight.py'
       - 'core.py'

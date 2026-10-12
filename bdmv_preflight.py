@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from mpls_preflight import validate_playlist
+from clpi_preflight import validate_clip
 
 CAPACITIES = {"BD25": 25_000_000_000, "BD50": 50_000_000_000}
 # This 2D Full HD authoring path accepts BD metadata versions 1 and 2 only.
@@ -191,6 +192,13 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
             errors.append(f"Missing matching CLIPINF/{stem}.clpi for STREAM/{stem}.m2ts")
         for stem in sorted(clip_ids - stream_ids):
             errors.append(f"Missing matching STREAM/{stem}.m2ts for CLIPINF/{stem}.clpi")
+        # Cross-check the metadata and physical 192-byte packet count for each 2D clip.
+        for stem in sorted(clip_ids & stream_ids):
+            file_errors, file_warnings = validate_clip(
+                bdmv / "CLIPINF" / f"{stem}.clpi",
+                bdmv / "STREAM" / f"{stem}.m2ts")
+            errors.extend(file_errors)
+            warnings.extend(file_warnings)
         # Cross-check every MPLS PlayItem against the matching clips and streams.
         playlist_dir = bdmv / "PLAYLIST"
         if playlist_dir.is_dir() and not playlist_dir.is_symlink():

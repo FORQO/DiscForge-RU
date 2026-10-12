@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from bdmv_preflight import inspect
-from bdmv_fixtures import minimal_mpls
+from bdmv_fixtures import minimal_mpls, minimal_clpi
 
 
 def m2ts_packet(*, control=3, length=0, flags=0, data=b''):
@@ -27,7 +27,7 @@ class AdaptationFieldTests(unittest.TestCase):
                 ('index.bdmv', b'INDX0200'),
                 ('MovieObject.bdmv', b'MOBJ0200'),
                 ('PLAYLIST/00000.mpls', minimal_mpls()),
-                ('CLIPINF/00000.clpi', b'HDMV0200'),
+                ('CLIPINF/00000.clpi', minimal_clpi()),
                 ('STREAM/00000.m2ts', packet),
             ):
                 (bdmv / name).write_bytes(content)

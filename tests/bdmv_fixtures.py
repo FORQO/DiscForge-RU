@@ -1,4 +1,21 @@
-"""Minimal synthetic MPLS section used by unit tests, not a playable disc."""
+"""Synthetic BDMV fixtures used by unit tests, not playable discs."""
+
+
+def minimal_clpi(*, packets: int = 1, version: bytes = b"0200", optional: bool = False) -> bytes:
+    """Build bounded synthetic CLPI sections (not a playable clip)."""
+    clip_info = bytearray(20)
+    clip_info[:4] = (16).to_bytes(4, "big")
+    clip_info[16:20] = packets.to_bytes(4, "big")
+    sequence = (2).to_bytes(4, "big") + b"\0\0"
+    program = (2).to_bytes(4, "big") + b"\0\0"
+    cpi = (0).to_bytes(4, "big") if optional else b""
+    header = bytearray(40)
+    header[:8] = b"HDMV" + version
+    header[8:12] = (60).to_bytes(4, "big")
+    header[12:16] = (66).to_bytes(4, "big")
+    if optional:
+        header[16:20] = (72).to_bytes(4, "big")
+    return bytes(header) + bytes(clip_info) + sequence + program + cpi
 
 
 def minimal_mpls(clip: str = "00000", *, mark_item: int = 0) -> bytes:

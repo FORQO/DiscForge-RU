@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from bdmv_preflight import CAPACITIES, inspect
-from bdmv_fixtures import minimal_mpls
+from bdmv_fixtures import minimal_mpls, minimal_clpi
 
 def fixture(root):
     b = root / "BDMV"
@@ -13,7 +13,7 @@ def fixture(root):
     for name, payload in (("index.bdmv", b"INDX0200"),
                           ("MovieObject.bdmv", b"MOBJ0200"),
                           ("PLAYLIST/00000.mpls", minimal_mpls()),
-                          ("CLIPINF/00000.clpi", b"HDMV0200"),
+                          ("CLIPINF/00000.clpi", minimal_clpi()),
                           ("STREAM/00000.m2ts", bytes(4) + b"\x47\x1f\xff\x10" + bytes(184))):
         (b / name).write_bytes(payload)
 
