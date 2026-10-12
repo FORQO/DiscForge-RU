@@ -38,6 +38,8 @@ def check_backup_metadata(
     if backup_root.is_symlink():
         return ["Symlink forbidden: BDMV/BACKUP"], warnings
     if not backup_root.is_dir():
+        if backup_root.exists():
+            return ["Invalid BDMV/BACKUP directory"], warnings
         return errors, ["Missing BDMV/BACKUP; check redundant metadata."]
 
     names = ["index.bdmv", "MovieObject.bdmv"]
