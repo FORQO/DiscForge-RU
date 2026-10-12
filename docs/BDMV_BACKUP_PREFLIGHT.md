@@ -9,7 +9,7 @@ metadata should not be published as a ready-to-burn BDMV folder.
 If the entire `BACKUP` directory or individual backup files are missing,
 DiscForge emits warnings but does not fail this specific check. This avoids
 conflating missing redundancy with corrupt redundancy; hardware compatibility
-must still be tested. Symbolic links in the backup path are rejected. Reads
+must still be tested. Orphaned backup MPLS/CLPI entries and malformed BACKUP directories are rejected. Symbolic links in the backup path are rejected. Reads
 use fixed-size 64 KiB chunks and never inspect M2TS video through this check.
 
 Test with `python -m unittest discover -s tests -v`. The included examples use
