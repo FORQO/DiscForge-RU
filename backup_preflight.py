@@ -45,6 +45,29 @@ def check_backup_metadata(
         for stem in sorted(collection_stems.get(folder, set())):
             names.append(f"{folder}/{stem}{extension}")
 
+    # Reject stale backed-up playlists/clips that are absent from the primary set.
+    for folder, suffix in (("PLAYLIST", ".mpls"), ("CLIPINF", ".clpi")):
+        backup_dir = backup_root / folder
+        if backup_dir.is_symlink():
+            errors.append(f"Symlink forbidden: BDMV/BACKUP/{folder}")
+            continue
+        if backup_dir.exists() and not backup_dir.is_dir():
+            errors.append(f"Invalid BDMV/BACKUP/{folder} directory")
+            continue
+        if not backup_dir.is_dir():
+            continue
+        expected = {f"{stem}{suffix}" for stem in collection_stems.get(folder, set())}
+        try:
+            for file in backup_dir.iterdir():
+                if file.suffix != suffix:
+                    continue
+                if file.is_symlink():
+                    errors.append(f"Symlink forbidden: BDMV/BACKUP/{folder}/{file.name}")
+                elif file.name not in expected:
+                    errors.append(f"Orphaned BDMV/BACKUP/{folder}/{file.name}")
+        except OSError as exc:
+            errors.append(f"Cannot list BDMV/BACKUP/{folder}: {exc}")
+
     for name in names:
         primary = bdmv / name
         duplicate = backup_root / name
