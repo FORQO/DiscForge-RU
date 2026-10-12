@@ -26,3 +26,24 @@ discovery from the repository root.
 The checker rejects malformed PSI syntax, mismatched PAT/PMT program numbers,
 and missing TS sync bytes. Use this result as a diagnostic **in addition to**,
 not instead of, the existing BDMV preflight and the later physical disc tests.
+
+## Optional BDMV folder preflight gate
+
+The BDMV preflight CLI also accepts an explicit `--expected-ac3 N` option.
+For each `BDMV/STREAM/*.m2ts` file it rejects absent/inconclusive PAT/PMT
+metadata and an unexpected advertised AC-3 stream count:
+
+```sh
+python bdmv_preflight.py "Output/Movie" --profile BD25 --expected-ac3 1
+```
+
+Default `bdmv_preflight.py` behavior remains unchanged unless the count is
+given; applications using the existing two-argument `inspect(root, profile)`
+API retain the structural-only check. This option is not yet automatically
+enabled in `core.create_bluray`, so it does not establish a built-in authoring
+publish gate. A fixture-backed tsMuxer integration test is required before
+making this check mandatory for automatic authoring.
+
+These checks only inspect PAT/PMT advertisements in a bounded part of M2TS,
+not audio decoding, stream selection in BD-J, audio synchronization, ISO UDF
+validity, burning or compatibility with a physical Blu-ray player.
