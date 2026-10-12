@@ -16,6 +16,81 @@ COLLECTIONS = {"PLAYLIST": ("*.mpls", b"MPLS"),
                "CLIPINF": ("*.clpi", b"HDMV"),
                "STREAM": ("*.m2ts", None)}
 
+def _check_m2ts_adaptation(ts: bytes) -> str | None:
+    """Check length-delimited adaptation fields in sampled 188-byte packets."""
+    control = (ts[3] >> 4) & 3
+    if control == 0:
+        return "Reserved M2TS adaptation_field_control"
+    if ts[3] & 0xC0:
+        return "M2TS transport_scrambling_control unsupported in clear authoring"
+    if control == 1:
+        return None
+    length = ts[4]
+    if control == 2 and length != 183:
+        return "M2TS adaptation_field_length must be 183 for adaptation-only packets"
+    if control == 3 and length > 182:
+        return "M2TS adaptation_field_length exceeds TS packet"
+    if length == 0:
+        return None
+    end = 5 + length
+    flags = ts[5]
+    cursor = 6
+    for flag, size in ((0x10, 6), (0x08, 6), (0x04, 1)):
+        if flags & flag:
+            if cursor + size > end:
+                return "M2TS adaptation field truncated PCR/OPCR/splice data"
+            cursor += size
+    if flags & 0x02:
+        if cursor >= end:
+            return "M2TS adaptation field missing private_data_length"
+        count = ts[cursor]
+        cursor += 1
+        if cursor + count > end:
+            return "M2TS adaptation field truncated private data"
+        cursor += count
+    if flags & 0x01:
+        if cursor >= end:
+            return "M2TS adaptation field missing extension_length"
+        count = ts[cursor]
+        cursor += 1
+        if cursor + count > end:
+            return "M2TS adaptation field truncated extension"
+        if count:
+            extension_end = cursor + count
+            extension_flags = ts[cursor]
+            cursor += 1
+            for flag, size in ((0x80, 2), (0x40, 3), (0x20, 5)):
+                if extension_flags & flag:
+                    if cursor + size > extension_end:
+                        return "M2TS adaptation field truncated extension payload"
+                    cursor += size
+    return None
+
+def _check_m2ts_packets(handle, count: int, filename: str, errors: list[str]) -> None:
+    """Bounded, deterministic M2TS transport-header sampling.
+
+    Every packet has a 4-byte arrival timestamp followed by 188 TS bytes.
+    This does not prove that all packets, codecs or Blu-ray timing are valid.
+    """
+    centers = (0, count // 4, count // 2, 3 * count // 4, count - 1)
+    indices = sorted({
+        index for center in centers
+        for index in range(max(0, center - 2), min(count, center + 3))
+    })
+    for index in indices:
+        handle.seek(index * 192 + 4)
+        ts = handle.read(188)
+        if len(ts) != 188 or ts[0] != 0x47:
+            reason = "Missing M2TS sync/header"
+        elif ts[1] & 0x80:
+            reason = "M2TS transport_error_indicator set"
+        else:
+            reason = _check_m2ts_adaptation(ts)
+            if reason is None:
+                continue
+        errors.append(f"{reason} at packet {index}: {filename}")
+        return
+
 @dataclass
 class Report:
     root: str
@@ -92,14 +167,11 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
                         if length % 192 != 0:
                             errors.append(f"M2TS not 192-byte aligned: {path.name}")
                         else:
-                            # Blu-ray M2TS packets: 4-byte arrival timestamp + 188-byte TS.
-                            # Sample first, middle and last packet without scanning a full BD50.
+                            # Inspect bounded short windows, including adjacent packets,
+                            # rather than trusting only three isolated sync bytes.
                             count = length // 192
                             with path.open("rb") as handle:
-                                for index in sorted({0, count // 2, count - 1}):
-                                    handle.seek(index * 192 + 4)
-                                    if handle.read(1) != b"\x47":
-                                        errors.append(f"Missing M2TS sync at packet {index}: {path.name}")
+                                _check_m2ts_packets(handle, count, path.name, errors)
                     elif magic is not None:
                         with path.open("rb") as handle:
                             header = handle.read(8)

@@ -13,7 +13,7 @@ def fixture(root):
                           ("MovieObject.bdmv", b"MOBJ0200"),
                           ("PLAYLIST/00000.mpls", b"MPLS0200"),
                           ("CLIPINF/00000.clpi", b"HDMV0200"),
-                          ("STREAM/00000.m2ts", b"\x47" * 192)):
+                          ("STREAM/00000.m2ts", bytes(4) + b"\x47\x1f\xff\x10" + bytes(184))):
         (b / name).write_bytes(payload)
 
 class BDMVPreflightTests(unittest.TestCase):
