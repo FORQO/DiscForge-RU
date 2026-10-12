@@ -9,6 +9,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from mpls_preflight import validate_playlist
 from clpi_preflight import validate_clip
+from backup_preflight import check_backup_metadata
 
 CAPACITIES = {"BD25": 25_000_000_000, "BD50": 50_000_000_000}
 # This 2D Full HD authoring path accepts BD metadata versions 1 and 2 only.
@@ -214,8 +215,9 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
                         playlist_path, clip_ids, stream_ids)
                     errors.extend(file_errors)
                     warnings.extend(file_warnings)
-        if not (bdmv / "BACKUP").is_dir():
-            warnings.append("Missing BDMV/BACKUP; check redundant metadata.")
+        backup_errors, backup_warnings = check_backup_metadata(bdmv, collection_stems)
+        errors.extend(backup_errors)
+        warnings.extend(backup_warnings)
         if not (root / "CERTIFICATE").is_dir():
             warnings.append("Missing CERTIFICATE directory.")
     if profile in CAPACITIES and size > CAPACITIES[profile]:
