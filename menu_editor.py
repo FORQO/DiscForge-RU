@@ -49,7 +49,7 @@ class MenuEditor(QWidget):
         layout.addWidget(self.preview, 1)
         remote = QHBoxLayout()
         remote.addStretch()
-        for caption, key in [('↑', 'up'), ('↓', 'down'), ('OK', 'enter'), ('Главное меню', 'home')]:
+        for caption, key in [('Вверх', 'up'), ('Вниз', 'down'), ('OK', 'enter'), ('Главное меню', 'home')]:
             button = QPushButton(caption)
             button.clicked.connect(lambda _=False, k=key: self.press(k))
             remote.addWidget(button)

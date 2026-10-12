@@ -146,7 +146,7 @@ class Window(QMainWindow):
         header.addWidget(tag)
         root.addLayout(header)
 
-        warning = QLabel('Ваш фильм → главы и меню → Blu-ray. Меню BD-J экспериментальное: '
+        warning = QLabel('Добавьте фильм, настройте главы и меню, создайте Blu-ray. Меню BD-J экспериментальное: '
                          'перед записью коллекции проверьте тестовый BD-RE на своём плеере.')
         warning.setWordWrap(True)
         warning.setObjectName('warning')
@@ -162,7 +162,7 @@ class Window(QMainWindow):
         self.movies.currentItemChanged.connect(lambda *_: self._select_media())
         left_box.addWidget(self.movies, 1)
         line = QHBoxLayout()
-        self.add_button = QPushButton('＋ Добавить видео')
+        self.add_button = QPushButton('+ Добавить видео')
         self.add_button.clicked.connect(self.add_media)
         self.remove_button = QPushButton('Удалить')
         self.remove_button.clicked.connect(self.remove_media)
@@ -237,7 +237,7 @@ class Window(QMainWindow):
         autogen = QPushButton('Автоматически')
         autogen.clicked.connect(self.auto_chapters)
         chapter_actions.addWidget(autogen)
-        manual = QPushButton('＋ Глава')
+        manual = QPushButton('+ Глава')
         manual.clicked.connect(self.add_chapter)
         chapter_actions.addWidget(manual)
         delete = QPushButton('Убрать')
@@ -280,7 +280,7 @@ class Window(QMainWindow):
         self.cancel_button = QPushButton('Отмена')
         self.cancel_button.clicked.connect(self.cancel_build)
         footer.addWidget(self.cancel_button)
-        self.build_button = QPushButton('▶  СОЗДАТЬ BLU-RAY')
+        self.build_button = QPushButton('СОЗДАТЬ BLU-RAY')
         self.build_button.setObjectName('primary')
         self.build_button.clicked.connect(self.start_build)
         footer.addWidget(self.build_button)

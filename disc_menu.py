@@ -58,7 +58,7 @@ def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
                 m, s = divmod(rem, 60)
                 entries.append((f'{i + 1:02}   Глава {i + 1}   ·   {h:02}:{m:02}:{s:02}', f'play:{i}'))
             if count > 1:
-                entries.append(('Следующие главы  →', f'page:{(p + 1) % count + 1}'))
+                entries.append(('Следующие главы', f'page:{(p + 1) % count + 1}'))
             entries.append(('←  Главное меню', 'page:0'))
             result.append(entries)
     return result
@@ -100,7 +100,7 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
         painter.setBrush(QColor('#233b51' if i == focus else bg))
         painter.drawRoundedRect(rect, 12, 12)
         label(rect.adjusted(28, 0, -20, 0), text, 30, '#ffffff', i == focus)
-    label(QRect(150, 966, 1620, 45), '↑ ↓  Выбор     OK  Открыть     Pop-up Menu / Back  Главное меню', 24, '#b9c8d9')
+    label(QRect(150, 966, 1620, 45), 'Вверх / Вниз  Выбор     OK  Открыть     Pop-up Menu / Back  Главное меню', 24, '#b9c8d9')
     painter.end()
     return image
 
