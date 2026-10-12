@@ -15,6 +15,7 @@ on:
       - 'tests/test_bdmv_m2ts_packets.py'
       - '.github/workflows/windows-build.yml'
   push:
+    branches: [ 'ci/fullhd-m2ts-copy-prefix-platform-smoke-20261012' ]
     tags: [ 'v*' ]
 jobs:
   build:
