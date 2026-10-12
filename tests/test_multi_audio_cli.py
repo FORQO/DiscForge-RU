@@ -53,8 +53,9 @@ class MultiAudioCLI(unittest.TestCase):
                           "--audio-indices", "1,0"])
 
     def test_multi_audio_budget_reserves_every_stream(self):
-        one = bitrate_plan(5400, "BD25", True)
-        three = bitrate_plan(5400, "BD25", 3)
+        # 5400s would hit the 28 Mbit/s video cap and hide the audio budget.
+        one = bitrate_plan(7200, "BD25", True)
+        three = bitrate_plan(7200, "BD25", 3)
         self.assertEqual(one - three, 2 * 640_000)
         for invalid in (-1, 9, 1.2, "2"):
             with self.subTest(invalid=invalid), self.assertRaises(DiscForgeError):
