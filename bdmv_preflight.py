@@ -7,6 +7,7 @@ import argparse
 import json
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from mpls_preflight import validate_playlist
 
 CAPACITIES = {"BD25": 25_000_000_000, "BD50": 50_000_000_000}
 # This 2D Full HD authoring path accepts BD metadata versions 1 and 2 only.
@@ -190,6 +191,17 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
             errors.append(f"Missing matching CLIPINF/{stem}.clpi for STREAM/{stem}.m2ts")
         for stem in sorted(clip_ids - stream_ids):
             errors.append(f"Missing matching STREAM/{stem}.m2ts for CLIPINF/{stem}.clpi")
+        # Cross-check every MPLS PlayItem against the matching clips and streams.
+        playlist_dir = bdmv / "PLAYLIST"
+        if playlist_dir.is_dir() and not playlist_dir.is_symlink():
+            for playlist_path in sorted(playlist_dir.glob("*.mpls")):
+                stem = playlist_path.stem
+                if (playlist_path.is_file() and not playlist_path.is_symlink()
+                        and len(stem) == 5 and stem.isascii() and stem.isdigit()):
+                    file_errors, file_warnings = validate_playlist(
+                        playlist_path, clip_ids, stream_ids)
+                    errors.extend(file_errors)
+                    warnings.extend(file_warnings)
         if not (bdmv / "BACKUP").is_dir():
             warnings.append("Missing BDMV/BACKUP; check redundant metadata.")
         if not (root / "CERTIFICATE").is_dir():

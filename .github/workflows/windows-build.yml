@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'bdmv_preflight.py'
+      - 'mpls_preflight.py'
+      - 'tests/bdmv_fixtures.py'
+      - 'tests/test_mpls_preflight.py'
       - 'core.py'
       - 'tests/test_bdmv_preflight.py'
       - 'tests/test_bdmv_adaptation_fields.py'
