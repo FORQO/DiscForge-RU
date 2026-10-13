@@ -13,7 +13,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QAction, QColor, QFont, QDesktopServices
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPixmap, QColor, QFont, QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
@@ -32,9 +32,12 @@ from menu_editor import MenuEditor
 from disc_menu import MenuDesign, initialize_fonts
 from image_tools import ImageTools
 from audio_panel import AudioPanel
+from subtitle_panel import SubtitlePanel
+from subtitles import select_subtitles, validate_selection
 from audio_selection import selected_tracks, select_tracks
 
-VERSION = '1.1.1'
+VERSION = '1.2.0'
+LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
 
 
 def timecode(seconds: float) -> str:
@@ -174,13 +177,16 @@ class Window(QMainWindow):
         super().__init__()
         initialize_fonts()
         self.setFont(QFont('Noto Sans', 10))
-        self.setWindowTitle('DiscForge RU — мастер Blu-ray | ' + VERSION)
+        self.setWindowIcon(QIcon(str(LOGO)))
+        self.ui_theme = 'graphite'
+        self.setWindowTitle('DiskForge — мастер Blu-ray | ' + VERSION)
         self.resize(1190, 760)
         self.setMinimumSize(920, 620)
         self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
         self.chapters: dict[str, list[float]] = {}
         self.audio_selections: dict[str, list[int]] = {}
+        self.subtitle_selections = {}
         self.scan_thread: ScanThread | None = None
         self.build_thread: BuildThread | None = None
         self.build_started = None
@@ -201,12 +207,14 @@ class Window(QMainWindow):
         root.setContentsMargins(18, 16, 18, 12)
 
         header = QHBoxLayout()
-        heading = QLabel('◆  DiscForge <span style="color:#67a9ff">RU</span>')
+        heading = QLabel()
+        heading.setPixmap(QPixmap(str(LOGO)).scaled(120, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        heading.setAccessibleName('DiskForge')
         heading.setTextFormat(Qt.RichText)
         heading.setObjectName('brand')
         header.addWidget(heading)
         header.addStretch()
-        tag = QLabel('БЕСПЛАТНО  ·  OPEN SOURCE  ·  1.0')
+        tag = QLabel('БЕСПЛАТНО  ·  OPEN SOURCE  ·  ' + VERSION)
         tag.setObjectName('tag')
         header.addWidget(tag)
         root.addLayout(header)
@@ -299,7 +307,7 @@ class Window(QMainWindow):
             paths.addRow(label, row)
         build_box.addWidget(path_box)
         info = QLabel('Без перекодирования сохраняются исходное видео и выбранные совместимые аудиодорожки. При полном перекодировании: H.264 1080p 23,976 кадр/с + AC-3. '
-                      'Субтитры и остальные аудиодорожки пока не переносятся. '
+                      'Выберите аудио и субтитры в соответствующих разделах. '
                       'Сначала проверьте ISO на программном проигрывателе и бытовом плеере.')
         info.setWordWrap(True)
         info.setObjectName('hint')
@@ -312,6 +320,10 @@ class Window(QMainWindow):
         self.audio_panel = AudioPanel()
         self.audio_panel.selection_changed.connect(self._audio_changed)
         self.tabs.addTab(self.audio_panel, '2 · Аудио')
+
+        self.subtitle_panel = SubtitlePanel()
+        self.subtitle_panel.selection_changed.connect(self._subtitles_changed)
+        self.tabs.addTab(self.subtitle_panel, '3 · Субтитры')
 
         chapter_tab = QWidget()
         chapter_box = QVBoxLayout(chapter_tab)
@@ -357,17 +369,17 @@ class Window(QMainWindow):
         note.setObjectName('hint')
         note.setWordWrap(True)
         chapter_box.addWidget(note)
-        self.tabs.addTab(chapter_tab, '3 · Главы')
+        self.tabs.addTab(chapter_tab, '4 · Главы')
 
         self.menu_editor = MenuEditor()
         self.menu_title = self.menu_editor.title
         menu_scroll = QScrollArea()
         menu_scroll.setWidgetResizable(True)
         menu_scroll.setWidget(self.menu_editor)
-        self.tabs.addTab(menu_scroll, '4 · Меню')
+        self.tabs.addTab(menu_scroll, '5 · Меню')
         self.image_tools = ImageTools(self.menu_editor)
         self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(menu_scroll))
-        self.tabs.addTab(self.image_tools, '5 · Запись ISO')
+        self.tabs.addTab(self.image_tools, '6 · Запись ISO')
 
         logbar = QHBoxLayout()
         logbar.addWidget(QLabel('ЖУРНАЛ РАБОТЫ'))
@@ -428,17 +440,37 @@ class Window(QMainWindow):
             action = QAction(text, self)
             action.triggered.connect(callback)
             project.addAction(action)
+        theme_menu = self.menuBar().addMenu('Темы')
+        self.theme_actions = {}
+        self.theme_group = QActionGroup(self)
+        self.theme_group.setExclusive(True)
+        for label, key in [('Графит · DiskForge', 'graphite'), ('Синяя · классическая', 'blue')]:
+            action = QAction(label, self, checkable=True)
+            self.theme_group.addAction(action)
+            self.theme_actions[key] = action
+            theme_menu.addAction(action)
+            action.triggered.connect(lambda checked=False, key=key: self.set_theme(key, save=True))
         help_menu = self.menuBar().addMenu('Справка')
         about = QAction('О программе', self)
         about.triggered.connect(self.about)
         help_menu.addAction(about)
 
     def _restore(self) -> None:
-        for key, val in load_settings().items():
-            self.path_fields[key].setText(val)
+        settings = load_settings()
+        for key, val in settings.items():
+            if key in self.path_fields:
+                self.path_fields[key].setText(val)
+        self.set_theme(settings.get('ui_theme', 'graphite'))
+
+    def set_theme(self, key, save=False):
+        self.ui_theme = key if key in self.theme_actions else 'graphite'
+        QApplication.instance().setStyleSheet(interface_style(self.ui_theme))
+        self.theme_actions[self.ui_theme].setChecked(True)
+        if save:
+            self._save_config()
 
     def _config(self) -> dict[str, str]:
-        return {key: edit.text().strip() for key, edit in self.path_fields.items()}
+        return dict({key: edit.text().strip() for key, edit in self.path_fields.items()}, ui_theme=self.ui_theme)
 
     def _save_config(self) -> None:
         try:
@@ -490,6 +522,11 @@ class Window(QMainWindow):
                 info = select_tracks(info, self.audio_selections[path])
             except ValueError as exc:
                 info, error = None, str(exc)
+        if info and path in self.subtitle_selections:
+            try:
+                info = select_subtitles(info, self.subtitle_selections[path])
+            except ValueError as exc:
+                info, error = None, str(exc)
         for i in range(self.movies.count()):
             item = self.movies.item(i)
             if item.data(Qt.UserRole) == path:
@@ -517,7 +554,7 @@ class Window(QMainWindow):
             self.recommendation.setText('Добавьте фильм для анализа совместимости.')
             return
         mode, reason = info.copy_report.recommendation(info, CAPACITIES[self.profile.currentText()])
-        note = '\nАнализ консервативный; совместимость на конкретном плеере не гарантируется. Дорожки выбираются в разделе «Аудио»; субтитры пока не переносятся.'
+        note = '\nАнализ консервативный; совместимость на конкретном плеере не гарантируется. Дорожки выбираются в разделе «Аудио»; субтитры — в разделе «Субтитры».'
         self.recommendation.setText(reason+note)
 
     def _use_recommendation(self):
@@ -540,10 +577,27 @@ class Window(QMainWindow):
         self.menu_editor.set_audio(self.media[path])
         self._update_recommendation()
 
+    def _subtitles_changed(self, items):
+        path = self._selected_path()
+        info = self.media.get(path)
+        if info is None:
+            return
+        try:
+            self.media[path] = select_subtitles(info, items)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Субтитры', str(exc))
+            self.subtitle_panel.set_media(info)
+            return
+        self.subtitle_selections[path] = list(items)
+        self.subtitle_panel.info = self.media[path]
+        self.menu_editor.set_subtitles(self.media[path])
+
     def _select_media(self) -> None:
         path = self._selected_path()
         info = self.media.get(path or '')
         self.audio_panel.set_media(info)
+        self.subtitle_panel.set_media(info)
+        self.menu_editor.set_subtitles(info)
         self.menu_editor.set_audio(info)
         self.menu_editor.set_chapters(self.chapters.get(path, [0.0]))
         self.chapter_list.clear()
@@ -645,6 +699,8 @@ class Window(QMainWindow):
         self.media.pop(path, None)
         self.chapters.pop(path, None)
         self.audio_selections.pop(path, None)
+        self.subtitle_selections.pop(path, None)
+        self.subtitle_panel.external.pop(path, None)
         self._select_media()
         self._refresh_buttons()
 
@@ -653,6 +709,7 @@ class Window(QMainWindow):
         busy = bool(self.build_thread and self.build_thread.isRunning())
         editable = self._selected_path() in self.media and not scanning and not busy
         self.audio_panel.setEnabled(editable)
+        self.subtitle_panel.setEnabled(editable)
         self.add_chapter_button.setEnabled(editable)
         self.auto_chapter_button.setEnabled(editable)
         self.chapter_time.setEnabled(editable)
@@ -702,7 +759,7 @@ class Window(QMainWindow):
             + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
             + 'Режим: ' + self.processing_mode.currentText() + '\n'
             + '\n'.join(info.name + ': ' + (info.copy_report.recommendation(info, CAPACITIES[self.profile.currentText()])[1] if info.copy_report else 'анализ при сборке') for info, _ in jobs) + '\n'
-            + 'Субтитры пока не переносятся. Исходники сохраняются.\n\nНачать сборку?',
+            + 'Выбранные субтитры войдут в ISO отдельными дорожками. Исходники сохраняются.\n\nНачать сборку?',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if response != QMessageBox.Yes:
             return
@@ -770,7 +827,7 @@ class Window(QMainWindow):
         return {'format_version': 1, 'title': self.menu_title.text(),
                 'menu': self.menu_editor.settings(),
                 'files': [self.movies.item(i).data(Qt.UserRole) for i in range(self.movies.count())],
-                'audio': self.audio_selections, 'chapters': self.chapters, 'profile': self.profile.currentText(),
+                'subtitles': self.subtitle_selections, 'audio': self.audio_selections, 'chapters': self.chapters, 'profile': self.profile.currentText(),
                 'encoder': self.encoder.currentIndex(), 'encode_speed': self.encode_speed.currentIndex(), 'processing_mode': MODES[self.processing_mode.currentIndex()], 'output': self.output_folder.text().strip(), 'as_iso': self.output_mode.currentIndex() == 0}
 
     def save_project(self) -> None:
@@ -817,6 +874,10 @@ class Window(QMainWindow):
                         any(type(i) is not int or i < 0 for i in indices) or len(indices) != len(set(indices))):
                     raise ValueError('Неверный выбор аудиодорожек')
                 loaded_audio[str(Path(p).resolve())] = indices
+            raw_subtitles = data.get('subtitles', {})
+            if not isinstance(raw_subtitles, dict):
+                raise ValueError('Неверный раздел субтитров')
+            loaded_subtitles = {str(Path(p).resolve()): validate_selection(items) for p, items in raw_subtitles.items()}
             loaded_chapters = {}
             normalized_paths = []
             for p in paths:
@@ -841,6 +902,7 @@ class Window(QMainWindow):
             self.output_mode.setCurrentIndex(0 if data.get('as_iso', True) else 1)
             self.chapters.update(loaded_chapters)
             self.audio_selections.update(loaded_audio)
+            self.subtitle_selections.update(loaded_subtitles)
             self._queue_scan(normalized_paths)
             self._message('Проект открыт: ' + path)
         except (OSError, ValueError, TypeError, OverflowError, DiscForgeError) as exc:
@@ -855,6 +917,8 @@ class Window(QMainWindow):
         self.media.clear()
         self.chapters.clear()
         self.audio_selections.clear()
+        self.subtitle_selections.clear()
+        self.subtitle_panel.external.clear()
         self.chapter_list.clear()
         self.menu_editor.apply_design(MenuDesign('Моя коллекция Blu-ray'))
         self.menu_editor.enabled.setChecked(True)
@@ -863,10 +927,11 @@ class Window(QMainWindow):
         return True
 
     def about(self) -> None:
-        QMessageBox.about(self, 'DiscForge RU',
-            f'DiscForge RU {VERSION}\nОткрытый исходный код (MIT).\n\n'
-            'Анализ, выбор аудио, главы, BDMV/ISO и редактируемое меню BD-J.\n'
-            'Следующие этапы: субтитры, расширение форматов звука, запись и UHD.')
+        box = QMessageBox(self)
+        box.setWindowTitle('О DiskForge')
+        box.setIconPixmap(QPixmap(str(LOGO)).scaled(192, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        box.setText(f'DiskForge {VERSION} · MIT\n\nBlu-ray ISO, аудио и субтитры с выбором пультом, главы и редактируемое меню BD-J.')
+        box.exec()
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls() and not (self.build_thread and self.build_thread.isRunning()):
@@ -912,6 +977,23 @@ QStatusBar { color: #9fb1c9; }
 '''
 
 
+def interface_style(theme):
+    if theme == 'blue':
+        return STYLE
+    palette = {'#101724':'#202123', '#e3eaf6':'#eeeef0', '#95a3bb':'#abaeb3',
+        '#192234':'#292b2e', '#b9c9e0':'#c8c9cc', '#9bacc3':'#b5b6bb',
+        '#182337':'#282a2d', '#34445e':'#484b50', '#3268b4':'#825329',
+        '#33435a':'#45484d', '#273952':'#383b40', '#3b5573':'#56595e',
+        '#355170':'#494d52', '#1b2636':'#292b2e', '#62718a':'#777b80',
+        '#28354a':'#3b3e43', '#2478db':'#e58a35', '#3491ff':'#f3a24f',
+        '#1d2a3d':'#2d2f33', '#304259':'#45484d', '#2b527f':'#5f4632',
+        '#1d293b':'#2b2d31', '#30435a':'#484b50', '#3287e5':'#ba6d2a', '#9fb1c9':'#b8bbc0'}
+    value = STYLE
+    for old, new in palette.items():
+        value = value.replace(old, new)
+    return value + '\nQPushButton#primary { color: #1c1c1c; }\nQMenu::item:selected { background: #825329; }'
+
+
 def main() -> int:
     # Packaging smoke test: exercise the same window and resources offscreen.
     smoke_report = None
@@ -928,7 +1010,7 @@ def main() -> int:
         w.show()
         app.processEvents()
         resources = Path(__file__).parent
-        checks = {'window': w.tabs.count() == 5,
+        checks = {'window': w.tabs.count() == 6,
                   'menu_image': not w.menu_editor.preview.image.isNull(),
                   'xlet': (resources / 'assets/bdj/menu.jar').is_file(),
                   'windows_iso': sys.platform != 'win32' or (resources / 'tools/windows_iso.ps1').is_file()}

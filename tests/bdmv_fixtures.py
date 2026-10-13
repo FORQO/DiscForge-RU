@@ -37,16 +37,19 @@ def minimal_mpls(clip: str = "00000", *, mark_item: int = 0) -> bytes:
     return bytes(head) + playlist + marks
 
 
-def audio_mpls(languages=()):
+def audio_mpls(languages=(), subtitles=()):
     """One PlayItem with a real primary audio STN envelope and a chapter."""
     data = bytearray(minimal_mpls())
     stn = bytearray(16)
     stn[4] = 1
     stn[5] = len(languages)
+    stn[6] = len(subtitles)
     # stream entry (type 1 + PID), AVC stream attributes
     stn += bytes([3, 1, 0x10, 0x11, 2, 0x1b, 0x61])
     for i, lang in enumerate(languages):
         stn += bytes([3, 1, 0x11, i, 5, 0x81, 0x31]) + lang.encode('ascii')
+    for i, lang in enumerate(subtitles):
+        stn += bytes([3, 1, 0x12, i, 4, 0x90]) + lang.encode('ascii')
     if len(stn) % 2:
         stn += b'\0'
     stn[:2] = (len(stn)-2).to_bytes(2, 'big')

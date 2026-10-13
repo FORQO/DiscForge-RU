@@ -9,7 +9,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = '1.1.1'
+VERSION = '1.2.0'
 DOWNLOADS = {
     'ffmpeg.zip': ('https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip',
                    '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'),
@@ -79,7 +79,9 @@ def main():
         shutil.copy2(python_license, app/'licenses/Python-LICENSE.txt')
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(repo/name, app/name)
-    shutil.copy2(repo/'docs/USER_GUIDE.md', app/'USER_GUIDE.md')
+    shutil.copytree(repo/'docs', app/'docs', dirs_exist_ok=True)
+    (app/'USER_GUIDE.md').write_text((repo/'docs/USER_GUIDE.md').read_text('utf-8').replace('(README.md)', '(docs/README.md)').replace('(AUDIO.md)', '(docs/AUDIO.md)').replace('(SUBTITLES.md)', '(docs/SUBTITLES.md)'), encoding='utf-8')
+    shutil.copy2(repo/'assets/brand/diskforge-logo.png', app/'DiskForge.png')
     report = output/'verification.json'
     subprocess.run([str(app/'DiscForge_RU.exe'), '--self-test', str(report)], timeout=60, check=True,
                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))

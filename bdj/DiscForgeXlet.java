@@ -19,6 +19,7 @@ import javax.tv.xlet.Xlet;
 import javax.tv.xlet.XletContext;
 import org.bluray.media.PlaybackControl;
 import org.bluray.media.PrimaryAudioControl;
+import org.bluray.media.SubtitlingControl;
 import org.bluray.ui.event.HRcEvent;
 import org.dvb.event.EventManager;
 import org.dvb.event.UserEvent;
@@ -37,6 +38,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     private Player player;
     private int page, focus;
     private int selectedAudio = 1;
+    private int selectedSubtitle = 0;
     private volatile boolean audioPopup;
     private volatile boolean playing, stopped, busy;
     private String pending;
@@ -125,6 +127,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         page = number; focus = 0;
         int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
         for (int i = 0; i < count; i++) {
+            if (("sub:" + selectedSubtitle).equals(config.getProperty("page." + page + "." + i))) focus = i;
             if (("audio:" + selectedAudio).equals(config.getProperty("page." + page + "." + i))) focus = i;
         }
         loadFocus();
@@ -149,7 +152,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (key == 461 || key == KeyEvent.VK_ESCAPE || key == KeyEvent.VK_BACK_SPACE || key == HRcEvent.VK_POPUP_MENU) {
             if (busy || pending != null) return;
             if (audioPopup) queue("resume");
-            else if (playing && key == HRcEvent.VK_POPUP_MENU && audioCount() > 0) queue("audio-popup");
+            else if (playing && key == HRcEvent.VK_POPUP_MENU && (audioCount() > 0 || subtitleCount() > 0)) queue("audio-popup");
             else queue("home");
             return;
         }
@@ -171,6 +174,37 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     }
 
     private int audioCount() { return Integer.parseInt(config.getProperty("audio.count", "0")); }
+
+    private int subtitleCount() { return Integer.parseInt(config.getProperty("subtitle.count", "0")); }
+
+    private SubtitlingControl subtitleControl() throws Exception {
+        SubtitlingControl control = (SubtitlingControl) player.getControl("org.bluray.media.SubtitlingControl");
+        if (control == null) throw new Exception("Subtitle selection unavailable on this player");
+        return control;
+    }
+
+    private void selectSubtitle(int number) throws Exception {
+        if (number < 0 || number > subtitleCount()) throw new Exception("Invalid subtitle stream");
+        if (player != null) {
+            SubtitlingControl control = subtitleControl();
+            if (number > 0) {
+                int[] available = control.listAvailableStreamNumbers();
+                boolean found = false;
+                for (int i = 0; i < available.length; i++) if (available[i] == number) found = true;
+                if (!found) throw new Exception("Subtitle stream unavailable: " + number);
+                // Reassert display state for the new decoder, including players
+                // that do not carry the old display flag across stream changes.
+                control.setSubtitling(false);
+                control.selectStreamNumber(number);
+            }
+            control.setSubtitling(number != 0);
+            if (control.isSubtitlingOn() != (number != 0) ||
+                (number > 0 && control.getCurrentStreamNumber() != number))
+                throw new Exception("Player did not select subtitle stream " + number);
+        }
+        selectedSubtitle = number;
+        System.out.println("DiskForge: selected subtitle " + number);
+    }
 
     private PrimaryAudioControl audioControl() throws Exception {
         PrimaryAudioControl control = (PrimaryAudioControl) player.getControl("org.bluray.media.PrimaryAudioControl");
@@ -225,17 +259,31 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                     }
                 }
                 else if (action.equals("home")) { closePlayer(); loadPage(0); scene.setVisible(true); }
-                else if (action.equals("resume") || (audioPopup && action.equals("page:0"))) resumeMovie();
+                else if (action.equals("resume") || (audioPopup && (action.equals("page:0") || action.equals("play:0")))) resumeMovie();
                 else if (action.equals("audio-popup")) {
                     if (player.setRate(0.0f) != 0.0f) throw new Exception("Player could not pause for audio menu");
                     playing = false;
                     audioPopup = true;
-                    int current = audioControl().getCurrentStreamNumber();
-                    if (current >= 1 && current <= audioCount()) selectedAudio = current;
-                    int first = Integer.parseInt(config.getProperty("audio.page"));
-                    loadPage(first + (selectedAudio - 1) / 5);
+                    if (audioCount() > 0) {
+                        int current = audioControl().getCurrentStreamNumber();
+                        if (current >= 1 && current <= audioCount()) selectedAudio = current;
+                    }
+                    if (subtitleCount() > 0) {
+                        SubtitlingControl control = subtitleControl();
+                        int current = control.isSubtitlingOn() ? control.getCurrentStreamNumber() : 0;
+                        if (current >= 0 && current <= subtitleCount()) selectedSubtitle = current;
+                    }
+                    if (audioCount() > 0 && subtitleCount() > 0) loadPage(0);
+                    else if (subtitleCount() > 0)
+                        loadPage(Integer.parseInt(config.getProperty("subtitle.page")) + selectedSubtitle / 5);
+                    else loadPage(Integer.parseInt(config.getProperty("audio.page")) + (selectedAudio - 1) / 5);
                     scene.setVisible(true);
                     System.out.println("DiscForge: audio popup at " + player.getMediaTime().getSeconds());
+                }
+                else if (action.startsWith("sub:")) {
+                    selectSubtitle(Integer.parseInt(action.substring(4)));
+                    if (audioPopup) resumeMovie();
+                    else loadPage(0);
                 }
                 else if (action.startsWith("audio:")) {
                     selectAudio(Integer.parseInt(action.substring(6)));
@@ -260,6 +308,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                         if (control == null) throw new Exception("Chapter control unavailable");
                         control.skipToMark(mark);
                         if (audioCount() > 0) selectAudio(selectedAudio);
+                        if (subtitleCount() > 0) selectSubtitle(selectedSubtitle);
                         System.out.println("DiscForge: play chapter " + mark);
                         playing = true;
                         scene.setVisible(false);

@@ -51,6 +51,8 @@ class MediaInfo:
     copy_report: object = None
     audio_streams: tuple = ()
     selected_audio: tuple | None = None
+    subtitle_streams: tuple = ()
+    selected_subtitles: tuple = ()
 
     @property
     def is_hdr(self) -> bool:
@@ -121,6 +123,7 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
         audio_tracks=len(audios), subtitle_tracks=len(subs),
         video_details=dict(v), audio_details=dict(a),
         audio_streams=tuple(dict(s) for s in audios),
+        subtitle_streams=tuple(dict(s) for s in subs),
     )
 
 
@@ -267,7 +270,7 @@ def validate_chapters(chapters: Sequence[float], duration: float | None = None) 
 
 
 def write_meta(path: Path, video: Path, audio: Path | None,
-               chapters: Sequence[float] | None = None, fps: str = '23.976') -> None:
+               chapters: Sequence[float] | None = None, fps: str = '23.976', *, subtitles=(), width=1920, height=1080) -> None:
     # Convert to slash separators; absolute paths are encoded as UTF-8 and quoted.
     def escaped(f: Path) -> str:
         return '"' + f.resolve().as_posix().replace('"', '') + '"'
@@ -287,6 +290,8 @@ def write_meta(path: Path, video: Path, audio: Path | None,
     tracks = audio if isinstance(audio, list) else [(audio,{})] if audio is not None else []
     for target, stream in tracks:
         content += f'A_AC3, {escaped(target)}, lang={language(stream)}\n'
+    from subtitles import meta_lines
+    content += meta_lines(subtitles, fps, width, height)
     path.write_text(content, encoding='utf-8')
 
 
@@ -454,6 +459,13 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             info = select_tracks(info, info.selected_audio)
         except ValueError as exc:
             raise DiscForgeError(str(exc)) from exc
+    from subtitles import select_subtitles, prepare_subtitles, menu_subtitles
+    info = select_subtitles(info, info.selected_subtitles)
+    if menu is not None:
+        if not isinstance(menu, MenuDesign):
+            raise DiscForgeError('Некорректное меню проекта.')
+        from disc_audio import menu_tracks
+        menu = replace(menu, audio_tracks=menu_tracks(info), subtitle_tracks=menu_subtitles(info))
     info, selected_mode, recommendation = prepare_processing(info, processing_mode, profile, ffprobe, ffmpeg, cancel, log)
     log(recommendation)
     copying = selected_mode != 'encode'
@@ -497,6 +509,9 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         log('Видео копируется без изменения изображения и частоты кадров. ' + ('Звук преобразуется в AC-3.' if selected_mode == 'video_copy' else 'Звук копируется без перекодирования.'))
     with tempfile.TemporaryDirectory(prefix='DiscForge_work_', dir=root) as tmp, pending_image(target) as pending_iso:
         work = Path(tmp)
+        subtitle_outputs = prepare_subtitles(info, work, ffmpeg, cancel, log, run_command)
+        if subtitle_outputs:
+            log(f'Субтитров: {len(subtitle_outputs)}. Отдельные дорожки PGS, без наложения на видео.')
         video = work / 'video.h264'
         audio = [(work / f'audio_{i}.ac3', stream) for i, stream in enumerate(tracks)]
         meta = work / 'project.meta'
@@ -516,7 +531,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         report('encode', 1)
         if copying and signature_changed(info):
             raise DiscForgeError('Файл изменился при копировании. Сборка остановлена.')
-        write_meta(meta, video, audio, chapters, fps=info.copy_report.fps if copying else '23.976')
+        write_meta(meta, video, audio, chapters, fps=info.copy_report.fps if copying else '23.976',
+                   subtitles=subtitle_outputs, width=info.width if copying else 1920, height=info.height if copying else 1080)
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         # Author to an intermediate output first; move to destination only on success.
@@ -538,6 +554,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             log('Создаём интерактивное меню BD-J…')
             from disc_audio import bind_tracks, menu_tracks
             menu = bind_tracks(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_tracks(info))
+            from disc_audio import bind_subtitles
+            menu = bind_subtitles(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_subtitles(info))
             install_menu(author_target, menu, list(chapters))
             progress(94)
         if iso and menu is None:

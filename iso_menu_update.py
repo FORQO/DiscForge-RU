@@ -116,8 +116,12 @@ def open_menu(root):
         count = int(props['pages'])
         if not 1 <= count <= 256:
             raise ValueError('Некорректное количество страниц.')
-        from disc_audio import playlist_tracks
+        from disc_audio import playlist_tracks, playlist_subtitles
         tracks = playlist_tracks(playlists[0])
+        captions = playlist_subtitles(playlists[0])
+        sub_count = int(props.get('subtitle.count', '0'))
+        if sub_count and (sub_count != len(captions) or not 1 <= int(props.get('subtitle.page', '0')) < count):
+            raise ValueError('Субтитры меню не совпадают с плейлистом.')
         audio_count = int(props.get('audio.count', '0'))
         if audio_count and (audio_count != len(tracks) or not 1 <= int(props.get('audio.page', '0')) < count):
             raise ValueError('Аудиодорожки меню не совпадают с плейлистом.')
@@ -127,12 +131,14 @@ def open_menu(root):
                 raise ValueError('Некорректное количество кнопок.')
             for i in range(n):
                 action = props[f'page.{page}.{i}']
-                match = re.fullmatch(r'(page|play|audio):(\d+)', action)
+                match = re.fullmatch(r'(page|play|audio|sub):(\d+)', action)
                 limit = count if match and match[1] == 'page' else len(chapters)
                 if match and match[1] == 'audio':
                     limit = len(tracks)+1
                     if int(match[2]) == 0:
                         raise ValueError('Некорректная аудиодорожка.')
+                if match and match[1] == 'sub':
+                    limit = len(captions)+1
                 if not match or int(match[2]) >= limit:
                     raise ValueError('Некорректное действие кнопки.')
         design = None
@@ -142,8 +148,8 @@ def open_menu(root):
                 raise ValueError('Неподдерживаемая версия настроек меню.')
             raw = document['design']
             design = MenuDesign.from_dict(raw['title'], raw)
-            from disc_audio import bind_tracks
-            design = bind_tracks(design, playlists[0])
+            from disc_audio import bind_tracks, bind_subtitles
+            design = bind_subtitles(bind_tracks(design, playlists[0]), playlists[0])
             if design.background:
                 from disc_menu import background_image
                 background_image(design.background)
@@ -232,8 +238,8 @@ def update_iso(source, destination, design, cancel, log=lambda _: None, progress
                 playlist = overlay / 'BDMV/PLAYLIST/00000.mpls'
                 playlist.parent.mkdir(parents=True)
                 shutil.copyfile(root / 'BDMV/PLAYLIST/00000.mpls', playlist)
-                from disc_audio import bind_tracks
-                design = bind_tracks(design, playlist)
+                from disc_audio import bind_tracks, bind_subtitles
+                design = bind_subtitles(bind_tracks(design, playlist), playlist)
                 install_menu(overlay, design, chapters)
             log('Копируем содержимое в новый ISO без перекодирования и повторного мультиплексирования…')
             create_iso(root, pending, CAPACITIES[profile], cancel, log, progress, overlay=overlay)

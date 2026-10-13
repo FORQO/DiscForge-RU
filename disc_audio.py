@@ -21,7 +21,7 @@ def track_label(track, number, locale):
     return f'{number:02} · {name}' + (' · ' + track['title'] if track['title'] else '')
 
 
-def playlist_tracks(path):
+def playlist_tracks(path, *, subtitles=False):
     """Read bounded primary audio STN entries, requiring consistent PlayItems.
 
     BD-J stream numbers are one-based positions, never ffprobe indices or PIDs.
@@ -48,10 +48,10 @@ def playlist_tracks(path):
         stn = item+32
         stn_end = stn+2+u16(stn)
         require(stn+16 <= stn_end <= item_end)
-        videos, audios = data[stn+4], data[stn+5]
-        require(audios <= 32)
+        videos, audios, captions = data[stn+4], data[stn+5], data[stn+6]
+        require(audios <= 32 and captions <= 32)
         pos, tracks = stn+16, []
-        for index in range(videos+audios):
+        for index in range(videos+audios+(captions if subtitles else 0)):
             require(pos < stn_end)
             entry_end = pos+1+data[pos]
             require(pos+4 <= entry_end < stn_end)
@@ -59,10 +59,15 @@ def playlist_tracks(path):
             pid = u16(pos+2)
             attr_end = entry_end+1+data[entry_end]
             require(entry_end+2 <= attr_end <= stn_end)
-            if index >= videos:
+            if videos <= index < videos+audios and not subtitles:
                 require(stream_type == 1 and entry_end+6 <= attr_end and
                         data[entry_end+1] in (0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0xa1, 0xa2))
                 lang = data[entry_end+3:entry_end+6].decode('ascii', errors='replace').lower()
+                require(bool(re.fullmatch('[a-z]{3}', lang)))
+                tracks.append(dict(language=lang, title='', pid=pid))
+            if subtitles and index >= videos+audios:
+                require(stream_type == 1 and entry_end+5 <= attr_end and data[entry_end+1] == 0x90)
+                lang = data[entry_end+2:entry_end+5].decode('ascii', errors='replace').lower()
                 require(bool(re.fullmatch('[a-z]{3}', lang)))
                 tracks.append(dict(language=lang, title='', pid=pid))
             pos = attr_end
@@ -83,3 +88,18 @@ def bind_tracks(design, playlist, metadata=None):
     tracks = [dict(language=t['language'], title=(labels[i]['title'] if i < len(labels)
                    and labels[i]['language'] == t['language'] else '')) for i, t in enumerate(actual)]
     return replace(design, audio_tracks=tracks)
+
+
+def playlist_subtitles(path):
+    return playlist_tracks(path, subtitles=True)
+
+
+def bind_subtitles(design, playlist, metadata=None):
+    actual = playlist_subtitles(playlist)
+    labels = design.subtitle_tracks if metadata is None else metadata
+    if metadata is not None and (len(labels) != len(actual) or
+            any(a['language'] != b['language'] for a, b in zip(labels, actual))):
+        raise ValueError('Субтитры меню не совпадают с собранным плейлистом.')
+    tracks = [dict(language=t['language'], title=(labels[i]['title'] if i < len(labels)
+                   and labels[i]['language'] == t['language'] else '')) for i, t in enumerate(actual)]
+    return replace(design, subtitle_tracks=tracks)

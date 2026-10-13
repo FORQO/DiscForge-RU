@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--no-audio', action='store_true', help='Не включать звук')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
     b.add_argument('--menu-title', help='Добавить меню BD-J с этим названием (требует PySide6)')
-    b.add_argument('--menu-theme', choices=['midnight', 'graphite', 'cinema'], default='midnight')
+    b.add_argument('--menu-theme', choices=['midnight', 'graphite', 'cinema'], default='graphite')
     b.add_argument('--menu-language', choices=['ru', 'en'], default='ru')
     b.add_argument('--menu-background', help='Изображение фона меню')
     args = p.parse_args(argv)
