@@ -6,6 +6,7 @@ see THIRD_PARTY_NOTICES.md. Hardware interoperability is experimental.
 from __future__ import annotations
 
 import io
+import math
 import shutil
 import struct
 import zipfile
@@ -44,24 +45,93 @@ class MenuDesign:
 
 
 def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
+    """Make every scene reachable in both directions with at most eight buttons.
+
+    Five chapter buttons leave room for Previous, Next and Home on middle
+    pages, matching the eight focus rectangles in the packaged BD-J Xlet.
+    """
     if not chapters or len(chapters) > 999:
         raise ValueError('Для меню требуется от 1 до 999 глав.')
+    previous = None
+    for timestamp in chapters:
+        if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
+            raise ValueError('Отметки глав должны быть конечными числами.')
+        try:
+            valid = math.isfinite(timestamp) and timestamp >= 0
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise ValueError('Отметки глав должны быть конечными неотрицательными числами.')
+        if previous is None and timestamp != 0:
+            raise ValueError('Первая глава должна начинаться с 00:00:00.')
+        if previous is not None and timestamp <= previous:
+            raise ValueError('Отметки глав должны строго возрастать.')
+        previous = timestamp
     result = [[('Смотреть фильм', 'play:0')]]
     if len(chapters) > 1:
         result[0].append(('Выбор главы', 'page:1'))
-        count = (len(chapters) + 5) // 6
+        per_page = 5
+        count = (len(chapters) + per_page - 1) // per_page
         for p in range(count):
             entries = []
-            for i in range(p * 6, min((p + 1) * 6, len(chapters))):
+            for i in range(p * per_page, min((p + 1) * per_page, len(chapters))):
                 sec = int(chapters[i])
                 h, rem = divmod(sec, 3600)
                 m, s = divmod(rem, 60)
                 entries.append((f'{i + 1:02}   Глава {i + 1}   ·   {h:02}:{m:02}:{s:02}', f'play:{i}'))
-            if count > 1:
-                entries.append(('Следующие главы', f'page:{(p + 1) % count + 1}'))
+            if p:
+                entries.append(('←  Предыдущие главы', f'page:{p}'))
+            if p + 1 < count:
+                entries.append(('Следующие главы  →', f'page:{p + 2}'))
             entries.append(('←  Главное меню', 'page:0'))
             result.append(entries)
     return result
+
+def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
+    """Bounded MPLS EntryMark binding check before writing the menu JAR.
+
+    The general BDMV preflight still validates full PlayItem timing and clip
+    references; this specific gate prevents invalid chapter buttons even when
+    install_menu() is called on its own.
+    """
+    from mpls_preflight import MAX_PLAYLIST_BYTES
+    try:
+        with playlist.open('rb') as handle:
+            data = handle.read(MAX_PLAYLIST_BYTES + 1)
+    except OSError as exc:
+        raise ValueError('Не удалось прочитать плейлист для меню.') from exc
+    if not 40 <= len(data) <= MAX_PLAYLIST_BYTES or data[:8] not in (b'MPLS0100', b'MPLS0200'):
+        raise ValueError('Некорректный плейлист для меню.')
+    play_start = int.from_bytes(data[8:12], 'big')
+    marks_start = int.from_bytes(data[12:16], 'big')
+    if play_start < 40 or play_start % 2 or play_start + 10 > len(data):
+        raise ValueError('Некорректный раздел PlayList в меню.')
+    play_size = int.from_bytes(data[play_start:play_start + 4], 'big')
+    play_end = play_start + 4 + play_size
+    if play_size < 6 or play_end > len(data):
+        raise ValueError('Некорректные границы PlayList в меню.')
+    play_items = int.from_bytes(data[play_start + 6:play_start + 8], 'big')
+    if play_items == 0:
+        raise ValueError('В плейлисте нет PlayItem для меню.')
+    if marks_start < play_end or marks_start % 2 or marks_start + 6 > len(data):
+        raise ValueError('В плейлисте отсутствует корректный раздел глав.')
+    marks_size = int.from_bytes(data[marks_start:marks_start + 4], 'big')
+    marks_end = marks_start + 4 + marks_size
+    if marks_size < 2 or marks_end > len(data):
+        raise ValueError('Некорректные границы раздела глав.')
+    count = int.from_bytes(data[marks_start + 4:marks_start + 6], 'big')
+    if count != len(chapters) or 2 + 14 * count > marks_size:
+        raise ValueError('Количество глав меню не совпадает с плейлистом.')
+    for index in range(count):
+        record = marks_start + 6 + 14 * index
+        if data[record + 1] != 1:
+            raise ValueError('Меню поддерживает только EntryMark главы.')
+        ref_item = int.from_bytes(data[record + 2:record + 4], 'big')
+        if ref_item >= play_items:
+            raise ValueError('Глава меню ссылается на отсутствующий PlayItem.')
+    # Verify the actual 45-kHz chapter positions, not only EntryMark counts.
+    from chapter_timeline import validate_chapter_timeline
+    validate_chapter_timeline(data, chapters)
 
 
 def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1):
@@ -153,21 +223,11 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     playlists = sorted((bdmv / 'PLAYLIST').glob('*.mpls'))
     if len(playlists) != 1 or playlists[0].stem != '00000':
         raise ValueError('Меню v1 поддерживает один фильм с плейлистом 00000.')
-    # Menu chapter indices must resolve to real EntryMarks, not just labels.
-    data = playlists[0].read_bytes()
-    if len(data) < 40 or data[:4] != b'MPLS':
-        raise ValueError('Некорректный плейлист для меню.')
-    marks = int.from_bytes(data[12:16], 'big')
-    if marks < 40 or marks + 6 > len(data):
-        raise ValueError('В плейлисте отсутствуют главы.')
-    count = int.from_bytes(data[marks + 4:marks + 6], 'big')
-    if count != len(chapters) or marks + 6 + 14 * count > len(data):
-        raise ValueError('Количество глав меню не совпадает с плейлистом.')
-    if any(data[marks + 7 + 14 * i] != 1 for i in range(count)):
-        raise ValueError('Меню поддерживает только EntryMark главы.')
+    # Validate chapter labels and MPLS section bounds before writing files.
+    all_pages = pages(chapters)
+    validate_menu_chapters(playlists[0], chapters)
     for path in ('JAR', 'BDJO', 'BACKUP/BDJO', 'BACKUP/JAR'):
         (bdmv / path).mkdir(parents=True, exist_ok=True)
-    all_pages = pages(chapters)
     props = ['pages=' + str(len(all_pages)), 'playlist=00000']
     for p, entries in enumerate(all_pages):
         props.append(f'page.{p}.count={len(entries)}')

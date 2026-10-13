@@ -34,6 +34,44 @@ class MenuGraphTests(unittest.TestCase):
             self.assertEqual(reached, set(range(len(graph))))
             self.assertEqual(played, set(range(count)))
 
+    def test_chapter_navigation_has_previous_and_next_without_wrapping(self):
+        # Middle pages need five chapter buttons + Previous + Next + Home.
+        for count in (2, 5, 6, 7, 10, 11, 13, 999):
+            with self.subTest(chapters=count):
+                graph = pages(list(range(count)))
+                scene_pages = graph[1:]
+                self.assertEqual(len(scene_pages), (count + 4) // 5)
+                for page_number, entries in enumerate(scene_pages, 1):
+                    actions = [action for _, action in entries]
+                    self.assertLessEqual(len(actions), 8)
+                    self.assertEqual(actions[-1], 'page:0')
+                    # Home is also page:0; identify previous/next by label.
+                    previous = [action for label, action in entries
+                                if 'Предыдущие главы' in label]
+                    following = [action for label, action in entries
+                                 if 'Следующие главы' in label]
+                    self.assertEqual(previous, [f'page:{page_number - 1}']
+                                     if page_number > 1 else [])
+                    self.assertEqual(following, [f'page:{page_number + 1}']
+                                     if page_number < len(scene_pages) else [])
+                    chapter_actions = [a for a in actions if a.startswith('play:')]
+                    start = (page_number - 1) * 5
+                    self.assertEqual(chapter_actions,
+                                     [f'play:{i}' for i in range(start, min(start + 5, count))])
+
+    def test_navigation_backwards_reaches_first_scene(self):
+        graph = pages(list(range(999)))
+        page = len(graph) - 1
+        visited = set()
+        while page > 1:
+            self.assertNotIn(page, visited)
+            visited.add(page)
+            choices = [action for _, action in graph[page]]
+            page = int(next(a.split(':')[1] for a in choices
+                            if a == f'page:{page - 1}'))
+        self.assertEqual(page, 1)
+        self.assertEqual(len(visited), len(graph) - 2)
+
     def test_invalid_design_is_rejected(self):
         for title, theme in [('', 'midnight'), ('x'*81, 'midnight'), ('a\nb', 'cinema'), ('ok', 'bad')]:
             with self.assertRaises(ValueError):
@@ -106,6 +144,40 @@ class MenuBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Количество глав'):
                 install_menu(root, MenuDesign('Тест'), [0, 4])
             self.assertFalse((root/'BDMV/JAR').exists())
+
+    def test_packaged_xlet_menu_has_bidirectional_chapter_actions(self):
+        # Synthetic marks bind the rendered pages to an authored MPLS.  This
+        # exercises the actual packaged JAR/config, not a playback emulator.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            playlist = root / 'BDMV/PLAYLIST/00000.mpls'
+            playlist.parent.mkdir(parents=True)
+            data = bytearray(minimal_mpls())
+            # Extend the synthetic PlayItem to encompass all chapter marks.
+            data[68:72] = (11 * 10 * 45000).to_bytes(4, 'big')
+            offset = int.from_bytes(data[12:16], 'big')
+            mark = bytearray(data[offset + 6:offset + 20])
+            marks = []
+            for i in range(11):
+                mark[4:8] = (i * 10 * 45000).to_bytes(4, 'big')
+                marks.append(bytes(mark))
+            marks_body = (11).to_bytes(2, 'big') + b''.join(marks)
+            playlist.write_bytes(
+                data[:offset] + len(marks_body).to_bytes(4, 'big') + marks_body
+            )
+            install_menu(root, MenuDesign('Главы'), [float(i * 10) for i in range(11)])
+            with zipfile.ZipFile(root / 'BDMV/JAR/00000.jar') as jar:
+                props = jar.read('menu.properties').decode('ascii')
+                for expected in (
+                    'pages=4',
+                    'page.1.count=7', 'page.1.5=page:2', 'page.1.6=page:0',
+                    'page.2.count=8', 'page.2.5=page:1',
+                    'page.2.6=page:3', 'page.2.7=page:0',
+                    'page.3.count=3', 'page.3.1=page:2', 'page.3.2=page:0',
+                ):
+                    with self.subTest(expected=expected):
+                        self.assertIn(expected, props.splitlines())
+                self.assertTrue(jar.read('page3.png').startswith(bytes([137, 80, 78, 71])))
 
     def test_preview_remote_opens_chapters_and_returns_home(self):
         from menu_editor import MenuEditor
