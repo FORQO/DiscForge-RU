@@ -145,6 +145,34 @@ class MenuBundleTests(unittest.TestCase):
                 install_menu(root, MenuDesign('Тест'), [0, 4])
             self.assertFalse((root/'BDMV/JAR').exists())
 
+    def test_packaged_xlet_menu_has_bidirectional_chapter_actions(self):
+        # Synthetic marks bind the rendered pages to an authored MPLS.  This
+        # exercises the actual packaged JAR/config, not a playback emulator.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            playlist = root / 'BDMV/PLAYLIST/00000.mpls'
+            playlist.parent.mkdir(parents=True)
+            data = minimal_mpls()
+            offset = int.from_bytes(data[12:16], 'big')
+            mark = data[offset + 6:offset + 20]
+            marks_body = (11).to_bytes(2, 'big') + mark * 11
+            playlist.write_bytes(
+                data[:offset] + len(marks_body).to_bytes(4, 'big') + marks_body
+            )
+            install_menu(root, MenuDesign('Главы'), [float(i * 10) for i in range(11)])
+            with zipfile.ZipFile(root / 'BDMV/JAR/00000.jar') as jar:
+                props = jar.read('menu.properties').decode('ascii')
+                for expected in (
+                    'pages=4',
+                    'page.1.count=7', 'page.1.5=page:2', 'page.1.6=page:0',
+                    'page.2.count=8', 'page.2.5=page:1',
+                    'page.2.6=page:3', 'page.2.7=page:0',
+                    'page.3.count=3', 'page.3.1=page:2', 'page.3.2=page:0',
+                ):
+                    with self.subTest(expected=expected):
+                        self.assertIn(expected, props.splitlines())
+                self.assertTrue(jar.read('page3.png').startswith(bytes([137, 80, 78, 71])))
+
     def test_preview_remote_opens_chapters_and_returns_home(self):
         from menu_editor import MenuEditor
         editor = MenuEditor()
