@@ -413,7 +413,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             chosen.append((index, track.channels, track.language))
         else:
             if index != 0:
-                raise DiscForgeError('Для выбора дорожки повторите анализ файла.')
+                raise DiscForgeError('Для выбора дорожки заново проанализируйте исходный файл.')
             chosen.append((0, info.audio_channels, 'und'))
     if chapters is not None:
         validate_chapters(chapters, info.duration)
