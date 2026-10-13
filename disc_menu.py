@@ -108,8 +108,13 @@ class MenuDesign:
     hidden_text: list[str] = field(default_factory=list)
     audio_tracks: list[dict] = field(default_factory=list)
     subtitle_tracks: list[dict] = field(default_factory=list)
+    chapter_titles: list[str] = field(default_factory=list)
 
     def __post_init__(self):
+        if (not isinstance(self.chapter_titles, list) or len(self.chapter_titles) > 999 or
+                any(not isinstance(t, str) or len(t) > 120 or any(ord(c) < 32 for c in t) for t in self.chapter_titles)):
+            raise ValueError('Некорректные названия глав меню.')
+        object.__setattr__(self, 'chapter_titles', list(self.chapter_titles))
         if (not isinstance(self.audio_tracks, list) or len(self.audio_tracks) > 32 or
                 any(not isinstance(t, dict) or set(t) != {'language', 'title'} or
                     not isinstance(t['language'], str) or not re.fullmatch('[a-z]{3}', t['language']) or
@@ -209,7 +214,12 @@ class MenuDesign:
             object.__setattr__(self, key, copy.deepcopy(getattr(self, key)))
 
     def text(self, key):
-        return self.labels.get(self.language + ':' + key, TEXT[self.language].get(key, ''))
+        default = TEXT[self.language].get(key, '')
+        if re.fullmatch(r'chapter:\d{1,3}', key):
+            index = int(key.split(':')[1])
+            if index < len(self.chapter_titles):
+                default = self.chapter_titles[index]
+        return self.labels.get(self.language + ':' + key, default)
 
     def to_dict(self):
         return asdict(self)
@@ -218,7 +228,7 @@ class MenuDesign:
     def from_dict(cls, title, data):
         return cls(title, **{key: data[key] for key in
                    ('theme', 'language', 'background', 'background_fit', 'dim', 'labels',
-                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks') if key in data})
+                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks', 'chapter_titles') if key in data})
 
 
 def button_id(page, action):

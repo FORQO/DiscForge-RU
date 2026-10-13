@@ -35,8 +35,9 @@ from audio_panel import AudioPanel
 from subtitle_panel import SubtitlePanel
 from subtitles import select_subtitles, validate_selection
 from audio_selection import selected_tracks, select_tracks
+from source_chapters import titles_for_chapters, is_chapter_label
 
-VERSION = '1.3.0'
+VERSION = '1.3.1'
 LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
 ICON = Path(__file__).parent / 'assets/brand/diskforge.ico'
 
@@ -103,7 +104,7 @@ class BuildThread(QThread):
     finished_all = Signal(bool)
 
     def __init__(self, jobs: list[tuple[MediaInfo, list[float]]], config: dict, profile: str,
-                 as_iso: bool, nvenc: bool, menu: MenuDesign | None = None, auto=False, fast=True, processing_mode="encode"):
+                 as_iso: bool, nvenc: bool, menu: MenuDesign | None = None, auto=False, fast=True, processing_mode="encode", chapter_names=None):
         super().__init__()
         self.jobs = jobs
         self.config = config
@@ -114,10 +115,20 @@ class BuildThread(QThread):
         self.processing_mode = processing_mode
         self.fast = fast
         self.menu = menu
+        import copy
+        self.chapter_names = copy.deepcopy(chapter_names)
         self.cancel_event = threading.Event()
 
     def cancel(self) -> None:
         self.cancel_event.set()
+
+    def menu_for(self, media, chapters):
+        if self.menu is None or self.chapter_names is None:
+            return self.menu
+        names = self.chapter_names.get(media.path, {})
+        labels = {k: v for k, v in self.menu.labels.items() if not is_chapter_label(k)}
+        labels.update(names.get('labels', {}))
+        return replace(self.menu, labels=labels, chapter_titles=names.get('titles', titles_for_chapters(media, chapters)))
 
     def run(self) -> None:
         all_successful = True
@@ -169,7 +180,7 @@ class BuildThread(QThread):
                     self.config['tsmuxer'], self.as_iso, self.nvenc,
                     self.cancel_event, self.message.emit, progress,
                     chapters=chapters,
-                    menu=self.menu, fast=self.fast, observer=timing, processing_mode=selected_modes[i-1], ffprobe=self.config.get("ffprobe", "ffprobe"),
+                    menu=self.menu_for(media, chapters), fast=self.fast, observer=timing, processing_mode=selected_modes[i-1], ffprobe=self.config.get("ffprobe", "ffprobe"),
                 )
                 self.item_done.emit(media.path, str(target))
             except Exception as exc:
@@ -196,6 +207,8 @@ class Window(QMainWindow):
         self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
         self.chapters: dict[str, list[float]] = {}
+        self.chapter_names = {}
+        self._chapter_owner = None
         self.audio_selections: dict[str, list[int]] = {}
         self.subtitle_selections = {}
         self.scan_thread: ScanThread | None = None
@@ -207,6 +220,7 @@ class Window(QMainWindow):
         self.build_clock.setInterval(1000)
         self.build_clock.timeout.connect(self._tick_build_time)
         self._build_ui()
+        self.tabs.currentChanged.connect(self._chapter_tab_changed)
         self._restore()
         self._refresh_buttons()
 
@@ -392,6 +406,7 @@ class Window(QMainWindow):
         self.menu_title = self.menu_editor.title
         self.tabs.addTab(self.menu_editor, '5 · Меню')
         self.image_tools = ImageTools(self.menu_editor)
+        self.image_tools.menu_panel.loading_design.connect(self._detach_chapter_names)
         self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(self.menu_editor))
         self.tabs.addTab(self.image_tools, '6 · Запись ISO')
 
@@ -553,6 +568,8 @@ class Window(QMainWindow):
                 self.chapters[path] = list(info.source_chapters) or [0.0]
                 if info.source_chapters:
                     self._message(f'Главы из файла импортированы: {len(info.source_chapters)}. Они доступны в меню диска.')
+            names = self.chapter_names.setdefault(path, {'labels': {}})
+            names.setdefault('titles', titles_for_chapters(info, self.chapters[path]))
             for notice in info.chapter_notices:
                 self._message(notice)
             self._message(f'OK: {info.name} — {timecode(info.duration)}; {info.width}×{info.height}')
@@ -611,14 +628,35 @@ class Window(QMainWindow):
         self.subtitle_panel.info = self.media[path]
         self.menu_editor.set_subtitles(self.media[path])
 
+    def _save_chapter_names(self):
+        self.menu_editor.preview.commit_edit()
+        if self._chapter_owner in self.media:
+            self.chapter_names[self._chapter_owner] = {
+                'titles': list(self.menu_editor.chapter_titles),
+                'labels': {k: v for k, v in self.menu_editor.labels.items() if is_chapter_label(k)}}
+
+    def _detach_chapter_names(self):
+        self._save_chapter_names()
+        self._chapter_owner = None
+
+    def _chapter_tab_changed(self, index):
+        if index == 3 and self._chapter_owner is not None:
+            self._select_media()
+
     def _select_media(self) -> None:
+        self._save_chapter_names()
+        self._chapter_owner = None
         path = self._selected_path()
         info = self.media.get(path or '')
+        names = self.chapter_names.get(path, {})
+        self.menu_editor.labels = {k: v for k, v in self.menu_editor.labels.items() if not is_chapter_label(k)}
+        self.menu_editor.labels.update(names.get('labels', {}))
         self.audio_panel.set_media(info)
         self.subtitle_panel.set_media(info)
         self.menu_editor.set_subtitles(info)
         self.menu_editor.set_audio(info)
-        self.menu_editor.set_chapters(self.chapters.get(path, [0.0]))
+        self.menu_editor.set_chapters(self.chapters.get(path, [0.0]), names.get('titles', []))
+        self._chapter_owner = path if info else None
         self.chapter_list.clear()
         if not info:
             self.chapter_status.setText('Сначала добавьте фильм и выберите его слева.')
@@ -634,7 +672,8 @@ class Window(QMainWindow):
             self.chapter_status.setText(f'Фильм: {info.name} · Длительность: {timecode(info.duration)} · Глав: {len(self.chapters.get(path, [0]))}\n{source_note}')
             self.chapter_status.setWordWrap(True)
             for index, t in enumerate(self.chapters.get(path, [0.0]), 1):
-                item = QListWidgetItem(f'Глава {index}   ·   {chapter_timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
+                name = self.menu_editor.current_design(preview=True).text(f'chapter:{index-1}') or f'Глава {index}'
+                item = QListWidgetItem(f'{name}   ·   {chapter_timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
                 item.setData(Qt.UserRole, t)
                 self.chapter_list.addItem(item)
         self._update_recommendation()
@@ -644,7 +683,9 @@ class Window(QMainWindow):
         path = self._selected_path()
         info = self.media.get(path)
         if info and info.source_chapters:
-            self.apply_chapters(path, list(info.source_chapters))
+            if self.apply_chapters(path, list(info.source_chapters)):
+                self.menu_editor.chapter_titles = titles_for_chapters(info, self.chapters[path])
+                self._select_media()
 
     def auto_chapters(self) -> None:
         path = self._selected_path()
@@ -681,9 +722,10 @@ class Window(QMainWindow):
             self.menu_editor.retime_chapters(self.chapters[path], new, moved)
         except (ValueError, DiscForgeError) as exc:
             QMessageBox.warning(self, 'Главы', str(exc))
-            return
+            return False
         self.chapters[path] = new
         self._select_media()
+        return True
 
     def edit_chapter(self):
         path = self._selected_path()
@@ -725,6 +767,7 @@ class Window(QMainWindow):
         path = item.data(Qt.UserRole)
         self.media.pop(path, None)
         self.chapters.pop(path, None)
+        self.chapter_names.pop(path, None)
         self.audio_selections.pop(path, None)
         self.subtitle_selections.pop(path, None)
         self.subtitle_panel.external.pop(path, None)
@@ -763,6 +806,7 @@ class Window(QMainWindow):
     def start_build(self) -> None:
         if not self.media:
             return
+        self._save_chapter_names()
         config = self._config()
         self._save_config()
         if not config['output']:
@@ -795,7 +839,7 @@ class Window(QMainWindow):
         self.progress.setValue(0)
         self.build_thread = BuildThread(jobs, config, self.profile.currentText(),
                                         self.output_mode.currentIndex() == 0,
-                                        self.encoder.currentIndex() == 1, menu, auto=self.encoder.currentIndex() == 2, fast=self.encode_speed.currentIndex() == 0, processing_mode=MODES[self.processing_mode.currentIndex()])
+                                        self.encoder.currentIndex() == 1, menu, auto=self.encoder.currentIndex() == 2, fast=self.encode_speed.currentIndex() == 0, processing_mode=MODES[self.processing_mode.currentIndex()], chapter_names=self.chapter_names)
         self.build_started = time.monotonic()
         self.eta_remaining = -1
         self.stage_label.setText("Подготовка")
@@ -852,11 +896,11 @@ class Window(QMainWindow):
             self.scan_thread.cancel_event.set()
 
     def _project_data(self) -> dict:
-        self.menu_editor.preview.commit_edit()
+        self._save_chapter_names()
         return {'format_version': 1, 'title': self.menu_title.text(),
                 'menu': self.menu_editor.settings(),
                 'files': [self.movies.item(i).data(Qt.UserRole) for i in range(self.movies.count())],
-                'subtitles': self.subtitle_selections, 'audio': self.audio_selections, 'chapters': self.chapters, 'profile': self.profile.currentText(),
+                'subtitles': self.subtitle_selections, 'audio': self.audio_selections, 'chapters': self.chapters, 'chapter_names': self.chapter_names, 'profile': self.profile.currentText(),
                 'encoder': self.encoder.currentIndex(), 'encode_speed': self.encode_speed.currentIndex(), 'processing_mode': MODES[self.processing_mode.currentIndex()], 'output': self.output_folder.text().strip(), 'as_iso': self.output_mode.currentIndex() == 0}
 
     def save_project(self) -> None:
@@ -919,6 +963,27 @@ class Window(QMainWindow):
                     raise ValueError('Неверный список глав')
                 validate_chapters(v)
                 loaded_chapters[normalized] = [float(x) for x in v]
+            raw_names = data.get('chapter_names', {})
+            if not isinstance(raw_names, dict):
+                raise ValueError('Неверный раздел названий глав')
+            loaded_names = {}
+            for p in paths:
+                normalized = str(Path(p).resolve())
+                names = raw_names.get(p, raw_names.get(normalized))
+                if names is None:
+                    # Legacy projects kept chapter edits in the common menu.
+                    loaded_names[normalized] = {'labels': {k: v for k, v in design.labels.items() if is_chapter_label(k)}}
+                    continue
+                if not isinstance(names, dict) or 'labels' not in names or set(names) - {'titles', 'labels'}:
+                    raise ValueError('Неверные названия глав')
+                checked = MenuDesign('Проверка', chapter_titles=names.get('titles', []), labels=names['labels'])
+                if any(not is_chapter_label(k) for k in checked.labels):
+                    raise ValueError('В названиях глав найдены посторонние подписи')
+                if normalized in loaded_chapters and len(checked.chapter_titles) > len(loaded_chapters[normalized]):
+                    raise ValueError('Названий больше, чем глав')
+                loaded_names[normalized] = {'labels': checked.labels}
+                if 'titles' in names:
+                    loaded_names[normalized]['titles'] = checked.chapter_titles
             if not self.new_project():
                 return
             self.menu_editor.apply_design(design)
@@ -932,6 +997,7 @@ class Window(QMainWindow):
                 self.output_folder.setText(data['output'])
             self.output_mode.setCurrentIndex(0 if data.get('as_iso', True) else 1)
             self.chapters.update(loaded_chapters)
+            self.chapter_names.update(loaded_names)
             self.audio_selections.update(loaded_audio)
             self.subtitle_selections.update(loaded_subtitles)
             self._queue_scan(normalized_paths)
@@ -944,9 +1010,11 @@ class Window(QMainWindow):
                 (self.scan_thread and self.scan_thread.isRunning())):
             QMessageBox.warning(self, 'Операция выполняется', 'Дождитесь завершения текущей операции.')
             return False
+        self._chapter_owner = None
         self.movies.clear()
         self.media.clear()
         self.chapters.clear()
+        self.chapter_names.clear()
         self.audio_selections.clear()
         self.subtitle_selections.clear()
         self.subtitle_panel.external.clear()

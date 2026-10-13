@@ -55,6 +55,7 @@ class MediaInfo:
     selected_subtitles: tuple = ()
     source_chapters: tuple = ()
     chapter_notices: tuple = ()
+    source_chapter_titles: tuple = ()
 
     @property
     def is_hdr(self) -> bool:
@@ -113,8 +114,8 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
             raise DiscForgeError(f'ffprobe вернул некорректное значение: {label}.')
         return result
 
-    from source_chapters import import_chapters
-    source_chapters, chapter_notices = import_chapters(data.get('chapters'), duration)
+    from source_chapters import import_chapter_metadata
+    source_chapters, source_chapter_titles, chapter_notices = import_chapter_metadata(data.get('chapters'), duration)
     return MediaInfo(
         path=path, duration=duration,
         size=nonnegative_int(fmt.get('size') or (os.path.getsize(path) if os.path.isfile(path) else 0), 'размер'),
@@ -129,6 +130,7 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
         audio_streams=tuple(dict(s) for s in audios),
         subtitle_streams=tuple(dict(s) for s in subs),
         source_chapters=source_chapters, chapter_notices=chapter_notices,
+        source_chapter_titles=source_chapter_titles,
     )
 
 
@@ -493,6 +495,9 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         chapters = list(chapters) if chapters is not None else [0.0] + list(range(600, int(info.duration), 600))
         if len(chapters) > 999:
             raise DiscForgeError('Меню поддерживает не более 999 глав.')
+        if not menu.chapter_titles:
+            from source_chapters import titles_for_chapters
+            menu = replace(menu, chapter_titles=titles_for_chapters(info, chapters))
         from disc_menu import validate_menu_navigation
         validate_menu_navigation(list(chapters), menu)
     _require_binary(ffmpeg, 'FFmpeg')

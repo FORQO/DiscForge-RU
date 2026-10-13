@@ -34,6 +34,7 @@ class MenuIsoJob(QThread):
 
 class IsoMenuPanel(QWidget):
     edit_requested = Signal()
+    loading_design = Signal()
 
     def __init__(self, image_tools, editor):
         super().__init__()
@@ -154,6 +155,7 @@ class IsoMenuPanel(QWidget):
                     'Для исправления линий нажмите «Исправить обводку в ISO…». Для изменения текста или оформления '
                     'откройте сохранённый проект либо создайте меню во вкладке «Меню» и сохраните его в новый ISO.')
             elif self.editor is not None:
+                self.loading_design.emit()
                 self.editor.set_chapters(chapters)
                 self.editor.apply_design(design)
                 self.editor.enabled.setChecked(True)

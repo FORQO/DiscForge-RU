@@ -19,6 +19,7 @@ class MenuEditor(QWidget):
     def __init__(self):
         super().__init__()
         self.chapters = [0.0]
+        self.chapter_titles = []
         self.audio_tracks = []
         self.subtitle_tracks = []
         self.page = self.focus = 0
@@ -140,6 +141,7 @@ class MenuEditor(QWidget):
         element.addWidget(self.label_value)
         reset = QPushButton('Сбросить подпись')
         reset.clicked.connect(self.label_value.clear)
+        reset.clicked.connect(self.edit_label)
         element.addWidget(reset)
         self.style_panel = QWidget()
         style_layout = QVBoxLayout(self.style_panel)
@@ -258,7 +260,7 @@ class MenuEditor(QWidget):
         return MenuDesign(self.title.text().strip() or ('Blu-ray' if preview else ''),
                           self.theme.currentData(), self.language.currentData(), self.background,
                           self.fit.currentData(), self.dim.value(), self.labels,
-                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text, self.audio_tracks, self.subtitle_tracks)
+                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text, self.audio_tracks, self.subtitle_tracks, self.chapter_titles)
 
     def settings(self):
         self.preview.commit_edit()
@@ -283,6 +285,7 @@ class MenuEditor(QWidget):
         self.hidden_text = list(design.hidden_text)
         self.audio_tracks = copy.deepcopy(design.audio_tracks)
         self.subtitle_tracks = copy.deepcopy(design.subtitle_tracks)
+        self.chapter_titles = list(design.chapter_titles)
         self.button_styles = {k: dict(v) for k, v in design.button_styles.items()}
         self.element_layout = copy.deepcopy(design.layout)
         self.text_styles = copy.deepcopy(design.text_styles)
@@ -347,7 +350,7 @@ class MenuEditor(QWidget):
             return
         lang = self.language.currentData()
         self.label_value.setText(self.labels.get(lang + ':' + key, ''))
-        self.label_value.setPlaceholderText(TEXT[lang].get(key, f'{TEXT[lang]["chapter"]} {int(key.split(":")[-1])+1}' if key.startswith('chapter:') else ''))
+        self.label_value.setPlaceholderText(self.current_design(preview=True).text(key) or TEXT[lang].get(key, f'{TEXT[lang]["chapter"]} {int(key.split(":")[-1])+1}' if key.startswith('chapter:') else ''))
 
     def edit_label(self, *_):
         if self.label_key.currentData() == 'title':
@@ -387,9 +390,10 @@ class MenuEditor(QWidget):
         self.populate_labels()
         self.refresh()
 
-    def set_chapters(self, chapters):
+    def set_chapters(self, chapters, titles=None):
         self.preview.commit_edit()
         self.chapters = list(chapters)[:999] or [0.0]
+        self.chapter_titles = list(titles or [])
         self.page = self.focus = 0
         self.history = []
         self.select_button('')
@@ -712,7 +716,11 @@ class MenuEditor(QWidget):
                 button['action'] = f'play:{mapping.get(int(value), 0)}'
             elif kind == 'page':
                 button['action'] = f'page:{remap_page(int(value))}'
-        updated = replace(design, labels=labels, button_styles=styles, layout=layout, hidden_buttons=hidden, custom_buttons=custom)
+        titles = [''] * len(new)
+        for before, after in mapping.items():
+            if before < len(design.chapter_titles):
+                titles[after] = design.chapter_titles[before]
+        updated = replace(design, labels=labels, button_styles=styles, layout=layout, hidden_buttons=hidden, custom_buttons=custom, chapter_titles=titles)
         pages(new, updated)  # Fail before changing any state if a merged page is full.
         self.chapters = list(new)
         self.apply_design(updated)
