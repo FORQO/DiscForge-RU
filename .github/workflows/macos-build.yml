@@ -1,4 +1,4 @@
-name: macOS alpha build
+name: macOS development build
 on:
   push:
     branches: [main, feature/macos-disc-burning]
@@ -12,10 +12,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Unit tests
-        run: python -m unittest discover -s tests -v
       - name: Install UI + packaging
         run: python -m pip install -r requirements.txt pyinstaller
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -v
       - name: Build macOS app
         run: python -m PyInstaller --clean --noconfirm --windowed --add-data "assets:assets" --add-data "LICENSE:." --add-data "THIRD_PARTY_NOTICES.md:." --name DiscForge-RU main.py
       - name: Pack .app

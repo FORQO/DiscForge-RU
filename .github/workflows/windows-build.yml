@@ -1,9 +1,12 @@
-name: Windows app (experimental)
+name: Windows app and release
 on:
   workflow_dispatch:
   pull_request:
   push:
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ['v*']
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: windows-latest
@@ -13,26 +16,39 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install packages
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
-      - name: Unit tests
-        shell: pwsh
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONUTF8: '1'
         run: python -m unittest discover -s tests -v
-      - name: Build
-        shell: pwsh
+      - name: Build application
         run: python -m PyInstaller --noconfirm --clean --windowed --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
-      - name: Launch packaged application offscreen
-        shell: pwsh
-        run: |
-          $report = Join-Path $env:RUNNER_TEMP 'discforge-smoke.json'
-          $process = Start-Process -FilePath '.\dist\DiscForge_RU\DiscForge_RU.exe' -ArgumentList @('--self-test', $report) -WindowStyle Hidden -PassThru
-          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Packaged app timed out' }
-          if ($process.ExitCode -ne 0) { throw "Packaged app exited with $($process.ExitCode)" }
-          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-          if (-not $result.passed) { throw 'Packaged app smoke test failed' }
+      - uses: actions/cache@v4
+        with:
+          path: build/dependencies
+          key: windows-tools-ffmpeg902-tsmuxer270-java8u504
+      - name: Package tools and Java, self-test, archive
+        env:
+          PYTHONUTF8: '1'
+        run: python tools/package_windows.py --app dist/DiscForge_RU --output release
       - uses: actions/upload-artifact@v4
         with:
-          name: DiscForge_RU_win_alpha
-          path: dist/DiscForge_RU/
+          name: DiscForge-RU-Windows-x64
+          path: release/
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Release 1.0.0'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DiscForge-RU-Windows-x64
+          path: release
+      - name: Publish official 1.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create v1.0.0 release/* --target "$GITHUB_SHA" --title "DiscForge RU 1.0" --notes-file docs/RELEASE_1.0.md --latest

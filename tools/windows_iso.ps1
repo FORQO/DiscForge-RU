@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory=$true)][string]$Source,
     [Parameter(Mandatory=$true)][string]$Destination,
     [string]$VolumeLabel = 'DISCFORGE',
-    [long]$Capacity = 25000000000
+    [long]$Capacity = 25000000000,
+    [string]$Overlay = '',
+    [string]$ProgressFile = ''
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -18,11 +20,20 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 public static class DiscForgeStream {
-    public static void Save(object source, string path, long bytes) {
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHCreateStreamOnFileEx(string path, uint mode, uint attributes, bool create, IStream template, out IStream stream);
+    public static IStream Open(string path) {
+        IStream stream;
+        SHCreateStreamOnFileEx(path, 0x20, 0, false, null, out stream);
+        return stream;
+    }
+    public static void Save(object source, string path, long bytes, string progressPath) {
         IStream stream = (IStream)source;
         IntPtr read = Marshal.AllocCoTaskMem(4);
         try {
             using (FileStream output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+                output.SetLength(bytes);
+                var timer = System.Diagnostics.Stopwatch.StartNew();
                 byte[] buffer = new byte[1048576];
                 long remaining = bytes;
                 while (remaining > 0) {
@@ -32,6 +43,10 @@ public static class DiscForgeStream {
                     if (count <= 0 || count > wanted) throw new IOException("Truncated IMAPI image stream");
                     output.Write(buffer, 0, count);
                     remaining -= count;
+                    if (progressPath.Length > 0 && (timer.ElapsedMilliseconds >= 500 || remaining == 0)) {
+                        File.WriteAllText(progressPath, (bytes - remaining).ToString());
+                        timer.Restart();
+                    }
                 }
                 output.Flush(true);
             }
@@ -46,10 +61,26 @@ public static class DiscForgeStream {
     $discImage.FreeMediaBlocks = [int][Math]::Floor($Capacity / 2048)
     $discImage.VolumeName = $VolumeLabel
     $discImage.Root.AddTree($discSource, $false)
+    if ($Overlay) {
+        function Add-Overlay($directory, [string]$path) {
+            foreach ($entry in Get-ChildItem -LiteralPath $path) {
+                $existing = $null
+                try { $existing = $directory.Item($entry.Name) } catch {}
+                if ($entry.PSIsContainer) {
+                    if ($null -eq $existing) { $directory.AddDirectory($entry.Name); $existing = $directory.Item($entry.Name) }
+                    Add-Overlay $existing $entry.FullName
+                } else {
+                    if ($null -ne $existing) { $directory.Remove($entry.Name) }
+                    $directory.AddFile($entry.Name, [DiscForgeStream]::Open($entry.FullName))
+                }
+            }
+        }
+        Add-Overlay $discImage.Root (Resolve-Path -LiteralPath $Overlay).Path
+    }
     $discResult = $discImage.CreateResultImage()
     $discSize = [long]$discResult.TotalBlocks * [long]$discResult.BlockSize
     if ($discSize -gt $Capacity) { throw 'ISO exceeds selected disc capacity' }
-    [DiscForgeStream]::Save($discResult.ImageStream, $discDestination, $discSize)
+    [DiscForgeStream]::Save($discResult.ImageStream, $discDestination, $discSize, $ProgressFile)
     Write-Output "UDF 2.50 image created: $discSize bytes"
     exit 0
 } catch {

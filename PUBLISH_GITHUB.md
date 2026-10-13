@@ -1,37 +1,21 @@
-# Публикация нового репозитория на GitHub
+# Сборка и выпуск
 
-**Задуманное имя:** `maxliv234-star/DiscForge-RU` (публичный, MIT). Не путать с уже существующим `pdfcraft`.
+Репозиторий: https://github.com/maxliv234-star/DiscForge-RU . Основная ветка — `main`. Текущий выпуск — 1.0.0, Windows x64.
 
-Подключённый к чату GitHub API умеет читать/менять файлы существующих репозиториев, но **не умеет создавать новый репозиторий**. Поэтому этот архив готов к публикации, но ссылку считать действующей нельзя, пока репозиторий не создан.
+## Локальная сборка
 
-## Вариант без команд
+Установите Python 3.12 x64, зависимости из `requirements.txt` и PyInstaller. Запустите `build_exe_windows.bat` или ту же команду PyInstaller из Windows workflow. Для portable-комплекта выполните:
 
-1. Откройте https://github.com/new
-2. Владелец: `maxliv234-star`; имя: `DiscForge-RU`.
-3. Visibility: **Public**. НЕ ставьте галочки README / LICENSE / .gitignore — они уже есть в архиве.
-4. Создайте пустой репозиторий.
-5. В PowerShell из распакованной папки проекта выполните:
-
-```powershell
-git init
-git add .
-git commit -m "Initial DiscForge RU alpha"
-git branch -M main
-git remote add origin https://github.com/maxliv234-star/DiscForge-RU.git
-git push -u origin main
+```sh
+python tools/package_windows.py --app dist/DiscForge_RU --output release
 ```
 
-## Вариант GitHub CLI
+Скрипт загружает зафиксированные версии инструментов и Java, проверяет SHA-256, добавляет лицензии, запускает самопроверку приложения и создаёт ZIP с контрольной суммой. VLC не включается. Не публикуйте изменённые сборки под прежним тегом.
 
-Если установлен и выполнен вход в `gh`:
+## Автоматический выпуск
 
-```powershell
-cd путь\к\DiscForge_RU_v0.1
-git init
-git add .
-git commit -m "Initial DiscForge RU alpha"
-git branch -M main
-gh repo create maxliv234-star/DiscForge-RU --public --source . --remote origin --push
-```
+Workflow `Windows app and release` запускает тесты, собирает EXE и комплектует portable ZIP. Обычные push/PR создают проверочную сборку. Коммит в `main` с сообщением `Release 1.0.0` публикует официальный GitHub Release `v1.0.0` после успешных тестов и самопроверки. Workflow может быть запущен вручную для повторной сборки; существующий релиз не перезаписывается автоматически.
 
-Сначала проверяйте, что отправляете исходники, а не личные фильмы/ISO. Бинарники сторонних инструментов не включены.
+GitHub создаёт архивы исходников по тегу; к релизу добавляются portable ZIP, SHA256SUMS.txt и отчёт самопроверки. Учётные данные в репозиторий не входят; публикация использует ограниченный `GITHUB_TOKEN` workflow с `contents: write`.
+
+Перед следующей версией обновите VERSION, release notes, руководство, Roadmap, версии/хеши зависимостей и условие публикации. Сначала завершите проверки, затем публикуйте новый тег.

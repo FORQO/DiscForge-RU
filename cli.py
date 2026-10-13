@@ -41,15 +41,26 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--tsmuxer', default='tsMuxeR')
     b.add_argument('--folder', action='store_true', help='Создать BDMV вместо ISO')
     b.add_argument('--nvenc', action='store_true', help='Экспериментальный режим NVIDIA NVENC')
+    b.add_argument('--processing', choices=['auto','copy','video_copy','encode'], default='auto',
+                   help='Автовыбор, копирование всех потоков, копирование видео + AC-3 или перекодирование')
+    b.add_argument('--audio-track', type=int, action='append', help='Глобальный index дорожки из probe; можно повторить')
+    b.add_argument('--no-audio', action='store_true', help='Не включать звук')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
-    b.add_argument('--menu-title', help='Добавить экспериментальное меню BD-J с этим названием (требует PySide6)')
-    b.add_argument('--menu-theme', choices=['midnight', 'cinema'], default='midnight')
+    b.add_argument('--menu-title', help='Добавить меню BD-J с этим названием (требует PySide6)')
+    b.add_argument('--menu-theme', choices=['midnight', 'graphite', 'cinema'], default='midnight')
+    b.add_argument('--menu-language', choices=['ru', 'en'], default='ru')
+    b.add_argument('--menu-background', help='Изображение фона меню')
     args = p.parse_args(argv)
     try:
         info = probe_media(args.file, args.ffprobe)
         if args.command == 'probe':
             print(json.dumps(dataclasses.asdict(info), ensure_ascii=False, indent=2))
         else:
+            if args.no_audio and args.audio_track:
+                raise DiscForgeError('Нельзя совместить --no-audio и --audio-track.')
+            if args.no_audio or args.audio_track is not None:
+                from audio_selection import select_tracks
+                info = select_tracks(info, [] if args.no_audio else args.audio_track)
             chapters = None
             if args.chapter:
                 chapters = sorted(set([0.0, *args.chapter]))
@@ -62,13 +73,15 @@ def main(argv: list[str] | None = None) -> int:
                     from PySide6.QtGui import QGuiApplication
                 except ImportError as exc:
                     raise DiscForgeError('Для меню установите зависимости из requirements.txt.') from exc
-                from disc_menu import MenuDesign
+                from disc_menu import MenuDesign, import_background
                 app = QGuiApplication.instance() or QGuiApplication([])
-                menu = MenuDesign(args.menu_title, args.menu_theme)
-            print('Меню BD-J экспериментальное.' if menu else 'Создаётся Blu-ray без меню.', file=sys.stderr)
+                menu = MenuDesign(args.menu_title, args.menu_theme, args.menu_language,
+                                  import_background(args.menu_background) if args.menu_background else '')
+            print('Меню BD-J: проверьте воспроизведение перед записью.' if menu else 'Создаётся Blu-ray без меню.', file=sys.stderr)
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
-                                 lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu)
+                                 lambda n: print(f'\r{n:.0f}% ', end='', flush=True), chapters, menu,
+                                 processing_mode=args.processing, ffprobe=args.ffprobe)
             print('\nРезультат:', done)
         return 0
     except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:

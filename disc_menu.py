@@ -6,20 +6,73 @@ see THIRD_PARTY_NOTICES.md. Hardware interoperability is experimental.
 from __future__ import annotations
 
 import io
+import base64
+import re
 import math
 import shutil
 import struct
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field, asdict
+from functools import lru_cache
 from pathlib import Path
+import copy
+from menu_layout import TEXT_RECTS, element_rect, text_style, default_button_rect
 
-THEMES = {'midnight': ('#0c1426', '#1c3550', '#73d8ed'),
+THEMES = {'midnight': ('#101721', '#202d3c', '#bacde1'),
+          'graphite': ('#222427', '#3b3e43', '#d6d8dd'),
           'cinema': ('#181315', '#38272b', '#edbc83')}
 BUTTONS = ((150, 400, 760, 82), (150, 506, 760, 82),
            (150, 612, 760, 82), (150, 718, 760, 82),
            (150, 824, 760, 82), (1010, 400, 760, 82),
            (1010, 506, 760, 82), (1010, 612, 760, 82))
 _font_loaded = False
+
+TEXT = {
+    'ru': {'play': 'Смотреть фильм', 'chapters': 'Выбор главы',
+           'previous': '←  Предыдущие главы', 'next': 'Следующие главы  →',
+           'home': '←  Главное меню', 'subtitle': 'Избранное в вашей коллекции',
+           'chapter': 'Глава', 'of': 'из', 'brand': 'B L U - R A Y',
+           'hint': 'Вверх / Вниз — выбор     OK — открыть     Back — главное меню'},
+    'en': {'play': 'Play movie', 'chapters': 'Scene selection',
+           'previous': '←  Previous scenes', 'next': 'Next scenes  →',
+           'home': '←  Main menu', 'subtitle': 'A film from your collection',
+           'chapter': 'Chapter', 'of': 'of', 'brand': 'B L U - R A Y',
+           'hint': 'Up / Down  Select     OK  Open     Pop-up Menu / Back  Main menu'},
+}
+
+
+@lru_cache(maxsize=2)
+def background_image(data: str):
+    from PySide6.QtGui import QImage
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except ValueError as exc:
+        raise ValueError('Повреждено изображение фона.') from exc
+    image = QImage.fromData(raw, 'PNG')
+    if image.isNull() or image.width() > 1920 or image.height() > 1080:
+        raise ValueError('Фон должен быть PNG размером не более 1920×1080.')
+    return image
+
+
+def import_background(path: str) -> str:
+    """Normalize once and embed the image so saved projects are portable."""
+    from PySide6.QtCore import Qt, QBuffer, QIODevice, QSize
+    from PySide6.QtGui import QImageReader
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if not size.isValid() or size.width() * size.height() > 100_000_000:
+        raise ValueError('Не удалось прочитать изображение или оно слишком большое.')
+    reader.setScaledSize(size.scaled(QSize(1920, 1080), Qt.KeepAspectRatio))
+    image = reader.read()
+    if image.isNull():
+        raise ValueError('Не удалось открыть фон: ' + reader.errorString())
+    image = image.scaled(1920, 1080, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    if not image.save(buffer, 'PNG'):
+        raise ValueError('Не удалось сохранить фон.')
+    return base64.b64encode(bytes(buffer.data())).decode('ascii')
 
 
 def initialize_fonts():
@@ -36,19 +89,178 @@ def initialize_fonts():
 class MenuDesign:
     title: str
     theme: str = 'midnight'
+    language: str = 'ru'
+    background: str = ''
+    background_fit: str = 'cover'
+    dim: int = 40
+    labels: dict[str, str] = field(default_factory=dict)
+    hidden_buttons: list[str] = field(default_factory=list)
+    button_styles: dict[str, dict] = field(default_factory=dict)
+    layout: dict[str, list[int]] = field(default_factory=dict)
+    text_styles: dict[str, dict] = field(default_factory=dict)
+    custom_buttons: list[dict] = field(default_factory=list)
+    hidden_text: list[str] = field(default_factory=list)
 
     def __post_init__(self):
+        if not isinstance(self.hidden_text, list) or any(key not in TEXT_RECTS for key in self.hidden_text):
+            raise ValueError('Некорректный список удалённых текстов.')
+        object.__setattr__(self, 'hidden_text', list(dict.fromkeys(self.hidden_text)))
         if not isinstance(self.title, str) or not 1 <= len(self.title.strip()) <= 80:
             raise ValueError('Название меню должно содержать от 1 до 80 символов.')
-        if any(ord(c) < 32 for c in self.title) or self.theme not in THEMES:
+        if any(ord(c) < 32 for c in self.title) or not isinstance(self.theme, str) or self.theme not in THEMES:
             raise ValueError('Некорректное оформление меню.')
+        if not isinstance(self.language, str) or self.language not in TEXT:
+            raise ValueError('Неизвестный язык меню.')
+        if self.background_fit not in ('cover', 'contain') or type(self.dim) is not int or not 0 <= self.dim <= 80:
+            raise ValueError('Некорректные настройки фона.')
+        if not isinstance(self.background, str) or len(self.background) > 16_000_000:
+            raise ValueError('Некорректное изображение фона.')
+        if not isinstance(self.labels, dict) or len(self.labels) > 2100:
+            raise ValueError('Некорректные подписи кнопок.')
+        for key, value in self.labels.items():
+            if (not isinstance(key, str) or not re.fullmatch(r'(ru|en):(play|chapters|previous|next|home|subtitle|brand|hint|chapter:\d{1,3}|custom:[a-f0-9]{12})', key)
+                    or not isinstance(value, str) or not 1 <= len(value.strip()) <= 120
+                    or any(ord(c) < 32 for c in value)):
+                raise ValueError('Подпись должна содержать от 1 до 80 символов без переносов строк.')
+        object.__setattr__(self, 'labels', dict(self.labels))
+        def valid_id(key):
+            return isinstance(key, str) and re.fullmatch(r'(play|chapters|chapter:\d{1,3}|(previous|next|home):\d{1,3}|custom:[a-f0-9]{12})', key)
+        if (not isinstance(self.hidden_buttons, list) or len(self.hidden_buttons) > 2000
+                or any(not valid_id(key) for key in self.hidden_buttons)):
+            raise ValueError('Некорректный список удалённых кнопок.')
+        if not isinstance(self.button_styles, dict) or len(self.button_styles) > 2000:
+            raise ValueError('Некорректное оформление кнопок.')
+        for key, style in self.button_styles.items():
+            if not valid_id(key) or not isinstance(style, dict):
+                raise ValueError('Некорректное оформление кнопки.')
+            for name, value in style.items():
+                if name in ('fill', 'border', 'text', 'highlight'):
+                    valid = isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value)
+                elif name == 'shape':
+                    valid = value in ('rounded', 'rectangle', 'pill')
+                elif name in ('width', 'font_size', 'opacity'):
+                    low, high = {'width': (0, 10), 'font_size': (12, 160), 'opacity': (0, 100)}[name]
+                    valid = type(value) is int and low <= value <= high
+                elif name == 'font_family':
+                    valid = isinstance(value, str) and 1 <= len(value) <= 100 and not any(ord(c) < 32 for c in value)
+                elif name in ('bold', 'italic'):
+                    valid = type(value) is bool
+                else:
+                    valid = False
+                if not valid:
+                    raise ValueError('Некорректный параметр оформления кнопки: ' + name)
+        object.__setattr__(self, 'hidden_buttons', list(dict.fromkeys(self.hidden_buttons)))
+        object.__setattr__(self, 'button_styles', {k: dict(v) for k, v in self.button_styles.items()})
+        if not isinstance(self.layout, dict) or len(self.layout) > 2500:
+            raise ValueError('Некорректная компоновка меню.')
+        for key, rect in self.layout.items():
+            if (not (valid_id(key) or key in ['text:'+k for k in TEXT_RECTS])
+                    or not isinstance(rect, (tuple, list)) or len(rect) != 4
+                    or any(type(n) is not int for n in rect)):
+                raise ValueError('Некорректная область элемента.')
+            x, y, w, h = rect
+            if min(x, y) < 0 or w < 32 or h < 32 or x+w > 1920 or y+h > 1080:
+                raise ValueError('Элемент должен находиться внутри меню 1920×1080.')
+        if not isinstance(self.text_styles, dict) or len(self.text_styles) > len(TEXT_RECTS):
+            raise ValueError('Некорректные стили текста.')
+        for key, style in self.text_styles.items():
+            if key not in TEXT_RECTS or not isinstance(style, dict):
+                raise ValueError('Неизвестный текстовый элемент.')
+            for name, value in style.items():
+                valid = (name == 'text' and isinstance(value, str) and re.fullmatch(r'#[a-fA-F0-9]{6}', value)
+                         or name == 'font_size' and type(value) is int and 12 <= value <= 160
+                         or name == 'font_family' and isinstance(value, str) and 1 <= len(value) <= 100 and not any(ord(c) < 32 for c in value)
+                         or name in ('bold', 'italic') and type(value) is bool)
+                if not valid:
+                    raise ValueError('Некорректный стиль текста.')
+        if not isinstance(self.custom_buttons, list) or len(self.custom_buttons) > 500:
+            raise ValueError('Слишком много дополнительных кнопок.')
+        ids = set()
+        for button in self.custom_buttons:
+            if (not isinstance(button, dict) or set(button) != {'id', 'page', 'action'}
+                    or not isinstance(button['id'], str) or not re.fullmatch(r'custom:[a-f0-9]{12}', button['id'])
+                    or button['id'] in ids or type(button['page']) is not int or not 0 <= button['page'] <= 200
+                    or not isinstance(button['action'], str) or not re.fullmatch(r'(play|page):\d{1,3}', button['action'])):
+                raise ValueError('Некорректная дополнительная кнопка.')
+            ids.add(button['id'])
+        for key in ('layout', 'text_styles', 'custom_buttons'):
+            object.__setattr__(self, key, copy.deepcopy(getattr(self, key)))
+
+    def text(self, key):
+        return self.labels.get(self.language + ':' + key, TEXT[self.language].get(key, ''))
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, title, data):
+        return cls(title, **{key: data[key] for key in
+                   ('theme', 'language', 'background', 'background_fit', 'dim', 'labels',
+                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text') if key in data})
 
 
-def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
-    """Make every scene reachable in both directions with at most eight buttons.
+def button_id(page, action):
+    if action.startswith('custom:'):
+        return action
+    kind, value = action.split(':')
+    if kind == 'play':
+        return 'play' if page == 0 else 'chapter:' + value
+    if page == 0:
+        return 'chapters'
+    return ('home' if value == '0' else 'previous' if int(value) < page else 'next') + ':' + str(page)
+
+
+def button_label_key(key):
+    return key if key.startswith(('chapter:', 'custom:')) else key.split(':')[0]
+
+
+def resolve_action(design, action):
+    if action.startswith('custom:'):
+        return next(button['action'] for button in design.custom_buttons if button['id'] == action)
+    return action
+
+
+def button_style(design, key):
+    bg, _, accent = THEMES[design.theme]
+    style = dict(shape='rounded', fill=bg, border='#45494f' if design.theme == 'graphite' else '#354252', text='#f5f6f8',
+                 highlight=accent, width=1, font_size=28, opacity=75, font_family='Noto Sans', bold=False, italic=False)
+    style.update(design.button_styles.get(key, {}))
+    return style
+
+
+def button_radius(style, height=82):
+    return {'rectangle': 0, 'rounded': min(12, height//2), 'pill': height//2}[style['shape']]
+
+
+def validate_menu_navigation(chapters, design):
+    graph = pages(chapters, design)
+    for button in design.custom_buttons:
+        if button['page'] >= len(graph) and button['id'] not in design.hidden_buttons:
+            raise ValueError('Страница дополнительной кнопки больше не существует.')
+    for entries in graph:
+        for _, action in entries:
+            kind, value = resolve_action(design, action).split(':')
+            if int(value) >= (len(chapters) if kind == 'play' else len(graph)):
+                raise ValueError('Кнопка ссылается на отсутствующую главу или страницу. Исправьте её действие.')
+    pending, seen = [0], set()
+    while pending:
+        page = pending.pop()
+        if page in seen:
+            continue
+        seen.add(page)
+        for _, action in graph[page]:
+            kind, value = resolve_action(design, action).split(':')
+            if kind == 'play':
+                return
+            pending.append(int(value))
+    raise ValueError('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.')
+
+
+def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[tuple[str, str]]]:
+    """Make every scene reachable; allow up to sixteen visible buttons per page.
 
     Five chapter buttons leave room for Previous, Next and Home on middle
-    pages, matching the eight focus rectangles in the packaged BD-J Xlet.
+    pages. Custom buttons use the same exported geometry as the renderer.
     """
     if not chapters or len(chapters) > 999:
         raise ValueError('Для меню требуется от 1 до 999 глав.')
@@ -67,9 +279,10 @@ def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
         if previous is not None and timestamp <= previous:
             raise ValueError('Отметки глав должны строго возрастать.')
         previous = timestamp
-    result = [[('Смотреть фильм', 'play:0')]]
+    design = design or MenuDesign('Blu-ray')
+    result = [[(design.text('play'), 'play:0')]]
     if len(chapters) > 1:
-        result[0].append(('Выбор главы', 'page:1'))
+        result[0].append((design.text('chapters'), 'page:1'))
         per_page = 5
         count = (len(chapters) + per_page - 1) // per_page
         for p in range(count):
@@ -78,13 +291,20 @@ def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
                 sec = int(chapters[i])
                 h, rem = divmod(sec, 3600)
                 m, s = divmod(rem, 60)
-                entries.append((f'{i + 1:02}   Глава {i + 1}   ·   {h:02}:{m:02}:{s:02}', f'play:{i}'))
+                name = design.text(f'chapter:{i}') or f'{TEXT[design.language]["chapter"]} {i + 1}'
+                entries.append((f'{i + 1:02}   {name}   ·   {h:02}:{m:02}:{s:02}', f'play:{i}'))
             if p:
-                entries.append(('←  Предыдущие главы', f'page:{p}'))
+                entries.append((design.text('previous'), f'page:{p}'))
             if p + 1 < count:
-                entries.append(('Следующие главы  →', f'page:{p + 2}'))
-            entries.append(('←  Главное меню', 'page:0'))
+                entries.append((design.text('next'), f'page:{p + 2}'))
+            entries.append((design.text('home'), 'page:0'))
             result.append(entries)
+    for p, entries in enumerate(result):
+        entries.extend((design.text(button['id']) or ('Новая кнопка' if design.language == 'ru' else 'New button'), button['id'])
+                       for button in design.custom_buttons if button['page'] == p)
+        result[p] = [entry for entry in entries if button_id(p, entry[1]) not in design.hidden_buttons]
+        if len(result[p]) > 16:
+            raise ValueError('На странице поддерживается до 16 кнопок. Удалите лишние кнопки.')
     return result
 
 def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
@@ -134,12 +354,36 @@ def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
     validate_chapter_timeline(data, chapters)
 
 
+def page_elements(design, chapters, page):
+    graph = pages(chapters, design)
+    result = []
+    for key in ('brand', 'title', 'subtitle' if page == 0 else 'chapter_heading', 'hint'):
+        if key in design.hidden_text:
+            continue
+        edit_key = 'chapters' if key == 'chapter_heading' else key
+        text = design.title if key == 'title' else design.text(edit_key)
+        shown = f'{text}  /  {page} {TEXT[design.language]["of"]} {len(graph)-1}' if key == 'chapter_heading' else text
+        result.append(dict(id='text:'+key, key=edit_key, rect=element_rect(design, 'text:'+key, TEXT_RECTS[key]),
+                           text=text, shown=shown, style=text_style(design, key), button='', index=-1))
+    for i, (shown, action) in enumerate(graph[page]):
+        bid = button_id(page, action)
+        key = button_label_key(bid)
+        text = design.text(key)
+        if not text:
+            text = f'{TEXT[design.language]["chapter"]} {int(action.split(":")[1])+1}' if key.startswith('chapter:') else shown
+        result.append(dict(id=bid, key=key, rect=element_rect(design, bid, default_button_rect(i)),
+                           text=text, shown=shown, style=button_style(design, bid), button=bid, index=i))
+    return result
+
+
 def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1):
     """Return a QImage; caller owns a QGuiApplication (also for CLI authoring)."""
     from PySide6.QtCore import Qt, QRect
     from PySide6.QtGui import QImage, QPainter, QColor, QFont, QLinearGradient, QPen
     initialize_fonts()
-    entries = pages(chapters)[page]
+    graph = pages(chapters, design)
+    entries = graph[page]
+    background = background_image(design.background) if design.background else None
     bg, secondary, accent = THEMES[design.theme]
     image = QImage(1920, 1080, QImage.Format_RGB32)
     image.fill(QColor(bg))
@@ -149,30 +393,70 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
     gradient.setColorAt(0, QColor(bg))
     gradient.setColorAt(1, QColor(secondary))
     painter.fillRect(image.rect(), gradient)
-    painter.setPen(QPen(QColor(accent), 2))
-    for radius in (230, 320, 410):
-        painter.drawEllipse(1420-radius, 170-radius, radius*2, radius*2)
-    def label(rect, text, size, color, bold=False):
-        font = QFont('Noto Sans', size)
-        font.setPixelSize(size)
-        font.setBold(bold)
+    if background is not None:
+        mode = Qt.KeepAspectRatioByExpanding if design.background_fit == 'cover' else Qt.KeepAspectRatio
+        scaled = background.scaled(1920, 1080, mode, Qt.SmoothTransformation)
+        painter.drawImage((1920-scaled.width())//2, (1080-scaled.height())//2, scaled)
+        painter.fillRect(image.rect(), QColor(0, 0, 0, round(design.dim * 255 / 100)))
+    def label(rect, text, style):
+        font = QFont(style['font_family'])
+        font.setPixelSize(style['font_size'])
+        font.setBold(style['bold'])
+        font.setItalic(style['italic'])
+        painter.save()
+        painter.setClipRect(rect)
         painter.setFont(font)
-        painter.setPen(QColor(color))
+        painter.setPen(QColor(style['text']))
         shown = painter.fontMetrics().elidedText(text, Qt.ElideRight, rect.width())
         painter.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, shown)
-    label(QRect(150, 120, 1000, 50), 'D I S C F O R G E   /   B L U - R A Y', 24, accent)
-    label(QRect(150, 200, 1590, 115), design.title, 66, '#ffffff', True)
-    subtitle = 'Фильм начинается здесь' if page == 0 else f'Выбор главы  /  {page} из {len(pages(chapters))-1}'
-    label(QRect(150, 310, 1500, 55), subtitle, 28, '#b9c8d9')
-    for i, (text, _) in enumerate(entries):
-        rect = QRect(*BUTTONS[i])
-        painter.setPen(QPen(QColor(accent if i == focus else '#54667b'), 4 if i == focus else 1))
-        painter.setBrush(QColor('#233b51' if i == focus else bg))
-        painter.drawRoundedRect(rect, 12, 12)
-        label(rect.adjusted(28, 0, -20, 0), text, 30, '#ffffff', i == focus)
-    label(QRect(150, 966, 1620, 45), 'Вверх / Вниз  Выбор     OK  Открыть     Pop-up Menu / Back  Главное меню', 24, '#b9c8d9')
+        painter.restore()
+    for element in page_elements(design, chapters, page):
+        rect = QRect(*element['rect'])
+        style = element['style']
+        if not element['button']:
+            label(rect, element['shown'], style)
+            continue
+        painter.setPen(QPen(QColor(style['border']), style['width']) if style['width'] else Qt.NoPen)
+        fill = QColor(style['fill'])
+        fill.setAlpha(round(style['opacity'] * 255 / 100))
+        painter.setBrush(fill)
+        radius = button_radius(style, rect.height())
+        painter.drawRoundedRect(rect, radius, radius)
+        inset = min(28, rect.width()//10)
+        label(rect.adjusted(inset, 0, -inset, 0), element['shown'], style)
+    # Draw focus last, just as the disc runtime does, including overlapping items.
+    for element in page_elements(design, chapters, page):
+        if element['button'] and element['index'] == focus:
+            paint_focus(painter, element)
     painter.end()
     return image
+
+
+def paint_focus(painter, element):
+    """One antialiased stroke; concentric AWT arcs leave gaps at the corners."""
+    from PySide6.QtCore import Qt, QRectF
+    from PySide6.QtGui import QColor, QPen, QPainter
+    rect = QRectF(*element['rect']).adjusted(-1, -1, 1, 1)
+    radius = button_radius(element['style'], element['rect'][3])
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(element['style']['highlight']), 2))
+    painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
+    painter.restore()
+
+
+def focus_patch(base, element):
+    """Opaque, bounded patch preserves identical Qt rendering on BD-J players."""
+    from PySide6.QtCore import QRect
+    from PySide6.QtGui import QPainter
+    bounds = QRect(*element['rect']).adjusted(-6, -6, 6, 6).intersected(base.rect())
+    patch = base.copy(bounds)
+    painter = QPainter(patch)
+    painter.translate(-bounds.x(), -bounds.y())
+    paint_focus(painter, element)
+    painter.end()
+    return patch, bounds.x(), bounds.y()
 
 
 def _section(data: bytes) -> bytes:
@@ -224,7 +508,8 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     if len(playlists) != 1 or playlists[0].stem != '00000':
         raise ValueError('Меню v1 поддерживает один фильм с плейлистом 00000.')
     # Validate chapter labels and MPLS section bounds before writing files.
-    all_pages = pages(chapters)
+    all_pages = pages(chapters, design)
+    validate_menu_navigation(chapters, design)
     validate_menu_chapters(playlists[0], chapters)
     for path in ('JAR', 'BDJO', 'BACKUP/BDJO', 'BACKUP/JAR'):
         (bdmv / path).mkdir(parents=True, exist_ok=True)
@@ -232,17 +517,40 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     for p, entries in enumerate(all_pages):
         props.append(f'page.{p}.count={len(entries)}')
         for i, (_, action) in enumerate(entries):
-            props.append(f'page.{p}.{i}={action}')
+            props.append(f'page.{p}.{i}={resolve_action(design, action)}')
+            bid = button_id(p, action)
+            style = button_style(design, bid)
+            rect = element_rect(design, bid, default_button_rect(i))
+            for name, value in zip(('x', 'y', 'w', 'h'), rect):
+                props.append(f'page.{p}.{i}.{name}={value}')
+            props.append(f'page.{p}.{i}.radius={button_radius(style, rect[3])}')
+            props.append(f'page.{p}.{i}.highlight={style["highlight"][1:]}')
     with zipfile.ZipFile(template) as source, zipfile.ZipFile(bdmv / 'JAR/00000.jar', 'w', zipfile.ZIP_DEFLATED) as jar:
         for name in source.namelist():
             jar.writestr(name, source.read(name))
-        jar.writestr('menu.properties', '\n'.join(props).encode('ascii'))
         for p in range(len(all_pages)):
+            base = render_page(design, chapters, p)
             buffer = QBuffer()
             buffer.open(QIODevice.WriteOnly)
-            if not render_page(design, chapters, p).save(buffer, 'PNG'):
+            if not base.save(buffer, 'PNG'):
                 raise RuntimeError('Не удалось отрисовать меню.')
             jar.writestr(f'page{p}.png', bytes(buffer.data()))
+            for element in page_elements(design, chapters, p):
+                if not element['button']:
+                    continue
+                patch, x, y = focus_patch(base, element)
+                name = f'focus{p}_{element["index"]}.png'
+                buffer = QBuffer()
+                buffer.open(QIODevice.WriteOnly)
+                if not patch.save(buffer, 'PNG'):
+                    raise RuntimeError('Не удалось отрисовать выделение кнопки.')
+                jar.writestr(name, bytes(buffer.data()))
+                key = f'page.{p}.{element["index"]}'
+                props.extend((f'{key}.focus={name}', f'{key}.focusX={x}', f'{key}.focusY={y}'))
+        jar.writestr('menu.properties', '\n'.join(props).encode('ascii'))
+        import json
+        jar.writestr('discforge-design.json', json.dumps(
+            {'version': 1, 'design': design.to_dict(), 'chapters': chapters}, ensure_ascii=False).encode('utf-8'))
     (bdmv / 'BDJO/00000.bdjo').write_bytes(bdjo_bytes())
     (bdmv / 'index.bdmv').write_bytes(index_bytes())
     for name in ('BDJO/00000.bdjo', 'JAR/00000.jar', 'index.bdmv'):

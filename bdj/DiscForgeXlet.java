@@ -30,13 +30,14 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     private HScene scene;
     private final Properties config = new Properties();
     private Image background;
+    private Image highlight;
+    private int highlightX, highlightY;
     private Player player;
     private int page, focus;
     private volatile boolean playing, stopped, busy;
     private String pending;
     private String error;
     private Thread worker;
-    private static final int[][] BOX = {{150,400},{150,506},{150,612},{150,718},{150,824},{1010,400},{1010,506},{1010,612}};
 
     public void initXlet(XletContext context) throws javax.tv.xlet.XletStateChangeException {
         try {
@@ -74,6 +75,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         }
         closePlayer();
         if (background != null) background.flush();
+        if (highlight != null) highlight.flush();
         if (scene != null) { scene.remove(this); HSceneFactory.getInstance().dispose(scene); }
     }
 
@@ -90,9 +92,24 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         Image previous = background;
         background = image;
         page = number; focus = 0;
+        loadFocus();
         System.out.println("DiscForge: menu page " + page);
         if (previous != null) previous.flush();
         repaint();
+    }
+
+    private void loadFocus() throws Exception {
+        if (highlight != null) { highlight.flush(); highlight = null; }
+        if (Integer.parseInt(config.getProperty("page." + page + ".count")) == 0) return;
+        String key = "page." + page + "." + focus;
+        Image image = Toolkit.getDefaultToolkit().createImage(getClass().getResource("/" + config.getProperty(key + ".focus")));
+        MediaTracker tracker = new MediaTracker(this);
+        tracker.addImage(image, 0);
+        tracker.waitForAll(10000);
+        if (tracker.isErrorAny() || !tracker.checkAll()) { image.flush(); throw new Exception("Focus image unavailable"); }
+        highlightX = Integer.parseInt(config.getProperty(key + ".focusX"));
+        highlightY = Integer.parseInt(config.getProperty(key + ".focusY"));
+        highlight = image;
     }
 
     public synchronized void userEventReceived(UserEvent event) {
@@ -103,9 +120,14 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         }
         if (playing || busy || pending != null) return;
         int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+        if (count == 0) return;
+        int previousFocus = focus;
         if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_RIGHT) focus = (focus + 1) % count;
         if (key == KeyEvent.VK_UP || key == KeyEvent.VK_LEFT) focus = (focus + count - 1) % count;
         if (key == KeyEvent.VK_ENTER) queue(config.getProperty("page." + page + "." + focus));
+        if (focus != previousFocus) {
+            try { loadFocus(); } catch (Exception e) { error = e.toString(); }
+        }
         repaint();
     }
 
@@ -168,9 +190,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     public synchronized void paint(Graphics g) {
         if (playing) { g.clearRect(0, 0, 1920, 1080); return; }
         if (background != null) g.drawImage(background, 0, 0, this);
-        int[] box = BOX[focus];
-        g.setColor(new Color(115,216,237));
-        for (int i = 0; i < 5; i++) g.drawRoundRect(box[0]-i, box[1]-i, 760+i*2, 82+i*2, 12, 12);
+        if (highlight != null) g.drawImage(highlight, highlightX, highlightY, this);
         if (error != null) {
             g.setColor(Color.black); g.fillRect(100, 1000, 1720, 70);
             g.setColor(Color.white); g.drawString("Playback error. Back to retry: " + error, 120, 1040);

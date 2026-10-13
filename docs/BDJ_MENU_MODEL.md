@@ -20,6 +20,6 @@ assert menu.press('ENTER').index == 1
 
 UP/DOWN move focus; LEFT/RIGHT change pages in Scene Selection; ENTER selects Play, Chapter, Audio, Subtitle (including Off), or Bonus; BACK and TOP_MENU return to Home. Scene pages contain 1–12 entries. Empty optional categories are hidden.
 
-**Required before playable authoring:** compile a real BD-J Xlet or HDMV menu, map chapter and audio/subtitle selections to valid muxed MPLS/PlayMark and stream IDs, package signed/appropriate BDJO/JAR assets, link startup navigation and perform real BD-RE, ASUS BW-16D1HT and standalone-player tests. This model does not alter disc creation, recording, DRM, DiscForge TV or DiscForge Player.
+**Historical model-only checklist (the actual authoring pipeline now lives in [BDJ_AUTHORING.md](BDJ_AUTHORING.md)):** compile a real BD-J Xlet or HDMV menu, map chapter and audio/subtitle selections to valid muxed MPLS/PlayMark and stream IDs, package signed/appropriate BDJO/JAR assets, link startup navigation and perform real BD-RE, ASUS BW-16D1HT and standalone-player tests. This model does not alter disc creation, recording, DRM, DiscForge TV or DiscForge Player.
 
 Tests: `python -m unittest discover -s tests -p 'test_bdj_menu.py' -v`.

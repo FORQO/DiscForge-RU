@@ -1,0 +1,12 @@
+This application build uses unmodified Qt for Python / PySide6 Essentials
+and Shiboken 6.8.3, dynamically loaded from _internal/PySide6 and _internal/shiboken6.
+Qt and these bindings are available under the GNU Lesser General Public License
+version 3. The LGPL and underlying GPL texts are provided in this directory.
+
+Qt source: https://code.qt.io/cgit/qt/qtbase.git/tree/?h=v6.8.3
+Qt for Python source: https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.8.3
+Upstream source downloads: https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.8.3-src/
+
+DiscForge imposes no restriction on replacing these libraries with compatible
+modified versions, or reverse engineering for debugging those modifications.
+Application source and packaging commands: https://github.com/maxliv234-star/DiscForge-RU/tree/v1.0.0

@@ -28,7 +28,7 @@ class InspectThread(QThread):
 
 
 class ImageTools(QWidget):
-    def __init__(self):
+    def __init__(self, editor=None):
         super().__init__()
         self.worker = None
         self.verified = None
@@ -55,11 +55,17 @@ class ImageTools(QWidget):
         self.check = QPushButton('Проверить ISO')
         self.check.clicked.connect(self.verify)
         row.addWidget(self.check)
+        self.vlc = QPushButton('Проверить ISO в VLC')
+        self.vlc.clicked.connect(self.open_vlc)
+        row.addWidget(self.vlc)
         self.burn = QPushButton('Записать средствами Windows…')
         self.burn.setEnabled(False)
         self.burn.clicked.connect(self.open_burner)
         row.addWidget(self.burn)
         box.addLayout(row)
+        from iso_menu_panel import IsoMenuPanel
+        self.menu_panel = IsoMenuPanel(self, editor)
+        box.addWidget(self.menu_panel)
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
         self.report.setPlaceholderText('Здесь появится результат проверки.')
@@ -87,7 +93,7 @@ class ImageTools(QWidget):
         return str(file), stat.st_size, stat.st_mtime_ns, self.profile.currentText()
 
     def verify(self):
-        if self.worker and self.worker.isRunning():
+        if self.is_running():
             return
         try:
             self._checking = self._identity()
@@ -121,5 +127,23 @@ class ImageTools(QWidget):
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, 'Запись образа', str(exc))
 
+    def open_vlc(self):
+        from vlc_preview import find_vlc, launch_iso
+        if not self.path.text().strip():
+            self.choose()
+        if not self.path.text().strip():
+            return
+        vlc = find_vlc()
+        if vlc is None:
+            vlc, _ = QFileDialog.getOpenFileName(self, 'Выберите VLC 64-bit (vlc.exe)', '', 'VLC (vlc.exe)')
+            if not vlc:
+                return
+        try:
+            launch_iso(self.path.text(), vlc)
+            self.report.appendPlainText('ISO открыт в отдельном VLC с меню Blu-ray и Java из комплекта DiscForge. '
+                                        'Проверьте запуск фильма, главы и возврат в меню.')
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, 'Проверить ISO в VLC', str(exc))
+
     def is_running(self):
-        return bool(self.worker and self.worker.isRunning())
+        return bool(self.worker and self.worker.isRunning()) or self.menu_panel.is_running()
