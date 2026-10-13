@@ -89,7 +89,16 @@ class LayoutGuiTests(unittest.TestCase):
 
     def test_static_text_color_font_bold_and_roundtrip(self):
         self.editor.preview_selection('text:title')
-        self.editor.font_family.setCurrentFont(QFont('Arial'))
+        # Font availability differs on Windows, macOS and Linux CI.
+        # Pick a real installed alternative so Qt does not substitute Arial.
+        current = self.editor.font_family.currentFont().family()
+        candidate = next((self.editor.font_family.itemText(i)
+                          for i in range(self.editor.font_family.count())
+                          if self.editor.font_family.itemText(i) != current), None)
+        if candidate is None:
+            self.skipTest('Only one Qt font family is installed')
+        self.editor.font_family.setCurrentFont(QFont(candidate))
+        selected_family = self.editor.font_family.currentFont().family()
         self.editor.font_size.setValue(72)
         self.editor.bold.setChecked(False)
         self.editor.italic.setChecked(True)
@@ -97,9 +106,24 @@ class LayoutGuiTests(unittest.TestCase):
             self.editor.choose_color('text')
         restored = MenuDesign.from_dict(self.editor.title.text(), json.loads(json.dumps(self.editor.settings())))
         self.assertEqual(restored.text_styles['title']['text'], '#ff1234')
-        self.assertEqual(restored.text_styles['title']['font_family'], 'Arial')
+        self.assertEqual(restored.text_styles['title']['font_family'], selected_family)
         self.assertTrue(restored.text_styles['title']['italic'])
         self.assertFalse(self.editor.shape.isEnabled())
+
+    def test_missing_cross_platform_font_survives_unrelated_style_edits(self):
+        missing = 'DiscForge Not Installed Font 12345'
+        self.editor.apply_design(MenuDesign(
+            'Film', text_styles={'title': {'font_family': missing}}))
+        self.editor.preview_selection('text:title')
+        self.editor.font_size.setValue(82)
+        self.editor.bold.setChecked(False)
+        self.editor.italic.setChecked(True)
+        restored = MenuDesign.from_dict(
+            self.editor.title.text(), json.loads(json.dumps(self.editor.settings())))
+        self.assertEqual(restored.text_styles['title']['font_family'], missing)
+        self.assertEqual(restored.text_styles['title']['font_size'], 82)
+        self.assertFalse(restored.text_styles['title']['bold'])
+        self.assertTrue(restored.text_styles['title']['italic'])
 
     def test_add_button_edit_action_delete_and_restore(self):
         self.editor.set_chapters([0, 4, 8])

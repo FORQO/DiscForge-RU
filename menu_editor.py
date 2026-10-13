@@ -440,7 +440,10 @@ class MenuEditor(QWidget):
             return
         is_text = self.selected_button.startswith('text:')
         style = self.text_styles.setdefault(self.selected_button[5:], {}) if is_text else self.button_styles.setdefault(self.selected_button, {})
-        style.update(font_size=self.font_size.value(), font_family=self.font_family.currentFont().family(), bold=self.bold.isChecked(), italic=self.italic.isChecked())
+        style.update(font_size=self.font_size.value(), bold=self.bold.isChecked(), italic=self.italic.isChecked())
+        # Preserve saved font names from another OS when editing other properties.
+        if self.sender() is self.font_family:
+            style['font_family'] = self.font_family.currentFont().family()
         if not is_text:
             style.update(shape=self.shape.currentData(), width=self.border_width.value(), opacity=self.opacity.value())
         self.refresh()
