@@ -36,8 +36,9 @@ from subtitle_panel import SubtitlePanel
 from subtitles import select_subtitles, validate_selection
 from audio_selection import selected_tracks, select_tracks
 
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
+ICON = Path(__file__).parent / 'assets/brand/diskforge.ico'
 
 
 def timecode(seconds: float) -> str:
@@ -50,11 +51,21 @@ def timecode(seconds: float) -> str:
 def parse_timecode(code: str) -> float:
     parts = code.strip().split(':')
     if len(parts) != 3:
-        raise ValueError('Формат времени: ЧЧ:ММ:СС')
-    h, m, s = (int(p) for p in parts)
-    if min(h, m, s) < 0 or m > 59 or s > 59:
+        raise ValueError('Формат времени: ЧЧ:ММ:СС.ммм')
+    import math
+    h, m = (int(p) for p in parts[:2])
+    s = float(parts[2])
+    if not math.isfinite(s) or min(h, m, s) < 0 or m > 59 or s >= 60:
         raise ValueError('Недопустимое время')
     return float(h * 3600 + m * 60 + s)
+
+
+def chapter_timecode(seconds: float) -> str:
+    milliseconds = round(seconds * 1000)
+    seconds, ms = divmod(milliseconds, 1000)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    return f'{hours:02}:{minutes:02}:{seconds:02}.{ms:03}'
 
 
 class ScanThread(QThread):
@@ -177,10 +188,10 @@ class Window(QMainWindow):
         super().__init__()
         initialize_fonts()
         self.setFont(QFont('Noto Sans', 10))
-        self.setWindowIcon(QIcon(str(LOGO)))
+        self.setWindowIcon(QIcon(str(ICON)))
         self.ui_theme = 'graphite'
         self.setWindowTitle('DiskForge — мастер Blu-ray | ' + VERSION)
-        self.resize(1190, 760)
+        self.resize(1360, 920)
         self.setMinimumSize(920, 620)
         self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
@@ -203,12 +214,12 @@ class Window(QMainWindow):
         host = QWidget()
         self.setCentralWidget(host)
         root = QVBoxLayout(host)
-        root.setSpacing(12)
+        root.setSpacing(8)
         root.setContentsMargins(18, 16, 18, 12)
 
         header = QHBoxLayout()
         heading = QLabel()
-        heading.setPixmap(QPixmap(str(LOGO)).scaled(120, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        heading.setPixmap(QPixmap(str(LOGO)).scaled(116, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         heading.setAccessibleName('DiskForge')
         heading.setTextFormat(Qt.RichText)
         heading.setObjectName('brand')
@@ -251,7 +262,9 @@ class Window(QMainWindow):
 
         self.tabs = QTabWidget()
         splitter.addWidget(self.tabs)
-        splitter.setSizes([450, 690])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([260, 1060])
 
         build_tab = QWidget()
         build_box = QVBoxLayout(build_tab)
@@ -328,7 +341,7 @@ class Window(QMainWindow):
         chapter_tab = QWidget()
         chapter_box = QVBoxLayout(chapter_tab)
         chapter_help = QLabel('Главы — это закладки внутри одного фильма. Кнопка главы в меню запускает фильм с указанного времени.\n'
-                             'Введите время начала и нажмите «Добавить главу». Для изменения выберите главу в списке, задайте новое время и нажмите «Изменить время».')
+                             'Готовые главы импортируются при анализе. Можно добавить свою главу, изменить время или вернуть главы из файла.')
         chapter_help.setWordWrap(True)
         chapter_box.addWidget(chapter_help)
         self.chapter_status = QLabel('Сначала добавьте фильм и выберите его слева.')
@@ -338,10 +351,10 @@ class Window(QMainWindow):
         self.chapter_list.itemDoubleClicked.connect(lambda *_: self.chapter_time.setFocus())
         chapter_box.addWidget(self.chapter_list, 1)
         chapter_edit = QHBoxLayout()
-        chapter_edit.addWidget(QLabel('Начало (чч:мм:сс):'))
-        self.chapter_time = QLineEdit('00:00:00')
-        self.chapter_time.setInputMask('00:00:00;_')
-        self.chapter_time.setMaximumWidth(110)
+        chapter_edit.addWidget(QLabel('Начало (чч:мм:сс.ммм):'))
+        self.chapter_time = QLineEdit('00:00:00.000')
+        self.chapter_time.setInputMask('00:00:00.000;_')
+        self.chapter_time.setMaximumWidth(145)
         self.chapter_time.setAccessibleName('Время начала главы')
         chapter_edit.addWidget(self.chapter_time)
         self.add_chapter_button = QPushButton('+ Добавить главу')
@@ -364,6 +377,10 @@ class Window(QMainWindow):
         self.delete_chapter_button.clicked.connect(self.remove_chapter)
         chapter_actions.addWidget(self.delete_chapter_button)
         chapter_box.addLayout(chapter_actions)
+        self.import_chapters_button = QPushButton('Вернуть главы из файла')
+        self.import_chapters_button.setToolTip('Заменить текущие тайминги главами, найденными при анализе фильма.')
+        self.import_chapters_button.clicked.connect(self.restore_source_chapters)
+        chapter_box.addWidget(self.import_chapters_button)
         note = QLabel('Глава 1 — начало фильма, 00:00:00. Её нельзя удалить или сдвинуть. '
                       'Добавленные главы автоматически появляются в меню «Выбор главы». Удаление главы не вырезает видео.')
         note.setObjectName('hint')
@@ -373,12 +390,9 @@ class Window(QMainWindow):
 
         self.menu_editor = MenuEditor()
         self.menu_title = self.menu_editor.title
-        menu_scroll = QScrollArea()
-        menu_scroll.setWidgetResizable(True)
-        menu_scroll.setWidget(self.menu_editor)
-        self.tabs.addTab(menu_scroll, '5 · Меню')
+        self.tabs.addTab(self.menu_editor, '5 · Меню')
         self.image_tools = ImageTools(self.menu_editor)
-        self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(menu_scroll))
+        self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(self.menu_editor))
         self.tabs.addTab(self.image_tools, '6 · Запись ISO')
 
         logbar = QHBoxLayout()
@@ -396,7 +410,7 @@ class Window(QMainWindow):
         root.addLayout(logbar)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(125)
+        self.log.setMaximumHeight(85)
         self.log.setPlaceholderText('Ожидание действий…')
         root.addWidget(self.log)
         destination_row = QHBoxLayout()
@@ -535,7 +549,12 @@ class Window(QMainWindow):
                 break
         if info:
             self.media[path] = info
-            self.chapters.setdefault(path, [0.0])
+            if path not in self.chapters:
+                self.chapters[path] = list(info.source_chapters) or [0.0]
+                if info.source_chapters:
+                    self._message(f'Главы из файла импортированы: {len(info.source_chapters)}. Они доступны в меню диска.')
+            for notice in info.chapter_notices:
+                self._message(notice)
             self._message(f'OK: {info.name} — {timecode(info.duration)}; {info.width}×{info.height}')
         else:
             self._message(f'ОШИБКА {Path(path).name}: {error}')
@@ -611,13 +630,21 @@ class Window(QMainWindow):
                 f'Аудиодорожек: {info.audio_tracks}; субтитров: {info.subtitle_tracks}; '
                 f'HDR: {"да (UHD-модуль ещё не готов)" if info.is_hdr else "нет"}'
             )
-            self.chapter_status.setText(f'Фильм: {info.name} · Длительность: {timecode(info.duration)} · Глав: {len(self.chapters.get(path, [0]))}')
+            source_note = f'В файле найдено глав: {len(info.source_chapters)}.' if info.source_chapters else 'Готовых глав в файле нет — добавьте их вручную или по интервалу.'
+            self.chapter_status.setText(f'Фильм: {info.name} · Длительность: {timecode(info.duration)} · Глав: {len(self.chapters.get(path, [0]))}\n{source_note}')
+            self.chapter_status.setWordWrap(True)
             for index, t in enumerate(self.chapters.get(path, [0.0]), 1):
-                item = QListWidgetItem(f'Глава {index}   ·   {timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
+                item = QListWidgetItem(f'Глава {index}   ·   {chapter_timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
                 item.setData(Qt.UserRole, t)
                 self.chapter_list.addItem(item)
         self._update_recommendation()
         self._refresh_buttons()
+
+    def restore_source_chapters(self) -> None:
+        path = self._selected_path()
+        info = self.media.get(path)
+        if info and info.source_chapters:
+            self.apply_chapters(path, list(info.source_chapters))
 
     def auto_chapters(self) -> None:
         path = self._selected_path()
@@ -644,7 +671,7 @@ class Window(QMainWindow):
 
     def select_chapter_time(self, item, *_):
         if item:
-            self.chapter_time.setText(timecode(float(item.data(Qt.UserRole))))
+            self.chapter_time.setText(chapter_timecode(float(item.data(Qt.UserRole))))
         if hasattr(self, 'build_button'):
             self._refresh_buttons()
 
@@ -712,6 +739,8 @@ class Window(QMainWindow):
         self.subtitle_panel.setEnabled(editable)
         self.add_chapter_button.setEnabled(editable)
         self.auto_chapter_button.setEnabled(editable)
+        info = self.media.get(self._selected_path())
+        self.import_chapters_button.setEnabled(editable and bool(info and info.source_chapters))
         self.chapter_time.setEnabled(editable)
         selected = self.chapter_list.currentItem()
         can_change = editable and selected is not None and selected.data(Qt.UserRole) != 0
@@ -883,7 +912,9 @@ class Window(QMainWindow):
             for p in paths:
                 normalized = str(Path(p).resolve())
                 normalized_paths.append(normalized)
-                v = raw.get(p, [0.0])
+                if p not in raw:
+                    continue  # No saved edit: use chapters found by the scanner.
+                v = raw[p]
                 if not isinstance(v, list):
                     raise ValueError('Неверный список глав')
                 validate_chapters(v)
@@ -980,14 +1011,14 @@ QStatusBar { color: #9fb1c9; }
 def interface_style(theme):
     if theme == 'blue':
         return STYLE
-    palette = {'#101724':'#202123', '#e3eaf6':'#eeeef0', '#95a3bb':'#abaeb3',
-        '#192234':'#292b2e', '#b9c9e0':'#c8c9cc', '#9bacc3':'#b5b6bb',
-        '#182337':'#282a2d', '#34445e':'#484b50', '#3268b4':'#825329',
-        '#33435a':'#45484d', '#273952':'#383b40', '#3b5573':'#56595e',
-        '#355170':'#494d52', '#1b2636':'#292b2e', '#62718a':'#777b80',
+    palette = {'#101724':'#303236', '#e3eaf6':'#eeeef0', '#95a3bb':'#abaeb3',
+        '#192234':'#383b40', '#b9c9e0':'#c8c9cc', '#9bacc3':'#b5b6bb',
+        '#182337':'#35383d', '#34445e':'#62666d', '#3268b4':'#825329',
+        '#33435a':'#585d64', '#273952':'#454950', '#3b5573':'#6c7179',
+        '#355170':'#555b63', '#1b2636':'#383b40', '#62718a':'#9298a1',
         '#28354a':'#3b3e43', '#2478db':'#e58a35', '#3491ff':'#f3a24f',
-        '#1d2a3d':'#2d2f33', '#304259':'#45484d', '#2b527f':'#5f4632',
-        '#1d293b':'#2b2d31', '#30435a':'#484b50', '#3287e5':'#ba6d2a', '#9fb1c9':'#b8bbc0'}
+        '#1d2a3d':'#393d43', '#304259':'#585d64', '#2b527f':'#745339',
+        '#1d293b':'#393d43', '#30435a':'#62666d', '#3287e5':'#ba6d2a', '#9fb1c9':'#b8bbc0'}
     value = STYLE
     for old, new in palette.items():
         value = value.replace(old, new)
@@ -1023,6 +1054,12 @@ def main() -> int:
         checks['vlc_button'] = w.image_tools.vlc.text() == 'Проверить ISO в VLC'
         checks['iso_menu_update'] = w.image_tools.menu_panel.repair.isEnabled()
         checks['fullscreen_preview'] = w.menu_editor.fullscreen_button.isEnabled()
+        from PySide6.QtGui import QImage
+        logo = QImage(str(LOGO))
+        checks['transparent_logo'] = logo.hasAlphaChannel() and logo.pixelColor(0, 0).alpha() == 0
+        checks['disc_icon'] = not QIcon(str(ICON)).isNull()
+        checks['menu_sidebar'] = w.menu_editor.splitter.widget(1) is w.menu_editor.inspector
+        checks['source_chapters'] = probe_media is not None and hasattr(MediaInfo, 'source_chapters')
         write_json(smoke_report, {'version': VERSION, 'checks': checks, 'passed': all(checks.values())})
         # Do not save user settings from a packaging test.
         w.hide()

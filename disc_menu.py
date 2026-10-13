@@ -19,7 +19,7 @@ import copy
 from menu_layout import TEXT_RECTS, element_rect, text_style, default_button_rect
 
 THEMES = {'midnight': ('#101721', '#202d3c', '#bacde1'),
-          'graphite': ('#222427', '#3b3e43', '#f39542'),
+          'graphite': ('#303338', '#494e55', '#f39542'),
           'cinema': ('#181315', '#38272b', '#edbc83')}
 BUTTONS = ((150, 400, 760, 82), (150, 506, 760, 82),
            (150, 612, 760, 82), (150, 718, 760, 82),

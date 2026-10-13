@@ -53,6 +53,8 @@ class MediaInfo:
     selected_audio: tuple | None = None
     subtitle_streams: tuple = ()
     selected_subtitles: tuple = ()
+    source_chapters: tuple = ()
+    chapter_notices: tuple = ()
 
     @property
     def is_hdr(self) -> bool:
@@ -64,7 +66,7 @@ class MediaInfo:
 
 
 def _run_probe(path: str, ffprobe: str = 'ffprobe') -> dict:
-    cmd = [ffprobe, '-v', 'error', '-show_format', '-show_streams', '-of', 'json', path]
+    cmd = [ffprobe, '-v', 'error', '-show_format', '-show_streams', '-show_chapters', '-of', 'json', path]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
                            errors='replace', timeout=45, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -111,6 +113,8 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
             raise DiscForgeError(f'ffprobe вернул некорректное значение: {label}.')
         return result
 
+    from source_chapters import import_chapters
+    source_chapters, chapter_notices = import_chapters(data.get('chapters'), duration)
     return MediaInfo(
         path=path, duration=duration,
         size=nonnegative_int(fmt.get('size') or (os.path.getsize(path) if os.path.isfile(path) else 0), 'размер'),
@@ -124,6 +128,7 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
         video_details=dict(v), audio_details=dict(a),
         audio_streams=tuple(dict(s) for s in audios),
         subtitle_streams=tuple(dict(s) for s in subs),
+        source_chapters=source_chapters, chapter_notices=chapter_notices,
     )
 
 
@@ -473,6 +478,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         raise DiscForgeError('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.')
     if cancel.is_set():
         raise DiscForgeError('Операция отменена пользователем.')
+    if chapters is None and info.source_chapters:
+        chapters = list(info.source_chapters)
     if chapters is not None:
         validate_chapters(chapters, info.duration)
     if menu is not None:
