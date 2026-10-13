@@ -89,7 +89,10 @@ class LayoutGuiTests(unittest.TestCase):
 
     def test_static_text_color_font_bold_and_roundtrip(self):
         self.editor.preview_selection('text:title')
-        self.editor.font_family.setCurrentFont(QFont('Arial'))
+        # Choose an installed family: Arial is not present on Linux CI.
+        from PySide6.QtGui import QFontDatabase
+        family = next(name for name in QFontDatabase.families() if name != self.editor.font_family.currentFont().family())
+        self.editor.font_family.setCurrentFont(QFont(family))
         self.editor.font_size.setValue(72)
         self.editor.bold.setChecked(False)
         self.editor.italic.setChecked(True)
@@ -97,7 +100,7 @@ class LayoutGuiTests(unittest.TestCase):
             self.editor.choose_color('text')
         restored = MenuDesign.from_dict(self.editor.title.text(), json.loads(json.dumps(self.editor.settings())))
         self.assertEqual(restored.text_styles['title']['text'], '#ff1234')
-        self.assertEqual(restored.text_styles['title']['font_family'], 'Arial')
+        self.assertEqual(restored.text_styles['title']['font_family'], family)
         self.assertTrue(restored.text_styles['title']['italic'])
         self.assertFalse(self.editor.shape.isEnabled())
 
