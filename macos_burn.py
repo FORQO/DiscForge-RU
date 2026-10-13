@@ -44,9 +44,9 @@ def _require_unchanged(image: Path, fingerprint: tuple[int, int, int, int, int])
         raise MacBurnError("ISO изменился во время проверки; запись остановлена. Повторите проверку.")
 
 
-def validate_for_burning(path: str | Path, *, profile: str | None = None,
-                         inspect_bdmv: bool = False) -> Path:
-    """Fail closed before touching a recorder; metadata preflight is not a playback test."""
+def _validated_image_with_identity(path: str | Path, *, profile: str | None = None,
+                                   inspect_bdmv: bool = False) -> tuple[Path, tuple[int, int, int, int, int]]:
+    """Keep the preflight fingerprint through the actual burn, without a fresh baseline."""
     original = Path(path).expanduser()
     if original.is_symlink():
         raise MacBurnError("Символическая ссылка на ISO запрещена перед записью.")
@@ -70,6 +70,13 @@ def validate_for_burning(path: str | Path, *, profile: str | None = None,
         except MountedBDMVError as exc:
             raise MacBurnError(str(exc)) from exc
     _require_unchanged(image, fingerprint)
+    return image, fingerprint
+
+
+def validate_for_burning(path: str | Path, *, profile: str | None = None,
+                         inspect_bdmv: bool = False) -> Path:
+    """Fail closed before touching a recorder; metadata preflight is not a playback test."""
+    image, _ = _validated_image_with_identity(path, profile=profile, inspect_bdmv=inspect_bdmv)
     return image
 
 
@@ -110,8 +117,9 @@ def list_drives() -> str:
 def burn(image: str | Path, *, device: str | None = None, speed: int | None = None,
          profile: str | None = None, inspect_bdmv: bool = False) -> None:
     require_macos()
-    source = validate_for_burning(image, profile=profile, inspect_bdmv=inspect_bdmv)
-    fingerprint = _image_identity(source)
+    source, fingerprint = _validated_image_with_identity(
+        image, profile=profile, inspect_bdmv=inspect_bdmv
+    )
     command = burn_command(source, device=device, speed=speed)
     _require_unchanged(source, fingerprint)
     try:

@@ -92,5 +92,27 @@ class MacISOIntegrityTests(unittest.TestCase):
                 writer.assert_called_once()
 
 
+    def test_replacement_after_preflight_return_blocks_writer(self):
+        """A new fingerprint after validation would silently trust a swapped ISO."""
+        with tempfile.TemporaryDirectory() as folder:
+            image = self.make_iso(folder)
+            original_validator = macos_burn._validated_image_with_identity
+
+            def swap_between_preflight_and_writer(*args, **kwargs):
+                checked, fingerprint = original_validator(*args, **kwargs)
+                replacement = Path(folder) / "other.iso"
+                replacement.write_bytes(b"R" * (8 * 2048))
+                replacement.replace(checked)
+                return checked, fingerprint
+
+            with (patch("macos_burn.sys.platform", "darwin"),
+                  patch("macos_burn.inspect_udf", return_value=GOOD),
+                  patch("macos_burn._validated_image_with_identity",
+                        side_effect=swap_between_preflight_and_writer),
+                  patch("macos_burn.subprocess.run") as writer):
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "ISO изменился"):
+                    macos_burn.burn(image)
+                writer.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
