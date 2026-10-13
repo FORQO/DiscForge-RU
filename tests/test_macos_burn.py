@@ -102,13 +102,25 @@ class MacBurnTests(unittest.TestCase):
         with self.assertRaises(macos_burn.MacBurnError):
             macos_burn.burn_command(Path("test.iso"), speed=25)
         with self.assertRaises(macos_burn.MacBurnError):
+            macos_burn.burn_command(Path("test.iso"), speed=True)
+        with self.assertRaises(macos_burn.MacBurnError):
             macos_burn.burn_command(Path("test.iso"), device="-erase")
 
     def test_dry_run_never_executes(self):
         with tempfile.TemporaryDirectory() as tmp:
             image = self.make_iso(tmp)
-            with patch("macos_burn.subprocess.run") as runner, patch("builtins.print"):
+            with patch("macos_burn.inspect_udf",
+                       return_value=SimpleNamespace(valid=True, errors=[])) as inspector, \
+                 patch("macos_burn.subprocess.run") as runner, patch("builtins.print"):
                 self.assertEqual(macos_burn.main(["burn", str(image), "--dry-run"]), 0)
+                inspector.assert_called_once()
+                runner.assert_not_called()
+
+    def test_dry_run_rejects_non_udf_without_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            with patch("macos_burn.subprocess.run") as runner:
+                self.assertEqual(macos_burn.main(["burn", str(image), "--dry-run"]), 1)
                 runner.assert_not_called()
 
     def test_without_yes_never_executes(self):

@@ -50,7 +50,7 @@ def validate_for_burning(path: str | Path, *, profile: str | None = None) -> Pat
 
 def burn_command(image: Path, device: str | None = None, speed: int | None = None) -> list[str]:
     """Use Apple's image writer; keep original ISO rather than synthesize a new filesystem."""
-    if speed is not None and (not isinstance(speed, int) or speed < 1 or speed > 16):
+    if speed is not None and (type(speed) is not int or speed < 1 or speed > 16):
         raise MacBurnError("Скорость записи должна быть целым числом 1–16.")
     command = [
         "hdiutil", "burn", str(image), "-verifyburn", "-forceclose",
@@ -121,11 +121,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Предварительная проверка UDF 2.50 пройдена:", checked)
             print("Это НЕ проверка структуры BDMV, записанного диска или совместимости плеера.")
             return 0
-        image = validate_image(args.iso)
-        command = burn_command(image, args.device, args.speed)
         if args.dry_run:
-            print("Будет выполнена команда:", repr(command))
-            print("ВНИМАНИЕ: это не проверка UDF 2.50/BDMV и не реальная запись.")
+            image = validate_for_burning(args.iso, profile=args.profile)
+            command = burn_command(image, args.device, args.speed)
+            print("Проверка метаданных UDF 2.50 пройдена. Будет выполнена команда:", repr(command))
+            print("Это НЕ проверка структуры BDMV или воспроизводимости и НЕ запись диска.")
             return 0
         if not args.yes:
             raise MacBurnError("Для реальной записи добавьте --yes; сначала проверьте ISO и носитель.")
