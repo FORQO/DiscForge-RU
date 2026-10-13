@@ -30,6 +30,20 @@ def validate_image(path: str | Path) -> Path:
     return image
 
 
+def _image_identity(image: Path) -> tuple[int, int, int, int, int]:
+    """Detect routine concurrent ISO edits; this is not an atomic snapshot."""
+    try:
+        stat = image.stat()
+    except OSError as exc:
+        raise MacBurnError(f"ISO стал недоступен во время проверки: {exc}") from exc
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
+def _require_unchanged(image: Path, fingerprint: tuple[int, int, int, int, int]) -> None:
+    if _image_identity(image) != fingerprint:
+        raise MacBurnError("ISO изменился во время проверки; запись остановлена. Повторите проверку.")
+
+
 def validate_for_burning(path: str | Path, *, profile: str | None = None,
                          inspect_bdmv: bool = False) -> Path:
     """Fail closed before touching a recorder; metadata preflight is not a playback test."""
@@ -37,8 +51,9 @@ def validate_for_burning(path: str | Path, *, profile: str | None = None,
     if original.is_symlink():
         raise MacBurnError("Символическая ссылка на ISO запрещена перед записью.")
     image = validate_image(original)
+    fingerprint = _image_identity(image)
     if profile is None:
-        profile = "BD25" if image.stat().st_size <= CAPACITIES["BD25"] else "BD50"
+        profile = "BD25" if fingerprint[2] <= CAPACITIES["BD25"] else "BD50"
     if profile not in CAPACITIES:
         raise MacBurnError("Для записи поддерживаются только профили BD25 и BD50.")
     report = inspect_udf(image, profile=profile)
@@ -54,6 +69,7 @@ def validate_for_burning(path: str | Path, *, profile: str | None = None,
             inspect_mounted_bdmv(image, profile=profile)
         except MountedBDMVError as exc:
             raise MacBurnError(str(exc)) from exc
+    _require_unchanged(image, fingerprint)
     return image
 
 
@@ -95,7 +111,9 @@ def burn(image: str | Path, *, device: str | None = None, speed: int | None = No
          profile: str | None = None, inspect_bdmv: bool = False) -> None:
     require_macos()
     source = validate_for_burning(image, profile=profile, inspect_bdmv=inspect_bdmv)
+    fingerprint = _image_identity(source)
     command = burn_command(source, device=device, speed=speed)
+    _require_unchanged(source, fingerprint)
     try:
         completed = subprocess.run(command, check=False)
     except OSError as exc:
