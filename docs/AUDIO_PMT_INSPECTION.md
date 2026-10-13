@@ -15,16 +15,17 @@ Exit code `0` means a complete CRC-valid PAT/PMT pair was found within the first
 with `stream_type=0x81` (Blu-ray AC-3), matching the PAT program number. It does **not** prove that audio payloads are
 valid/decodable, selectable through BD-J, or in sync. Exit code `2` indicates
 malformed/inconclusive metadata or a different AC-3 stream count; it does not by
-itself prove the M2TS is bad. MPEG-TS sections spanning more than one 188-byte
-packet are deliberately not reassembled by this bounded checker, so some valid
-streams are inconclusive. Actual hardware playback and audio switching remain
+itself prove the M2TS is bad. PSI sections spanning consecutive 188-byte TS packets are now reassembled with
+continuity-counter checks, maximum section size 1024 bytes, and CRC checking.
+Missing or out-of-order packets, invalid pointers and incomplete sections fail
+closed. The check still inspects only the first 32,768 M2TS packets. Actual hardware playback and audio switching remain
 mandatory before compatibility claims.
 
 Tests: `python -m unittest tests/test_bdmv_audio_check.py -v` or normal test
 discovery from the repository root.
 
 The checker rejects malformed PSI syntax, mismatched PAT/PMT program numbers,
-and missing TS sync bytes. Use this result as a diagnostic **in addition to**,
+missing TS sync bytes and discontinuous transport sections. Use this result as a diagnostic **in addition to**,
 not instead of, the existing BDMV preflight and the later physical disc tests.
 
 ## Optional BDMV folder preflight gate
@@ -51,8 +52,8 @@ not decoded audio, multi-audio selection, BD-J switching or ISO validity.
 
 The authoring pipeline regressions use synthetic CRC-valid transport packets
 with mocked FFmpeg/tsMuxer; they are **not real tsMuxer output fixtures**.
-Because this bounded PSI parser cannot reassemble tables spanning packets,
-a conforming clip might be rejected as inconclusive. Real tsMuxer-generated
+Because this remains a bounded metadata-only inspection, a clip can still be
+inconclusive (for example, when PAT/PMT are not found inside the scan window). Real tsMuxer-generated
 fixtures, Windows/macOS packaging and ASUS BW-16D1HT/player testing are still
 required before release-readiness claims.
 

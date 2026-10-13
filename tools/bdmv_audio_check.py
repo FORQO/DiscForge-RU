@@ -2,8 +2,8 @@
 
 This is an *independent diagnostic*; it does not validate Blu-ray playback,
 TS continuity, codecs, timing or UDF. It never modifies media or burns discs.
-Only complete, CRC-valid PAT/PMT sections fitting in one TS packet are parsed;
-a spanning section produces an inconclusive error, never a false success.
+CRC-valid PAT/PMT sections can span multiple consecutive TS packets.
+Incomplete sections and continuity errors never count as successful checks.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from tools.psi_reassembly import PSIReader
 
 M2TS_PACKET_BYTES = 192
 MAX_PACKETS = 32768  # 6 MiB bounded scan
@@ -37,39 +38,6 @@ def _crc32_mpeg(section: bytes) -> int:
         for _ in range(8):
             crc = ((crc << 1) ^ (0x04C11DB7 if crc & 0x80000000 else 0)) & 0xFFFFFFFF
     return crc
-
-
-def _section(ts: bytes) -> bytes | None:
-    """Return a complete, CRC-valid PSI section begun in this packet, if any."""
-    if len(ts) != 188 or ts[0] != 0x47 or ts[1] & 0x80:
-        raise AudioInspectionError('Invalid TS sync/transport-error header')
-    if ts[3] & 0xC0:
-        raise AudioInspectionError('Encrypted TS packet is unsupported')
-    control = (ts[3] >> 4) & 3
-    if control == 0:
-        raise AudioInspectionError('Reserved TS adaptation control')
-    if not ts[1] & 0x40 or control == 2:
-        return None
-    position = 4
-    if control == 3:
-        position += 1 + ts[position]
-    if position >= len(ts):
-        raise AudioInspectionError('Truncated TS payload')
-    position += 1 + ts[position]  # pointer_field and any preceding bytes
-    if position + 3 > len(ts):
-        return None
-    if ts[position + 1] & 0xF0 != 0xB0:
-        raise AudioInspectionError('Invalid PSI section syntax/reserved bits')
-    length = ((ts[position + 1] & 0x0F) << 8) | ts[position + 2]
-    if length < 9 or length > 1021:
-        raise AudioInspectionError('Invalid PSI section length')
-    end = position + 3 + length
-    if end > len(ts):
-        return None  # bounded scanner does not reassemble multi-packet sections
-    section = ts[position:end]
-    if _crc32_mpeg(section) != 0:
-        raise AudioInspectionError('PSI CRC mismatch')
-    return section
 
 
 def _pat(section: bytes) -> tuple[int, int]:
@@ -127,28 +95,28 @@ def inspect(path: Path, expected_ac3: int | None = None) -> tuple[Stream, ...]:
     if expected_ac3 is not None and (type(expected_ac3) is not int or not 0 <= expected_ac3 <= 8):
         raise AudioInspectionError('Expected AC-3 count must be 0–8')
     program: tuple[int, int] | None = None
+    pat = PSIReader(_crc32_mpeg, AudioInspectionError)
+    pmt: PSIReader | None = None
     with path.open('rb') as source:
         for _ in range(min(size // M2TS_PACKET_BYTES, MAX_PACKETS)):
-            packet = source.read(M2TS_PACKET_BYTES)
-            ts = packet[4:]
+            ts = source.read(M2TS_PACKET_BYTES)[4:]
             if len(ts) != 188 or ts[0] != 0x47:
                 raise AudioInspectionError('Missing M2TS transport sync byte')
             pid = ((ts[1] & 0x1F) << 8) | ts[2]
-            if pid != 0 and (program is None or pid != program[1]):
-                continue
-            section = _section(ts)
-            if section is None:
-                continue
             if pid == 0:
-                found = _pat(section)
-                if program is not None and found != program:
-                    raise AudioInspectionError('PAT program changed during inspection')
-                program = found
-            elif program is not None and pid == program[1]:
-                streams = _pmt(section, program[0])
-                if expected_ac3 is not None and sum(s.codec == 'AC3' for s in streams) != expected_ac3:
-                    raise AudioInspectionError('AC-3 stream count does not match expected value')
-                return streams
+                for section in pat.push(ts):
+                    found = _pat(section)
+                    if program is not None and program != found:
+                        raise AudioInspectionError('PAT program changed during inspection')
+                    program = found
+                    if pmt is None:
+                        pmt = PSIReader(_crc32_mpeg, AudioInspectionError)
+            elif program is not None and pid == program[1] and pmt is not None:
+                for section in pmt.push(ts):
+                    streams = _pmt(section, program[0])
+                    if expected_ac3 is not None and sum(s.codec == 'AC3' for s in streams) != expected_ac3:
+                        raise AudioInspectionError('AC-3 stream count does not match expected value')
+                    return streams
     raise AudioInspectionError('No complete PAT/PMT pair found within bounded scan')
 
 
