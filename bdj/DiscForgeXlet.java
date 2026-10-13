@@ -17,6 +17,7 @@ import javax.media.Player;
 import javax.tv.xlet.Xlet;
 import javax.tv.xlet.XletContext;
 import org.bluray.media.PlaybackControl;
+import org.bluray.media.PrimaryAudioControl;
 import org.bluray.ui.event.HRcEvent;
 import org.dvb.event.EventManager;
 import org.dvb.event.UserEvent;
@@ -34,6 +35,8 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     private int highlightX, highlightY;
     private Player player;
     private int page, focus;
+    private int selectedAudio = 1;
+    private volatile boolean audioPopup;
     private volatile boolean playing, stopped, busy;
     private String pending;
     private String error;
@@ -92,6 +95,10 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         Image previous = background;
         background = image;
         page = number; focus = 0;
+        int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+        for (int i = 0; i < count; i++) {
+            if (("audio:" + selectedAudio).equals(config.getProperty("page." + page + "." + i))) focus = i;
+        }
         loadFocus();
         System.out.println("DiscForge: menu page " + page);
         if (previous != null) previous.flush();
@@ -116,7 +123,11 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (event.getType() != KeyEvent.KEY_PRESSED || stopped) return;
         int key = event.getCode();
         if (key == 461 || key == KeyEvent.VK_ESCAPE || key == KeyEvent.VK_BACK_SPACE || key == HRcEvent.VK_POPUP_MENU) {
-            queue("home"); return;
+            if (busy || pending != null) return;
+            if (audioPopup) queue("resume");
+            else if (playing && key == HRcEvent.VK_POPUP_MENU && audioCount() > 0) queue("audio-popup");
+            else queue("home");
+            return;
         }
         if (playing || busy || pending != null) return;
         int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
@@ -133,10 +144,44 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
 
     private synchronized void closePlayer() {
         playing = false;
+        audioPopup = false;
         if (player != null) {
             player.removeControllerListener(this);
             player.stop(); player.deallocate(); player.close(); player = null;
         }
+    }
+
+    private int audioCount() { return Integer.parseInt(config.getProperty("audio.count", "0")); }
+
+    private PrimaryAudioControl audioControl() throws Exception {
+        PrimaryAudioControl control = (PrimaryAudioControl) player.getControl("org.bluray.media.PrimaryAudioControl");
+        if (control == null) throw new Exception("Audio selection unavailable on this player");
+        return control;
+    }
+
+    private void selectAudio(int number) throws Exception {
+        if (number < 1 || number > audioCount()) throw new Exception("Invalid audio stream");
+        if (player != null) {
+            PrimaryAudioControl control = audioControl();
+            int[] available = control.listAvailableStreamNumbers();
+            boolean found = false;
+            for (int i = 0; i < available.length; i++) if (available[i] == number) found = true;
+            if (!found) throw new Exception("Audio stream unavailable: " + number);
+            control.selectStreamNumber(number);
+            if (control.getCurrentStreamNumber() != number) throw new Exception("Player did not select audio stream " + number);
+        }
+        selectedAudio = number;
+        System.out.println("DiscForge: selected primary audio " + number);
+    }
+
+    private void resumeMovie() throws Exception {
+        if (player == null) throw new Exception("No movie to resume");
+        if (player.setRate(1.0f) != 1.0f) throw new Exception("Player could not resume movie");
+        audioPopup = false;
+        playing = true;
+        scene.setVisible(false);
+        repaint();
+        System.out.println("DiscForge: resumed movie at " + player.getMediaTime().getSeconds());
     }
 
     public void run() {
@@ -154,15 +199,32 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
             try {
                 error = null;
                 if (action.equals("home")) { closePlayer(); loadPage(0); scene.setVisible(true); }
+                else if (action.equals("resume") || (audioPopup && action.equals("page:0"))) resumeMovie();
+                else if (action.equals("audio-popup")) {
+                    if (player.setRate(0.0f) != 0.0f) throw new Exception("Player could not pause for audio menu");
+                    playing = false;
+                    audioPopup = true;
+                    int current = audioControl().getCurrentStreamNumber();
+                    if (current >= 1 && current <= audioCount()) selectedAudio = current;
+                    int first = Integer.parseInt(config.getProperty("audio.page"));
+                    loadPage(first + (selectedAudio - 1) / 5);
+                    scene.setVisible(true);
+                    System.out.println("DiscForge: audio popup at " + player.getMediaTime().getSeconds());
+                }
+                else if (action.startsWith("audio:")) {
+                    selectAudio(Integer.parseInt(action.substring(6)));
+                    if (audioPopup) resumeMovie();
+                    else loadPage(0);
+                }
                 else if (action.startsWith("page:")) loadPage(Integer.parseInt(action.substring(5)));
                 else if (action.startsWith("play:")) {
                     closePlayer();
                     Player next = Manager.createPlayer(new MediaLocator("bd://1.PLAYLIST:" + config.getProperty("playlist")));
                     player = next;
-                    next.realize();
+                    next.prefetch();
                     long deadline = System.currentTimeMillis() + 15000;
-                    while (next.getState() < Player.Realized && !stopped && System.currentTimeMillis() < deadline) Thread.sleep(50);
-                    if (next.getState() < Player.Realized) throw new Exception("Player realization timed out");
+                    while (next.getState() < Player.Prefetched && !stopped && System.currentTimeMillis() < deadline) Thread.sleep(50);
+                    if (next.getState() < Player.Prefetched) throw new Exception("Player preparation timed out");
                     synchronized (this) {
                         if (stopped) { next.close(); return; }
                         player = next;
@@ -171,6 +233,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                         PlaybackControl control = (PlaybackControl) player.getControl("org.bluray.media.PlaybackControl");
                         if (control == null) throw new Exception("Chapter control unavailable");
                         control.skipToMark(mark);
+                        if (audioCount() > 0) selectAudio(selectedAudio);
                         System.out.println("DiscForge: play chapter " + mark);
                         playing = true;
                         scene.setVisible(false);
@@ -178,7 +241,13 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                         player.start();
                     }
                 }
-            } catch (Exception e) { closePlayer(); error = e.toString(); scene.setVisible(true); repaint(); }
+            } catch (Exception e) {
+                // Keep a paused movie and its position available after an audio error.
+                if (!audioPopup) closePlayer();
+                error = e.toString();
+                System.err.println("DiscForge: " + error);
+                scene.setVisible(true); repaint();
+            }
             finally { busy = false; }
         }
     }

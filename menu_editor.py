@@ -19,6 +19,7 @@ class MenuEditor(QWidget):
     def __init__(self):
         super().__init__()
         self.chapters = [0.0]
+        self.audio_tracks = []
         self.page = self.focus = 0
         self.background = ''
         self.labels = {}
@@ -216,7 +217,7 @@ class MenuEditor(QWidget):
         return MenuDesign(self.title.text().strip() or ('Blu-ray' if preview else ''),
                           self.theme.currentData(), self.language.currentData(), self.background,
                           self.fit.currentData(), self.dim.value(), self.labels,
-                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text)
+                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text, self.audio_tracks)
 
     def settings(self):
         self.preview.commit_edit()
@@ -239,6 +240,7 @@ class MenuEditor(QWidget):
         self.background, self.labels = design.background, dict(design.labels)
         self.hidden_buttons = list(design.hidden_buttons)
         self.hidden_text = list(design.hidden_text)
+        self.audio_tracks = copy.deepcopy(design.audio_tracks)
         self.button_styles = {k: dict(v) for k, v in design.button_styles.items()}
         self.element_layout = copy.deepcopy(design.layout)
         self.text_styles = copy.deepcopy(design.text_styles)
@@ -274,12 +276,16 @@ class MenuEditor(QWidget):
         self.label_key.blockSignals(True)
         self.label_key.clear()
         for key, name in [('play', 'Смотреть фильм'), ('title', 'Название фильма'), ('chapters', 'Выбор главы'),
+                          ('audio', 'Аудио'), ('audio_back', 'Аудио: назад'),
+                          ('audio_previous', 'Аудио: предыдущие дорожки'), ('audio_next', 'Аудио: следующие дорожки'),
                           ('home', 'Главное меню'), ('previous', 'Предыдущие главы'),
                           ('next', 'Следующие главы'), ('subtitle', 'Подзаголовок'),
                           ('brand', 'Верхняя надпись'), ('hint', 'Подсказка внизу')]:
             self.label_key.addItem(name, key)
         for i in range(len(self.chapters)):
             self.label_key.addItem(f'Название главы {i + 1}', f'chapter:{i}')
+        for i in range(len(self.audio_tracks)):
+            self.label_key.addItem(f'Название аудиодорожки {i+1}', f'audio:{i+1}')
         for i, button in enumerate(self.custom_buttons):
             self.label_key.addItem(f'Своя кнопка {i+1}', button['id'])
         self.label_key.setCurrentIndex(max(0, self.label_key.findData(selected)))
@@ -315,6 +321,16 @@ class MenuEditor(QWidget):
         self.preview.edit_key = None
         self.preview.inline.hide()
         self.sync_label()
+        self.refresh()
+
+    def set_audio(self, info):
+        from disc_audio import menu_tracks
+        self.preview.commit_edit()
+        self.audio_tracks = menu_tracks(info)
+        self.page = self.focus = 0
+        self.history = []
+        self.select_button('')
+        self.populate_labels()
         self.refresh()
 
     def set_chapters(self, chapters):
@@ -376,6 +392,11 @@ class MenuEditor(QWidget):
                     return
                 self.history.append((self.page, self.focus))
                 self.page, self.focus = int(value), 0
+                self.select_button('')
+            elif kind == 'audio':
+                from disc_audio import track_label
+                self.caption.setText('На плеере будет выбрана дорожка: ' + track_label(self.audio_tracks[int(value)-1], int(value), self.language.currentData()))
+                self.page = self.focus = 0
                 self.select_button('')
             else:
                 self.caption.setText(f'На плеере начнётся воспроизведение главы {int(value) + 1}.')
@@ -543,7 +564,10 @@ class MenuEditor(QWidget):
         for i, sec in enumerate(self.chapters[1:], 1):
             self.action_selector.addItem(f'Глава {i+1} · {int(sec)//3600:02}:{int(sec)%3600//60:02}:{int(sec)%60:02}', f'play:{i}')
         for page in range(len(pages(self.chapters, self.current_design(preview=True)))):
-            self.action_selector.addItem('Главное меню' if page == 0 else f'Страница глав {page}', f'page:{page}')
+            from disc_menu import audio_page_start
+            first = audio_page_start(self.chapters)
+            name = 'Главное меню' if page == 0 else f'Аудио · страница {page-first+1}' if page >= first else f'Страница глав {page}'
+            self.action_selector.addItem(name, f'page:{page}')
         custom = next((b for b in self.custom_buttons if b['id'] == self.selected_button), None)
         self.action_selector.setEnabled(custom is not None)
         if custom:

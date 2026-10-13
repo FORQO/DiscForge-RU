@@ -28,12 +28,12 @@ BUTTONS = ((150, 400, 760, 82), (150, 506, 760, 82),
 _font_loaded = False
 
 TEXT = {
-    'ru': {'play': 'Смотреть фильм', 'chapters': 'Выбор главы',
+    'ru': {'play': 'Смотреть фильм', 'chapters': 'Выбор главы', 'audio': 'Аудио', 'audio_previous': 'Предыдущие дорожки', 'audio_next': 'Следующие дорожки', 'audio_back': 'Назад', 'audio_hint': 'Вверх / Вниз — дорожка     OK — выбрать     Back — вернуться',
            'previous': '←  Предыдущие главы', 'next': 'Следующие главы  →',
            'home': '←  Главное меню', 'subtitle': 'Избранное в вашей коллекции',
            'chapter': 'Глава', 'of': 'из', 'brand': 'B L U - R A Y',
            'hint': 'Вверх / Вниз — выбор     OK — открыть     Back — главное меню'},
-    'en': {'play': 'Play movie', 'chapters': 'Scene selection',
+    'en': {'play': 'Play movie', 'chapters': 'Scene selection', 'audio': 'Audio', 'audio_previous': 'Previous tracks', 'audio_next': 'Next tracks', 'audio_back': 'Back', 'audio_hint': 'Up / Down  Track     OK  Select     Back  Return',
            'previous': '←  Previous scenes', 'next': 'Next scenes  →',
            'home': '←  Main menu', 'subtitle': 'A film from your collection',
            'chapter': 'Chapter', 'of': 'of', 'brand': 'B L U - R A Y',
@@ -100,8 +100,16 @@ class MenuDesign:
     text_styles: dict[str, dict] = field(default_factory=dict)
     custom_buttons: list[dict] = field(default_factory=list)
     hidden_text: list[str] = field(default_factory=list)
+    audio_tracks: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
+        if (not isinstance(self.audio_tracks, list) or len(self.audio_tracks) > 32 or
+                any(not isinstance(t, dict) or set(t) != {'language', 'title'} or
+                    not isinstance(t['language'], str) or not re.fullmatch('[a-z]{3}', t['language']) or
+                    not isinstance(t['title'], str) or len(t['title']) > 80 or
+                    any(ord(c) < 32 for c in t['title']) for t in self.audio_tracks)):
+            raise ValueError('Некорректный список аудиодорожек меню.')
+        object.__setattr__(self, 'audio_tracks', copy.deepcopy(self.audio_tracks))
         if not isinstance(self.hidden_text, list) or any(key not in TEXT_RECTS for key in self.hidden_text):
             raise ValueError('Некорректный список удалённых текстов.')
         object.__setattr__(self, 'hidden_text', list(dict.fromkeys(self.hidden_text)))
@@ -118,13 +126,13 @@ class MenuDesign:
         if not isinstance(self.labels, dict) or len(self.labels) > 2100:
             raise ValueError('Некорректные подписи кнопок.')
         for key, value in self.labels.items():
-            if (not isinstance(key, str) or not re.fullmatch(r'(ru|en):(play|chapters|previous|next|home|subtitle|brand|hint|chapter:\d{1,3}|custom:[a-f0-9]{12})', key)
+            if (not isinstance(key, str) or not re.fullmatch(r'(ru|en):(play|chapters|audio|audio_previous|audio_next|audio_back|audio_hint|audio:\d{1,2}|previous|next|home|subtitle|brand|hint|chapter:\d{1,3}|custom:[a-f0-9]{12})', key)
                     or not isinstance(value, str) or not 1 <= len(value.strip()) <= 120
                     or any(ord(c) < 32 for c in value)):
                 raise ValueError('Подпись должна содержать от 1 до 80 символов без переносов строк.')
         object.__setattr__(self, 'labels', dict(self.labels))
         def valid_id(key):
-            return isinstance(key, str) and re.fullmatch(r'(play|chapters|chapter:\d{1,3}|(previous|next|home):\d{1,3}|custom:[a-f0-9]{12})', key)
+            return isinstance(key, str) and re.fullmatch(r'(play|chapters|audio|audio:\d{1,2}|chapter:\d{1,3}|(previous|next|home):\d{1,3}|custom:[a-f0-9]{12})', key)
         if (not isinstance(self.hidden_buttons, list) or len(self.hidden_buttons) > 2000
                 or any(not valid_id(key) for key in self.hidden_buttons)):
             raise ValueError('Некорректный список удалённых кнопок.')
@@ -196,13 +204,17 @@ class MenuDesign:
     def from_dict(cls, title, data):
         return cls(title, **{key: data[key] for key in
                    ('theme', 'language', 'background', 'background_fit', 'dim', 'labels',
-                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text') if key in data})
+                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks') if key in data})
 
 
 def button_id(page, action):
     if action.startswith('custom:'):
         return action
     kind, value = action.split(':')
+    if kind == 'audio':
+        return action
+    if kind == 'audio_menu':
+        return 'audio'
     if kind == 'play':
         return 'play' if page == 0 else 'chapter:' + value
     if page == 0:
@@ -211,10 +223,12 @@ def button_id(page, action):
 
 
 def button_label_key(key):
-    return key if key.startswith(('chapter:', 'custom:')) else key.split(':')[0]
+    return key if key.startswith(('chapter:', 'custom:', 'audio:')) else key.split(':')[0]
 
 
 def resolve_action(design, action):
+    if action.startswith('audio_menu:'):
+        return 'page:' + action.split(':')[1]
     if action.startswith('custom:'):
         return next(button['action'] for button in design.custom_buttons if button['id'] == action)
     return action
@@ -240,6 +254,10 @@ def validate_menu_navigation(chapters, design):
     for entries in graph:
         for _, action in entries:
             kind, value = resolve_action(design, action).split(':')
+            if kind == 'audio':
+                if not 1 <= int(value) <= len(design.audio_tracks):
+                    raise ValueError('Кнопка ссылается на отсутствующую аудиодорожку.')
+                continue
             if int(value) >= (len(chapters) if kind == 'play' else len(graph)):
                 raise ValueError('Кнопка ссылается на отсутствующую главу или страницу. Исправьте её действие.')
     pending, seen = [0], set()
@@ -252,7 +270,8 @@ def validate_menu_navigation(chapters, design):
             kind, value = resolve_action(design, action).split(':')
             if kind == 'play':
                 return
-            pending.append(int(value))
+            if kind == 'page':
+                pending.append(int(value))
     raise ValueError('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.')
 
 
@@ -298,6 +317,20 @@ def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[
             if p + 1 < count:
                 entries.append((design.text('next'), f'page:{p + 2}'))
             entries.append((design.text('home'), 'page:0'))
+            result.append(entries)
+    if design.audio_tracks:
+        from disc_audio import track_label
+        first = len(result)
+        result[0].append((design.text('audio'), f'audio_menu:{first}'))
+        count = (len(design.audio_tracks)+4)//5
+        for p in range(count):
+            entries = [(design.text(f'audio:{i+1}') or track_label(design.audio_tracks[i], i+1, design.language), f'audio:{i+1}')
+                       for i in range(p*5, min((p+1)*5, len(design.audio_tracks)))]
+            if p:
+                entries.append((design.text('audio_previous'), f'page:{first+p-1}'))
+            if p+1 < count:
+                entries.append((design.text('audio_next'), f'page:{first+p+1}'))
+            entries.append((design.text('audio_back'), 'page:0'))
             result.append(entries)
     for p, entries in enumerate(result):
         entries.extend((design.text(button['id']) or ('Новая кнопка' if design.language == 'ru' else 'New button'), button['id'])
@@ -354,20 +387,31 @@ def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
     validate_chapter_timeline(data, chapters)
 
 
+def audio_page_start(chapters):
+    return 1 + ((len(chapters)+4)//5 if len(chapters) > 1 else 0)
+
+
 def page_elements(design, chapters, page):
     graph = pages(chapters, design)
     result = []
     for key in ('brand', 'title', 'subtitle' if page == 0 else 'chapter_heading', 'hint'):
         if key in design.hidden_text:
             continue
-        edit_key = 'chapters' if key == 'chapter_heading' else key
+        audio_page = bool(design.audio_tracks) and page >= audio_page_start(chapters)
+        edit_key = ('audio' if audio_page else 'chapters') if key == 'chapter_heading' else key
         text = design.title if key == 'title' else design.text(edit_key)
-        shown = f'{text}  /  {page} {TEXT[design.language]["of"]} {len(graph)-1}' if key == 'chapter_heading' else text
+        number = page-audio_page_start(chapters)+1 if audio_page else page
+        count = (len(design.audio_tracks)+4)//5 if audio_page else audio_page_start(chapters)-1
+        shown = f'{text}  /  {number} {TEXT[design.language]["of"]} {count}' if key == 'chapter_heading' else text
+        if key == 'hint' and audio_page and design.language+':hint' not in design.labels:
+            shown = design.text('audio_hint')
         result.append(dict(id='text:'+key, key=edit_key, rect=element_rect(design, 'text:'+key, TEXT_RECTS[key]),
                            text=text, shown=shown, style=text_style(design, key), button='', index=-1))
     for i, (shown, action) in enumerate(graph[page]):
         bid = button_id(page, action)
         key = button_label_key(bid)
+        if design.audio_tracks and page >= audio_page_start(chapters) and key in ('home', 'previous', 'next'):
+            key = 'audio_' + ('back' if key == 'home' else key)
         text = design.text(key)
         if not text:
             text = f'{TEXT[design.language]["chapter"]} {int(action.split(":")[1])+1}' if key.startswith('chapter:') else shown
@@ -507,13 +551,17 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     playlists = sorted((bdmv / 'PLAYLIST').glob('*.mpls'))
     if len(playlists) != 1 or playlists[0].stem != '00000':
         raise ValueError('Меню v1 поддерживает один фильм с плейлистом 00000.')
+    if design.audio_tracks:
+        from disc_audio import bind_tracks
+        design = bind_tracks(design, playlists[0], design.audio_tracks)
     # Validate chapter labels and MPLS section bounds before writing files.
     all_pages = pages(chapters, design)
     validate_menu_navigation(chapters, design)
     validate_menu_chapters(playlists[0], chapters)
     for path in ('JAR', 'BDJO', 'BACKUP/BDJO', 'BACKUP/JAR'):
         (bdmv / path).mkdir(parents=True, exist_ok=True)
-    props = ['pages=' + str(len(all_pages)), 'playlist=00000']
+    props = ['pages=' + str(len(all_pages)), 'playlist=00000', 'audio.count='+str(len(design.audio_tracks)),
+             'audio.page='+str(audio_page_start(chapters) if design.audio_tracks else 0)]
     for p, entries in enumerate(all_pages):
         props.append(f'page.{p}.count={len(entries)}')
         for i, (_, action) in enumerate(entries):

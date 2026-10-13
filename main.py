@@ -34,7 +34,7 @@ from image_tools import ImageTools
 from audio_panel import AudioPanel
 from audio_selection import selected_tracks, select_tracks
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 
 
 def timecode(seconds: float) -> str:
@@ -537,12 +537,14 @@ class Window(QMainWindow):
             self.audio_panel.set_media(info)
             return
         self.audio_selections[path] = list(indices)
+        self.menu_editor.set_audio(self.media[path])
         self._update_recommendation()
 
     def _select_media(self) -> None:
         path = self._selected_path()
         info = self.media.get(path or '')
         self.audio_panel.set_media(info)
+        self.menu_editor.set_audio(info)
         self.menu_editor.set_chapters(self.chapters.get(path, [0.0]))
         self.chapter_list.clear()
         if not info:

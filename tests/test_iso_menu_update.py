@@ -11,7 +11,7 @@ import zipfile
 from types import SimpleNamespace
 from PySide6.QtWidgets import QApplication
 from disc_menu import MenuDesign, install_menu
-from bdmv_fixtures import minimal_mpls
+from bdmv_fixtures import audio_mpls as minimal_mpls
 import iso_menu_update as updater
 
 

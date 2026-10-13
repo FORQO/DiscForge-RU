@@ -536,6 +536,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             raise DiscForgeError('tsMuxer не создал выходной файл/папку.')
         if menu is not None:
             log('Создаём интерактивное меню BD-J…')
+            from disc_audio import bind_tracks, menu_tracks
+            menu = bind_tracks(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_tracks(info))
             install_menu(author_target, menu, list(chapters))
             progress(94)
         if iso and menu is None:

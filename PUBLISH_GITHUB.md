@@ -1,6 +1,6 @@
 # Сборка и выпуск
 
-Репозиторий: https://github.com/maxliv234-star/DiscForge-RU . Основная ветка — `main`. Текущий выпуск — 1.0.0, Windows x64.
+Репозиторий: https://github.com/maxliv234-star/DiscForge-RU . Основная ветка — `main`. Текущий выпуск — 1.1.0, Windows x64.
 
 ## Локальная сборка
 
@@ -14,7 +14,7 @@ python tools/package_windows.py --app dist/DiscForge_RU --output release
 
 ## Автоматический выпуск
 
-Workflow `Windows app and release` запускает тесты, собирает EXE и комплектует portable ZIP. Обычные push/PR создают проверочную сборку. Коммит в `main` с сообщением `Release 1.0.0` публикует официальный GitHub Release `v1.0.0` после успешных тестов и самопроверки. Workflow может быть запущен вручную для повторной сборки; существующий релиз не перезаписывается автоматически.
+Workflow `Windows app and release` запускает тесты, собирает EXE и комплектует portable ZIP. Обычные push/PR создают проверочную сборку. Коммит в `main` с сообщением `Release 1.1.0` публикует официальный GitHub Release `v1.1.0` после успешных тестов и самопроверки. Workflow может быть запущен вручную для повторной сборки; существующий релиз не перезаписывается автоматически.
 
 GitHub создаёт архивы исходников по тегу; к релизу добавляются portable ZIP, SHA256SUMS.txt и отчёт самопроверки. Учётные данные в репозиторий не входят; публикация использует ограниченный `GITHUB_TOKEN` workflow с `contents: write`.
 
