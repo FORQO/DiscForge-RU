@@ -415,10 +415,10 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             raise DiscForgeError(f'Размер результата {size / 1e9:.2f} ГБ превышает {profile}. Файлы болванки не затронуты.')
         # Validate the authored folder before packaging and before publishing.
         if not iso or menu is not None:
-            report = inspect_bdmv(author_target, profile)
+            report = inspect_bdmv(author_target, profile, expected_ac3=1 if audio is not None else 0)
             if not report.structurally_valid:
                 raise DiscForgeError('Проверка BDMV не пройдена: ' + '; '.join(report.errors[:8]))
-            log('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.')
+            log('Структура BDMV и AC-3 в PAT/PMT проверены; совместимость с плеером не подтверждена.')
         if menu is not None and iso:
             image = work / 'disc.iso'
             create_iso(author_target, image, CAPACITIES[profile], cancel, log)

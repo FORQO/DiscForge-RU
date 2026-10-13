@@ -10,6 +10,7 @@ from pathlib import Path
 from mpls_preflight import validate_playlist
 from clpi_preflight import validate_clip
 from backup_preflight import check_backup_metadata
+from tools.bdmv_audio_check import AudioInspectionError, inspect as inspect_m2ts_audio
 
 CAPACITIES = {"BD25": 25_000_000_000, "BD50": 50_000_000_000}
 # This 2D Full HD authoring path accepts BD metadata versions 1 and 2 only.
@@ -108,7 +109,7 @@ class Report:
     warnings: list[str]
     counts: dict[str, int]
 
-def inspect(root: Path, profile: str = "BD25") -> Report:
+def inspect(root: Path, profile: str = "BD25", expected_ac3: int | None = None) -> Report:
     root = Path(root).expanduser()
     errors: list[str] = []
     warnings: list[str] = []
@@ -117,6 +118,9 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
     size = 0
     if profile not in CAPACITIES:
         errors.append("Only BD25/BD50 supported; UHD/BDXL deferred.")
+    check_ac3 = expected_ac3 is not None and type(expected_ac3) is int and 0 <= expected_ac3 <= 8
+    if expected_ac3 is not None and not check_ac3:
+        errors.append("Expected AC-3 stream count must be an integer from 0 to 8.")
     if not root.is_dir() or root.is_symlink():
         errors.append("Output directory missing or symlink.")
     else:
@@ -190,6 +194,18 @@ def inspect(root: Path, profile: str = "BD25") -> Report:
                                 errors.append(f"Unsupported Full HD metadata version: BDMV/{name}/{path.name}")
                 except OSError as exc:
                     errors.append(f"Cannot inspect {path.name}: {exc}")
+        # Authored-output gate: count declared AC-3 streams in every M2TS.
+        # Optional on standalone inspection of third-party BDMV folders.
+        if check_ac3:
+            stream_dir = bdmv / "STREAM"
+            if stream_dir.is_dir() and not stream_dir.is_symlink():
+                for stream in sorted(stream_dir.glob("*.m2ts")):
+                    if not stream.is_file() or stream.is_symlink():
+                        continue
+                    try:
+                        inspect_m2ts_audio(stream, expected_ac3)
+                    except (AudioInspectionError, OSError) as exc:
+                        errors.append(f"BDMV/STREAM/{stream.name}: AC-3 PAT/PMT check failed: {exc}")
         # In a 2D Full HD BDMV set, every stream needs its same-numbered clip info.
         clip_ids = collection_stems.get("CLIPINF", set())
         stream_ids = collection_stems.get("STREAM", set())
@@ -229,8 +245,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DiscForge RU BD25/BD50 BDMV preflight")
     parser.add_argument("folder", type=Path)
     parser.add_argument("--profile", choices=tuple(CAPACITIES), default="BD25")
+    parser.add_argument("--expected-ac3", type=int, default=None,
+                        help="Reject if M2TS PMT does not report this many AC-3 streams (0..8)")
     args = parser.parse_args(argv)
-    result = inspect(args.folder, args.profile)
+    result = inspect(args.folder, args.profile, expected_ac3=args.expected_ac3)
     print(json.dumps(asdict(result), indent=2, ensure_ascii=False))
     return 0 if result.structurally_valid else 2
 
