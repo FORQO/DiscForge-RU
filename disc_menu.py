@@ -129,6 +129,9 @@ def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
         ref_item = int.from_bytes(data[record + 2:record + 4], 'big')
         if ref_item >= play_items:
             raise ValueError('Глава меню ссылается на отсутствующий PlayItem.')
+    # Verify the actual 45-kHz chapter positions, not only EntryMark counts.
+    from chapter_timeline import validate_chapter_timeline
+    validate_chapter_timeline(data, chapters)
 
 
 def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1):

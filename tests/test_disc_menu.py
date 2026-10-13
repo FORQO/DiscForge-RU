@@ -152,10 +152,16 @@ class MenuBundleTests(unittest.TestCase):
             root = Path(temp)
             playlist = root / 'BDMV/PLAYLIST/00000.mpls'
             playlist.parent.mkdir(parents=True)
-            data = minimal_mpls()
+            data = bytearray(minimal_mpls())
+            # Extend the synthetic PlayItem to encompass all chapter marks.
+            data[68:72] = (11 * 10 * 45000).to_bytes(4, 'big')
             offset = int.from_bytes(data[12:16], 'big')
-            mark = data[offset + 6:offset + 20]
-            marks_body = (11).to_bytes(2, 'big') + mark * 11
+            mark = bytearray(data[offset + 6:offset + 20])
+            marks = []
+            for i in range(11):
+                mark[4:8] = (i * 10 * 45000).to_bytes(4, 'big')
+                marks.append(bytes(mark))
+            marks_body = (11).to_bytes(2, 'big') + b''.join(marks)
             playlist.write_bytes(
                 data[:offset] + len(marks_body).to_bytes(4, 'big') + marks_body
             )
