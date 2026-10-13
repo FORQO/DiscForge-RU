@@ -37,7 +37,7 @@ jobs:
           name: DiscForge-RU-Windows-x64
           path: release/
   publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Release 1.1.0'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Release 1.1.1'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -51,4 +51,4 @@ jobs:
       - name: Publish official 1.1 release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create v1.1.0 release/* --target "$GITHUB_SHA" --title "DiscForge RU 1.1" --notes-file docs/RELEASE_1.1.md --latest
+        run: gh release create v1.1.1 release/* --target "$GITHUB_SHA" --title "DiscForge RU 1.1.1" --notes-file docs/RELEASE_1.1.md --latest

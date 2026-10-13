@@ -3,10 +3,11 @@ import java.awt.Color;
 import java.awt.Container;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.awt.MediaTracker;
+import java.awt.image.ImageObserver;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.Properties;
 import javax.media.ControllerEvent;
 import javax.media.ControllerListener;
@@ -86,12 +87,39 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (!stopped && (pending == null || action.equals("home"))) { pending = action; notifyAll(); }
     }
 
-    private synchronized void loadPage(int number) throws Exception {
-        Image image = Toolkit.getDefaultToolkit().createImage(getClass().getResource("/page" + number + ".png"));
-        MediaTracker tracker = new MediaTracker(this);
-        tracker.addImage(image, 0);
-        tracker.waitForAll(10000);
-        if (tracker.isErrorAny() || !tracker.checkAll()) throw new Exception("Menu image unavailable");
+    private Image loadImage(String name) throws Exception {
+        // Read inside the Xlet context. AWT's asynchronous URL fetcher may lack
+        // that context on BD-J players, especially after entering a new page.
+        InputStream input = getClass().getResourceAsStream("/" + name);
+        if (input == null) throw new Exception("Missing menu image: " + name);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try {
+            byte[] block = new byte[8192];
+            int count;
+            while ((count = input.read(block)) != -1) {
+                if (bytes.size() + count > 16777216) throw new Exception("Menu image too large");
+                bytes.write(block, 0, count);
+            }
+        } finally { input.close(); }
+        Image image = Toolkit.getDefaultToolkit().createImage(bytes.toByteArray());
+        Toolkit toolkit = Toolkit.getDefaultToolkit();
+        toolkit.prepareImage(image, -1, -1, null);
+        long deadline = System.currentTimeMillis() + 10000;
+        int flags;
+        do {
+            flags = toolkit.checkImage(image, -1, -1, null);
+            // Some BD-J toolkits report ABORT after delivering ALLBITS. A fully
+            // decoded image is usable; MediaTracker treats ABORT as failure.
+            if ((flags & ImageObserver.ALLBITS) != 0) return image;
+            if ((flags & ImageObserver.ERROR) != 0) break;
+            Thread.sleep(10);
+        } while (!stopped && System.currentTimeMillis() < deadline);
+        image.flush();
+        throw new Exception("Menu image unavailable: " + name + " flags=" + flags);
+    }
+
+    private void loadPage(int number) throws Exception {
+        Image image = loadImage("page" + number + ".png");
         Image previous = background;
         background = image;
         page = number; focus = 0;
@@ -109,11 +137,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (highlight != null) { highlight.flush(); highlight = null; }
         if (Integer.parseInt(config.getProperty("page." + page + ".count")) == 0) return;
         String key = "page." + page + "." + focus;
-        Image image = Toolkit.getDefaultToolkit().createImage(getClass().getResource("/" + config.getProperty(key + ".focus")));
-        MediaTracker tracker = new MediaTracker(this);
-        tracker.addImage(image, 0);
-        tracker.waitForAll(10000);
-        if (tracker.isErrorAny() || !tracker.checkAll()) { image.flush(); throw new Exception("Focus image unavailable"); }
+        Image image = loadImage(config.getProperty(key + ".focus"));
         highlightX = Integer.parseInt(config.getProperty(key + ".focusX"));
         highlightY = Integer.parseInt(config.getProperty(key + ".focusY"));
         highlight = image;
@@ -132,14 +156,9 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (playing || busy || pending != null) return;
         int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
         if (count == 0) return;
-        int previousFocus = focus;
-        if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_RIGHT) focus = (focus + 1) % count;
-        if (key == KeyEvent.VK_UP || key == KeyEvent.VK_LEFT) focus = (focus + count - 1) % count;
+        if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_RIGHT) queue("focus:next");
+        if (key == KeyEvent.VK_UP || key == KeyEvent.VK_LEFT) queue("focus:previous");
         if (key == KeyEvent.VK_ENTER) queue(config.getProperty("page." + page + "." + focus));
-        if (focus != previousFocus) {
-            try { loadFocus(); } catch (Exception e) { error = e.toString(); }
-        }
-        repaint();
     }
 
     private synchronized void closePlayer() {
@@ -198,7 +217,14 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
             }
             try {
                 error = null;
-                if (action.equals("home")) { closePlayer(); loadPage(0); scene.setVisible(true); }
+                if (action.startsWith("focus:")) {
+                    int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+                    if (count > 0) {
+                        focus = (focus + count + (action.equals("focus:next") ? 1 : -1)) % count;
+                        loadFocus(); repaint();
+                    }
+                }
+                else if (action.equals("home")) { closePlayer(); loadPage(0); scene.setVisible(true); }
                 else if (action.equals("resume") || (audioPopup && action.equals("page:0"))) resumeMovie();
                 else if (action.equals("audio-popup")) {
                     if (player.setRate(0.0f) != 0.0f) throw new Exception("Player could not pause for audio menu");

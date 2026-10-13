@@ -4,13 +4,13 @@
 
 Бесплатное приложение для Windows 10/11 x64: создаёт Full HD Blu-ray BD25/BD50 с интерактивным меню, главами и выбранными аудиодорожками. Подходящее видео можно сохранить без перекодирования и потери качества.
 
-[Скачать 1.1](https://github.com/maxliv234-star/DiscForge-RU/releases/tag/v1.1.0) · [Руководство](docs/USER_GUIDE.md) · [Документация](docs/README.md) · [Roadmap](docs/ROADMAP.md) · [Сообщить об ошибке](https://github.com/maxliv234-star/DiscForge-RU/issues)
+[Скачать 1.1](https://github.com/maxliv234-star/DiscForge-RU/releases/tag/v1.1.1) · [Руководство](docs/USER_GUIDE.md) · [Документация](docs/README.md) · [Roadmap](docs/ROADMAP.md) · [Сообщить об ошибке](https://github.com/maxliv234-star/DiscForge-RU/issues)
 
 ![Серая тема «Графит»](docs/images/menu-graphite.png)
 
 ## Быстрый старт
 
-1. Скачайте `DiscForge-RU-1.1.0-Windows-x64.zip` из релиза, распакуйте **всю папку** и запустите `DiscForge_RU.exe`.
+1. Скачайте `DiscForge-RU-1.1.1-Windows-x64.zip` из релиза, распакуйте **всю папку** и запустите `DiscForge_RU.exe`.
 2. Добавьте фильм и дождитесь анализа. Во вкладке **Подготовка** оставьте «Авто» или выберите рекомендованный режим.
 3. В разделе **Аудио** отметьте дорожки для ISO. В разделе **Главы** добавьте нужные тайминги.
 4. В разделе **Меню** выберите тему или своё изображение, разместите текст и кнопки.

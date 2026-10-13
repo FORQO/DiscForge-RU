@@ -34,7 +34,7 @@ from image_tools import ImageTools
 from audio_panel import AudioPanel
 from audio_selection import selected_tracks, select_tracks
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 
 
 def timecode(seconds: float) -> str:
