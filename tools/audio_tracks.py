@@ -52,3 +52,14 @@ def select_audio_track(tracks: tuple[AudioTrack, ...], index: int) -> AudioTrack
     if type(index) is not int or not 0 <= index < len(tracks):
         raise AudioTrackError(f"audio index {index!r} is unavailable (tracks: {len(tracks)})")
     return tracks[index]
+
+
+def normalize_bluray_language(value: str) -> str:
+    """Return safe ISO 639-2 three-letter language metadata for tsMuxer."""
+    if not isinstance(value, str):
+        return "und"
+    code = value.lower().strip()
+    aliases = {"en": "eng", "ru": "rus", "de": "deu", "fr": "fra",
+               "es": "spa", "ja": "jpn", "it": "ita", "pt": "por"}
+    code = aliases.get(code, code)
+    return code if len(code) == 3 and code.isascii() and code.isalpha() else "und"

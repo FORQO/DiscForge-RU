@@ -21,7 +21,8 @@ from bdmv_preflight import inspect as inspect_bdmv
 from tools.iso_udf_preflight import inspect as inspect_iso
 from disc_menu import MenuDesign, install_menu
 from windows_iso import create_iso
-from tools.audio_tracks import AudioTrack, AudioTrackError, parse_audio_tracks, select_audio_track
+from tools.audio_tracks import (AudioTrack, AudioTrackError, parse_audio_tracks,
+                                select_audio_track, normalize_bluray_language)
 
 SUPPORTED = {'.mkv', '.mp4', '.mov', '.m2ts', '.mts', '.ts', '.avi'}
 CAPACITIES = {'BD25': 25_000_000_000, 'BD50': 50_000_000_000}
@@ -126,14 +127,18 @@ def probe_media(path: str, ffprobe: str = 'ffprobe') -> MediaInfo:
     return parse_probe(path, _run_probe(path, ffprobe))
 
 
-def bitrate_plan(duration: float, profile: str, has_audio: bool) -> int:
+def bitrate_plan(duration: float, profile: str, has_audio: bool,
+                 audio_count: int | None = None) -> int:
     if profile not in CAPACITIES:
         raise DiscForgeError('Неизвестный профиль диска: ' + profile)
     if not math.isfinite(duration) or duration <= 0:
         raise DiscForgeError('Некорректная длительность.')
     # Leave 7% spare room for transport stream mux overhead, filesystem, menus and rate fluctuations.
     room = CAPACITIES[profile] * 0.93
-    audio_bps = 640_000 if has_audio else 0
+    count = int(has_audio) if audio_count is None else audio_count
+    if type(count) is not int or not 0 <= count <= 8:
+        raise DiscForgeError('Допускается от 0 до 8 выходных аудиодорожек.')
+    audio_bps = 640_000 * count
     video_bps = int(room * 8 / duration - audio_bps)
     video_bps = min(video_bps, 28_000_000)  # keep within conservative BD encoding bounds
     if video_bps < 5_000_000:
@@ -187,7 +192,9 @@ def validate_chapters(chapters: Sequence[float], duration: float | None = None) 
 
 
 def write_meta(path: Path, video: Path, audio: Path | None,
-               chapters: Sequence[float] | None = None) -> None:
+               chapters: Sequence[float] | None = None,
+               additional_audio: Sequence[tuple[Path, str]] = (),
+               audio_language: str = 'und') -> None:
     # Convert to slash separators; absolute paths are encoded as UTF-8 and quoted.
     def escaped(f: Path) -> str:
         return '"' + f.resolve().as_posix().replace('"', '') + '"'
@@ -205,7 +212,11 @@ def write_meta(path: Path, video: Path, audio: Path | None,
     content = 'MUXOPT --blu-ray ' + opts + '\n'
     content += f'V_MPEG4/ISO/AVC, {escaped(video)}, fps=23.976\n'
     if audio is not None:
-        content += f'A_AC3, {escaped(audio)}, lang=und\n'
+        content += f'A_AC3, {escaped(audio)}, lang={normalize_bluray_language(audio_language)}\n'
+    for extra, language in additional_audio:
+        if audio is None:
+            raise DiscForgeError('Дополнительный звук требует основной дорожки.')
+        content += f'A_AC3, {escaped(extra)}, lang={normalize_bluray_language(language)}\n'
     path.write_text(content, encoding='utf-8')
 
 
@@ -356,7 +367,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                    progress: Callable[[int], None],
                    chapters: Sequence[float] | None = None,
                    menu: MenuDesign | None = None,
-                   audio_index: int = 0) -> Path:
+                   audio_index: int = 0,
+                   audio_indices: Sequence[int] | None = None) -> Path:
     """Encode to BD-oriented H.264 + AC3, then author BDMV directory or image.
 
     This is the first compatible-oriented implementation, NOT independently verified BD spec compliance.
@@ -367,20 +379,42 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         raise DiscForgeError('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.')
     if cancel.is_set():
         raise DiscForgeError('Операция отменена пользователем.')
-    # Reject invalid audio requests before creating output files or launching FFmpeg.
-    if type(audio_index) is not int or audio_index < 0 or (
-        info.audio_tracks and audio_index >= info.audio_tracks
-    ) or (not info.audio_tracks and audio_index != 0):
-        raise DiscForgeError(f'Аудиодорожка {audio_index!r} недоступна (всего: {info.audio_tracks}).')
-    selected_channels = info.audio_channels
-    if info.audio_tracks and info.audio_details:
-        try:
-            selected = select_audio_track(info.audio_details, audio_index)
-        except AudioTrackError as exc:
-            raise DiscForgeError('Некорректный выбор аудиодорожки: ' + str(exc)) from exc
-        selected_channels = selected.channels
-    elif audio_index != 0:
-        raise DiscForgeError('Для выбора дорожки заново проанализируйте исходный файл.')
+    # Fail closed before touching the output directory or running FFmpeg.
+    if type(audio_index) is not int or audio_index < 0:
+        raise DiscForgeError('Некорректный индекс аудиодорожки.')
+    if audio_indices is not None:
+        if audio_index != 0:
+            raise DiscForgeError('Нельзя одновременно выбирать audio_index и audio_indices.')
+        if not isinstance(audio_indices, (tuple, list)):
+            raise DiscForgeError('Нужен список индексов аудиодорожек.')
+        requested = tuple(audio_indices)
+        if not requested or len(requested) > 8:
+            raise DiscForgeError('Выберите от 1 до 8 выходных аудиодорожек.')
+    else:
+        requested = (audio_index,) if info.audio_tracks else ()
+    if not info.audio_tracks and audio_index != 0:
+        raise DiscForgeError('В исходном файле нет выбранной аудиодорожки.')
+    if any(type(index) is not int or index < 0 or index >= info.audio_tracks
+           for index in requested):
+        raise DiscForgeError(f'Недоступная аудиодорожка (всего: {info.audio_tracks}).')
+    if len(set(requested)) != len(requested):
+        raise DiscForgeError('Одна исходная аудиодорожка выбрана повторно.')
+    if info.audio_details and len(info.audio_details) != info.audio_tracks:
+        raise DiscForgeError('Метаданные аудиодорожек неполные; повторите анализ файла.')
+    if len(requested) > 1 and not info.audio_details:
+        raise DiscForgeError('Для многодорожечной сборки повторите анализ файла.')
+    chosen: list[tuple[int, int, str]] = []
+    for index in requested:
+        if info.audio_details:
+            try:
+                track = select_audio_track(info.audio_details, index)
+            except AudioTrackError as exc:
+                raise DiscForgeError('Некорректный выбор аудиодорожки: ' + str(exc)) from exc
+            chosen.append((index, track.channels, track.language))
+        else:
+            if index != 0:
+                raise DiscForgeError('Для выбора дорожки повторите анализ файла.')
+            chosen.append((0, info.audio_channels, 'und'))
     if chapters is not None:
         validate_chapters(chapters, info.duration)
     if menu is not None:
@@ -393,10 +427,10 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             raise DiscForgeError('Меню поддерживает не более 999 глав.')
     _require_binary(ffmpeg, 'FFmpeg')
     _require_binary(tsmuxer, 'tsMuxeR')
-    bitrate = bitrate_plan(info.duration, profile, info.audio_tracks > 0)
+    bitrate = bitrate_plan(info.duration, profile, bool(chosen), audio_count=len(chosen))
     root = Path(output_root).expanduser()
     root.mkdir(parents=True, exist_ok=True)
-    estimated_stream = info.duration * (bitrate + (640_000 if info.audio_tracks else 0)) / 8 * 1.08
+    estimated_stream = info.duration * (bitrate + 640_000 * len(chosen)) / 8 * 1.08
     required = int(estimated_stream * (3 if iso and menu is not None else 2)) + 256_000_000
     if shutil.disk_usage(root).free < required:
         raise DiscForgeError(f'Недостаточно места для сборки. Освободите примерно {required/1e9:.1f} ГБ в выходной папке.')
@@ -407,15 +441,24 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     with tempfile.TemporaryDirectory(prefix='DiscForge_work_', dir=root) as tmp:
         work = Path(tmp)
         video = work / 'video.h264'
-        audio = work / 'audio.ac3' if info.audio_tracks else None
+        audio_outputs = [(work / f'audio_{position:02d}.ac3', index, channels, language)
+                         for position, (index, channels, language) in enumerate(chosen)]
         meta = work / 'project.meta'
         run_command(make_video_command(ffmpeg, info.path, str(video), bitrate, nvenc),
-                    'Кодирование видео', 0, 84 if audio else 92, info.duration, cancel, log, progress)
-        if audio:
-            log(f'Используется исходная аудиодорожка {audio_index + 1} из {info.audio_tracks}.')
-            run_command(make_audio_command(ffmpeg, info.path, str(audio), selected_channels, audio_index),
-                        'Кодирование аудио', 84, 8, info.duration, cancel, log, progress)
-        write_meta(meta, video, audio, chapters)
+                    'Кодирование видео', 0, 84 if audio_outputs else 92,
+                    info.duration, cancel, log, progress)
+        for position, (audio_path, index, channels, language) in enumerate(audio_outputs):
+            start = 84 + 8 * position // len(audio_outputs)
+            end = 84 + 8 * (position + 1) // len(audio_outputs)
+            log(f'Исходная аудиодорожка {index + 1} из {info.audio_tracks} '
+                f'→ выходная AC-3 {position + 1} из {len(audio_outputs)}.')
+            run_command(make_audio_command(ffmpeg, info.path, str(audio_path), channels, index),
+                        'Кодирование аудио', start, end - start,
+                        info.duration, cancel, log, progress)
+        first = audio_outputs[0] if audio_outputs else None
+        write_meta(meta, video, first[0] if first else None, chapters,
+                   additional_audio=[(path, language) for path, _, _, language in audio_outputs[1:]],
+                   audio_language=first[3] if first else 'und')
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         # Author to an intermediate output first; move to destination only on success.

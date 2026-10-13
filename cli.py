@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
     b.add_argument('--audio-index', type=int, default=None,
                    help='Номер исходной аудиодорожки (начиная с 0); кодируется одна дорожка AC-3')
+    b.add_argument('--audio-track', type=int, action='append', dest='audio_tracks',
+                   help='Включить аудиодорожку по индексу; повторите до 8 раз для нескольких AC-3')
     b.add_argument('--menu-title', help='Добавить экспериментальное меню BD-J с этим названием (требует PySide6)')
     b.add_argument('--menu-theme', choices=['midnight', 'cinema'], default='midnight')
     args = p.parse_args(argv)
@@ -52,8 +54,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'probe':
             print(json.dumps(dataclasses.asdict(info), ensure_ascii=False, indent=2))
         else:
-            if args.audio_index is not None and not info.audio_tracks:
+            if (args.audio_index is not None or args.audio_tracks is not None) and not info.audio_tracks:
                 raise DiscForgeError('В исходном файле отсутствуют аудиодорожки.')
+            if args.audio_index is not None and args.audio_tracks is not None:
+                raise DiscForgeError('Используйте либо --audio-index, либо --audio-track.')
             chapters = None
             if args.chapter:
                 chapters = sorted(set([0.0, *args.chapter]))
@@ -73,7 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
                                  lambda n: print(f'\r{n}% ', end='', flush=True), chapters, menu,
-                                 audio_index=args.audio_index if args.audio_index is not None else 0)
+                                 audio_index=args.audio_index if args.audio_index is not None else 0,
+                                 audio_indices=args.audio_tracks)
             print('\nРезультат:', done)
         return 0
     except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:
