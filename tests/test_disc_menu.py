@@ -34,6 +34,39 @@ class MenuGraphTests(unittest.TestCase):
             self.assertEqual(reached, set(range(len(graph))))
             self.assertEqual(played, set(range(count)))
 
+    def test_chapter_navigation_has_previous_and_next_without_wrapping(self):
+        # Middle pages need five chapter buttons + Previous + Next + Home.
+        for count in (2, 5, 6, 7, 10, 11, 13, 999):
+            with self.subTest(chapters=count):
+                graph = pages(list(range(count)))
+                scene_pages = graph[1:]
+                self.assertEqual(len(scene_pages), (count + 4) // 5)
+                for page_number, entries in enumerate(scene_pages, 1):
+                    actions = [action for _, action in entries]
+                    self.assertLessEqual(len(actions), 8)
+                    self.assertEqual(actions[-1], 'page:0')
+                    previous = f'page:{page_number - 1}'
+                    following = f'page:{page_number + 1}'
+                    self.assertEqual(previous in actions, page_number > 1)
+                    self.assertEqual(following in actions, page_number < len(scene_pages))
+                    chapter_actions = [a for a in actions if a.startswith('play:')]
+                    start = (page_number - 1) * 5
+                    self.assertEqual(chapter_actions,
+                                     [f'play:{i}' for i in range(start, min(start + 5, count))])
+
+    def test_navigation_backwards_reaches_first_scene(self):
+        graph = pages(list(range(999)))
+        page = len(graph) - 1
+        visited = set()
+        while page > 1:
+            self.assertNotIn(page, visited)
+            visited.add(page)
+            choices = [action for _, action in graph[page]]
+            page = int(next(a.split(':')[1] for a in choices
+                            if a == f'page:{page - 1}'))
+        self.assertEqual(page, 1)
+        self.assertEqual(len(visited), len(graph) - 2)
+
     def test_invalid_design_is_rejected(self):
         for title, theme in [('', 'midnight'), ('x'*81, 'midnight'), ('a\nb', 'cinema'), ('ok', 'bad')]:
             with self.assertRaises(ValueError):

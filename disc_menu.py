@@ -44,25 +44,32 @@ class MenuDesign:
 
 
 def pages(chapters: list[float]) -> list[list[tuple[str, str]]]:
+    """Make every scene reachable in both directions with at most eight buttons.
+
+    Five chapter buttons leave room for Previous, Next and Home on middle
+    pages, matching the eight focus rectangles in the packaged BD-J Xlet.
+    """
     if not chapters or len(chapters) > 999:
         raise ValueError('Для меню требуется от 1 до 999 глав.')
     result = [[('Смотреть фильм', 'play:0')]]
     if len(chapters) > 1:
         result[0].append(('Выбор главы', 'page:1'))
-        count = (len(chapters) + 5) // 6
+        per_page = 5
+        count = (len(chapters) + per_page - 1) // per_page
         for p in range(count):
             entries = []
-            for i in range(p * 6, min((p + 1) * 6, len(chapters))):
+            for i in range(p * per_page, min((p + 1) * per_page, len(chapters))):
                 sec = int(chapters[i])
                 h, rem = divmod(sec, 3600)
                 m, s = divmod(rem, 60)
                 entries.append((f'{i + 1:02}   Глава {i + 1}   ·   {h:02}:{m:02}:{s:02}', f'play:{i}'))
-            if count > 1:
-                entries.append(('Следующие главы', f'page:{(p + 1) % count + 1}'))
+            if p:
+                entries.append(('←  Предыдущие главы', f'page:{p}'))
+            if p + 1 < count:
+                entries.append(('Следующие главы  →', f'page:{p + 2}'))
             entries.append(('←  Главное меню', 'page:0'))
             result.append(entries)
     return result
-
 
 def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1):
     """Return a QImage; caller owns a QGuiApplication (also for CLI authoring)."""
