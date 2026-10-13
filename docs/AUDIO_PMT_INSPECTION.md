@@ -17,6 +17,8 @@ valid/decodable, selectable through BD-J, or in sync. Exit code `2` indicates
 malformed/inconclusive metadata or a different AC-3 stream count; it does not by
 itself prove the M2TS is bad. PSI sections spanning consecutive 188-byte TS packets are now reassembled with
 continuity-counter checks, maximum section size 1024 bytes, and CRC checking.
+Reserved/null PAT PMT PIDs, duplicate program numbers, reserved/null elementary PIDs,
+PMT/elementary PID collisions, and invalid PCR PIDs fail closed.
 Missing or out-of-order packets, invalid pointers and incomplete sections fail
 closed. The check still inspects only the first 32,768 M2TS packets. Actual hardware playback and audio switching remain
 mandatory before compatibility claims.

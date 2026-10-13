@@ -17,4 +17,4 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
       - name: Compile Python
-        run: python -m py_compile core.py settings.py main.py macos_burn.py cli.py
+        run: python -m py_compile core.py settings.py main.py macos_burn.py cli.py bdmv_preflight.py tools/bdmv_audio_check.py tools/psi_reassembly.py tools/psi_transport.py

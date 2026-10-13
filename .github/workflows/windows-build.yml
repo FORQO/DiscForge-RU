@@ -12,7 +12,7 @@ on:
       - 'tests/test_core.py'
       - '.github/workflows/windows-build.yml'
   push:
-    branches: ['feature/fullhd-pmt-authoring-publish-gate-20261013']
+    branches: ['feature/fullhd-pmt-authoring-publish-gate-20261013', 'fix/fullhd-psi-section-reassembly-20261013']
     tags: [ 'v*' ]
 jobs:
   build:

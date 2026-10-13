@@ -46,17 +46,23 @@ def _pat(section: bytes) -> tuple[int, int]:
     if not section[5] & 1 or section[6] != 0 or section[7] != 0:
         raise AudioInspectionError('Inactive or multipart PAT is inconclusive')
     programs: set[tuple[int, int]] = set()
+    program_numbers: set[int] = set()
     for pos in range(8, len(section) - 4, 4):
         program = int.from_bytes(section[pos:pos + 2], 'big')
         pid = ((section[pos + 2] & 0x1F) << 8) | section[pos + 3]
         if program:
+            if not 0x0010 <= pid <= 0x1FFE:
+                raise AudioInspectionError('Invalid PMT PID in PAT (reserved or null PID)')
+            if program in program_numbers:
+                raise AudioInspectionError('Duplicate PAT program number')
+            program_numbers.add(program)
             programs.add((program, pid))
     if len(programs) != 1:
         raise AudioInspectionError('Expected one PAT program in authored 2D Blu-ray')
     return next(iter(programs))
 
 
-def _pmt(section: bytes, program_number: int) -> tuple[Stream, ...]:
+def _pmt(section: bytes, program_number: int, pmt_pid: int) -> tuple[Stream, ...]:
     if section[0] != 0x02 or len(section) < 16:
         raise AudioInspectionError('Invalid PMT structure')
     if not section[5] & 1 or section[6] != 0 or section[7] != 0:
@@ -64,6 +70,10 @@ def _pmt(section: bytes, program_number: int) -> tuple[Stream, ...]:
     if int.from_bytes(section[3:5], 'big') != program_number:
         raise AudioInspectionError('PMT program number does not match PAT')
     end = len(section) - 4
+    # A reserved TS PID cannot carry the program clock.
+    pcr_pid = ((section[8] & 0x1F) << 8) | section[9]
+    if pcr_pid != 0x1FFF and not 0x0010 <= pcr_pid <= 0x1FFE:
+        raise AudioInspectionError('Invalid PCR PID in PMT')
     descriptor_length = ((section[10] & 0x0F) << 8) | section[11]
     position = 12 + descriptor_length
     if position > end:
@@ -74,6 +84,8 @@ def _pmt(section: bytes, program_number: int) -> tuple[Stream, ...]:
             raise AudioInspectionError('Truncated PMT elementary-stream entry')
         kind = section[position]
         pid = ((section[position + 1] & 0x1F) << 8) | section[position + 2]
+        if not 0x0010 <= pid <= 0x1FFE or pid == pmt_pid:
+            raise AudioInspectionError('Invalid elementary stream PID in PMT')
         size = ((section[position + 3] & 0x0F) << 8) | section[position + 4]
         position += 5 + size
         if position > end:
@@ -113,7 +125,7 @@ def inspect(path: Path, expected_ac3: int | None = None) -> tuple[Stream, ...]:
                         pmt = PSIReader(_crc32_mpeg, AudioInspectionError)
             elif program is not None and pid == program[1] and pmt is not None:
                 for section in pmt.push(ts):
-                    streams = _pmt(section, program[0])
+                    streams = _pmt(section, program[0], program[1])
                     if expected_ac3 is not None and sum(s.codec == 'AC3' for s in streams) != expected_ac3:
                         raise AudioInspectionError('AC-3 stream count does not match expected value')
                     return streams

@@ -1,7 +1,7 @@
 name: macOS alpha build
 on:
   push:
-    branches: [main, feature/macos-disc-burning, feature/fullhd-pmt-authoring-publish-gate-20261013]
+    branches: [main, feature/macos-disc-burning, feature/fullhd-pmt-authoring-publish-gate-20261013, fix/fullhd-psi-section-reassembly-20261013]
   pull_request:
   workflow_dispatch:
 jobs:
