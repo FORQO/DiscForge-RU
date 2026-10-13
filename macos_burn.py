@@ -30,7 +30,8 @@ def validate_image(path: str | Path) -> Path:
     return image
 
 
-def validate_for_burning(path: str | Path, *, profile: str | None = None) -> Path:
+def validate_for_burning(path: str | Path, *, profile: str | None = None,
+                         inspect_bdmv: bool = False) -> Path:
     """Fail closed before touching a recorder; metadata preflight is not a playback test."""
     original = Path(path).expanduser()
     if original.is_symlink():
@@ -45,6 +46,14 @@ def validate_for_burning(path: str | Path, *, profile: str | None = None) -> Pat
         raise MacBurnError(
             f"ISO не прошёл проверку UDF 2.50 ({profile}): " + "; ".join(report.errors)
         )
+    if inspect_bdmv:
+        # macOS only: read-only mount and structural BDMV inspection.
+        # Remains opt-in pending tests on actual authored Blu-ray ISO images.
+        from tools.macos_mounted_bdmv import MountedBDMVError, inspect_mounted_bdmv
+        try:
+            inspect_mounted_bdmv(image, profile=profile)
+        except MountedBDMVError as exc:
+            raise MacBurnError(str(exc)) from exc
     return image
 
 
@@ -83,9 +92,9 @@ def list_drives() -> str:
 
 
 def burn(image: str | Path, *, device: str | None = None, speed: int | None = None,
-         profile: str | None = None) -> None:
+         profile: str | None = None, inspect_bdmv: bool = False) -> None:
     require_macos()
-    source = validate_for_burning(image, profile=profile)
+    source = validate_for_burning(image, profile=profile, inspect_bdmv=inspect_bdmv)
     command = burn_command(source, device=device, speed=speed)
     try:
         completed = subprocess.run(command, check=False)
@@ -103,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("iso", help="Путь к ISO")
     check_parser.add_argument("--profile", choices=("BD25", "BD50"),
                               help="Проверить размер для конкретного носителя")
+    check_parser.add_argument("--inspect-bdmv", action="store_true",
+                              help="macOS: смонтировать ISO только для чтения и проверить BDMV")
     burn_parser = commands.add_parser("burn", help="Записать готовый ISO с проверкой")
     burn_parser.add_argument("iso", help="Путь к ISO")
     burn_parser.add_argument("--device", help="Идентификатор из hdiutil burn -list")
@@ -110,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     burn_parser.add_argument("--profile", choices=("BD25", "BD50"),
                              help="Ограничить образ вместимостью выбранного носителя")
     burn_parser.add_argument("--dry-run", action="store_true", help="Не записывать диск")
+    burn_parser.add_argument("--inspect-bdmv", action="store_true",
+                             help="macOS: дополнительно проверить BDMV внутри смонтированного ISO")
     burn_parser.add_argument("--yes", action="store_true", help="Подтвердить запись на носитель")
     args = parser.parse_args(argv)
     try:
@@ -117,20 +130,31 @@ def main(argv: list[str] | None = None) -> int:
             print(list_drives())
             return 0
         if args.action == "check":
-            checked = validate_for_burning(args.iso, profile=args.profile)
+            checked = validate_for_burning(args.iso, profile=args.profile,
+                                           inspect_bdmv=args.inspect_bdmv)
             print("Предварительная проверка UDF 2.50 пройдена:", checked)
-            print("Это НЕ проверка структуры BDMV, записанного диска или совместимости плеера.")
+            if args.inspect_bdmv:
+                print("Статическая проверка BDMV в смонтированном ISO пройдена.")
+                print("Это НЕ проверка реального диска или совместимости плеера.")
+            else:
+                print("Это НЕ проверка структуры BDMV, записанного диска или совместимости плеера.")
             return 0
         if args.dry_run:
-            image = validate_for_burning(args.iso, profile=args.profile)
+            image = validate_for_burning(args.iso, profile=args.profile,
+                                         inspect_bdmv=args.inspect_bdmv)
             command = burn_command(image, args.device, args.speed)
-            print("Проверка метаданных UDF 2.50 пройдена. Будет выполнена команда:", repr(command))
-            print("Это НЕ проверка структуры BDMV или воспроизводимости и НЕ запись диска.")
+            print("Проверка UDF 2.50 пройдена. Будет выполнена команда:", repr(command))
+            if args.inspect_bdmv:
+                print("Статическая проверка BDMV пройдена. Записи не выполнялось.")
+            else:
+                print("Структура BDMV НЕ проверялась. Записи не выполнялось.")
+            print("Совместимость с бытовым плеером НЕ проверялась.")
             return 0
         if not args.yes:
             raise MacBurnError("Для реальной записи добавьте --yes; сначала проверьте ISO и носитель.")
-        print("Запись ISO и проверка на устройстве. Не отключайте привод до завершения.")
-        burn(args.iso, device=args.device, speed=args.speed, profile=args.profile)
+        print("Проверка ISO перед записью...")
+        burn(args.iso, device=args.device, speed=args.speed, profile=args.profile,
+             inspect_bdmv=args.inspect_bdmv)
         print("hdiutil сообщил об успешной записи и проверке. Совместимость плеера НЕ подтверждена.")
         return 0
     except MacBurnError as exc:

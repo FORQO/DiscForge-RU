@@ -151,5 +151,56 @@ class MacBurnTests(unittest.TestCase):
                     macos_burn.burn(image)
 
 
+    def test_opt_in_mounted_bdmv_check_without_optical_drive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.inspect_udf", return_value=good), \
+                 patch("tools.macos_mounted_bdmv.inspect_mounted_bdmv") as inspector, \
+                 patch("macos_burn.subprocess.run") as recorder:
+                self.assertEqual(macos_burn.main(["check", str(image), "--inspect-bdmv"]), 0)
+                inspector.assert_called_once_with(image.resolve(), profile="BD25")
+                recorder.assert_not_called()
+
+    def test_invalid_mounted_bdmv_blocks_dry_run_and_burn(self):
+        from tools.macos_mounted_bdmv import MountedBDMVError
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.inspect_udf", return_value=good), \
+                 patch("tools.macos_mounted_bdmv.inspect_mounted_bdmv",
+                       side_effect=MountedBDMVError("Invalid BDMV")) as inspector, \
+                 patch("macos_burn.subprocess.run") as recorder:
+                self.assertEqual(macos_burn.main(["burn", str(image), "--dry-run",
+                                                  "--inspect-bdmv"]), 1)
+                with patch("macos_burn.sys.platform", "darwin"):
+                    with self.assertRaisesRegex(macos_burn.MacBurnError, "Invalid BDMV"):
+                        macos_burn.burn(image, inspect_bdmv=True)
+                self.assertEqual(inspector.call_count, 2)
+                recorder.assert_not_called()
+
+    def test_udf_preflight_must_pass_before_mounted_bdmv_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            with patch("tools.macos_mounted_bdmv.inspect_mounted_bdmv") as inspector:
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "UDF 2.50"):
+                    macos_burn.validate_for_burning(image, inspect_bdmv=True)
+                inspector.assert_not_called()
+
+    def test_opt_in_mounted_bdmv_passes_before_actual_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf", return_value=good), \
+                 patch("tools.macos_mounted_bdmv.inspect_mounted_bdmv") as inspector, \
+                 patch("macos_burn.subprocess.run",
+                       return_value=SimpleNamespace(returncode=0)) as recorder:
+                macos_burn.burn(image, inspect_bdmv=True)
+                inspector.assert_called_once_with(image.resolve(), profile="BD25")
+                self.assertEqual(recorder.call_count, 1)
+                self.assertEqual(recorder.call_args.args[0][:2], ["hdiutil", "burn"])
+
+
 if __name__ == "__main__":
     unittest.main()
