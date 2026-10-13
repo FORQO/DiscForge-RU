@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from tools.iso_udf_preflight import CAPACITIES, inspect as inspect_udf
+
 
 class MacBurnError(RuntimeError):
     """Failure to validate or burn an image."""
@@ -25,6 +27,24 @@ def validate_image(path: str | Path) -> Path:
     size = image.stat().st_size
     if size == 0 or size % 2048:
         raise MacBurnError("Некорректный размер ISO: требуется ненулевое число секторов по 2048 байт.")
+    return image
+
+
+def validate_for_burning(path: str | Path, *, profile: str | None = None) -> Path:
+    """Fail closed before touching a recorder; metadata preflight is not a playback test."""
+    original = Path(path).expanduser()
+    if original.is_symlink():
+        raise MacBurnError("Символическая ссылка на ISO запрещена перед записью.")
+    image = validate_image(original)
+    if profile is None:
+        profile = "BD25" if image.stat().st_size <= CAPACITIES["BD25"] else "BD50"
+    if profile not in CAPACITIES:
+        raise MacBurnError("Для записи поддерживаются только профили BD25 и BD50.")
+    report = inspect_udf(image, profile=profile)
+    if not report.valid:
+        raise MacBurnError(
+            f"ISO не прошёл проверку UDF 2.50 ({profile}): " + "; ".join(report.errors)
+        )
     return image
 
 
@@ -62,9 +82,10 @@ def list_drives() -> str:
     return completed.stdout
 
 
-def burn(image: str | Path, *, device: str | None = None, speed: int | None = None) -> None:
+def burn(image: str | Path, *, device: str | None = None, speed: int | None = None,
+         profile: str | None = None) -> None:
     require_macos()
-    source = validate_image(image)
+    source = validate_for_burning(image, profile=profile)
     command = burn_command(source, device=device, speed=speed)
     try:
         completed = subprocess.run(command, check=False)
@@ -78,16 +99,27 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DiscForge RU: запись готового ISO на macOS")
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("drives", help="Показать оптические приводы")
+    check_parser = commands.add_parser("check", help="Проверить UDF 2.50 без записи")
+    check_parser.add_argument("iso", help="Путь к ISO")
+    check_parser.add_argument("--profile", choices=("BD25", "BD50"),
+                              help="Проверить размер для конкретного носителя")
     burn_parser = commands.add_parser("burn", help="Записать готовый ISO с проверкой")
     burn_parser.add_argument("iso", help="Путь к ISO")
     burn_parser.add_argument("--device", help="Идентификатор из hdiutil burn -list")
     burn_parser.add_argument("--speed", type=int, help="Скорость, например 2 или 4")
+    burn_parser.add_argument("--profile", choices=("BD25", "BD50"),
+                             help="Ограничить образ вместимостью выбранного носителя")
     burn_parser.add_argument("--dry-run", action="store_true", help="Не записывать диск")
     burn_parser.add_argument("--yes", action="store_true", help="Подтвердить запись на носитель")
     args = parser.parse_args(argv)
     try:
         if args.action == "drives":
             print(list_drives())
+            return 0
+        if args.action == "check":
+            checked = validate_for_burning(args.iso, profile=args.profile)
+            print("Предварительная проверка UDF 2.50 пройдена:", checked)
+            print("Это НЕ проверка структуры BDMV, записанного диска или совместимости плеера.")
             return 0
         image = validate_image(args.iso)
         command = burn_command(image, args.device, args.speed)
@@ -98,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.yes:
             raise MacBurnError("Для реальной записи добавьте --yes; сначала проверьте ISO и носитель.")
         print("Запись ISO и проверка на устройстве. Не отключайте привод до завершения.")
-        burn(image, device=args.device, speed=args.speed)
+        burn(args.iso, device=args.device, speed=args.speed, profile=args.profile)
         print("hdiutil сообщил об успешной записи и проверке. Совместимость плеера НЕ подтверждена.")
         return 0
     except MacBurnError as exc:

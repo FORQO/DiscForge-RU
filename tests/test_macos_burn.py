@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import macos_burn
@@ -40,6 +41,61 @@ class MacBurnTests(unittest.TestCase):
             with self.assertRaises(macos_burn.MacBurnError):
                 macos_burn.validate_image(wrong)
 
+    def test_non_udf_iso_does_not_touch_recorder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.subprocess.run") as runner:
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "UDF 2.50"):
+                    macos_burn.burn(image)
+                runner.assert_not_called()
+
+    def test_check_rejects_non_udf_without_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            with patch("macos_burn.subprocess.run") as runner:
+                self.assertEqual(macos_burn.main(["check", str(image)]), 1)
+                runner.assert_not_called()
+
+    def test_check_uses_explicit_profile_without_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.inspect_udf", return_value=good) as inspector, \
+                 patch("macos_burn.subprocess.run") as runner:
+                self.assertEqual(macos_burn.main(["check", str(image), "--profile", "BD50"]), 0)
+                inspector.assert_called_once_with(image.resolve(), profile="BD50")
+                runner.assert_not_called()
+
+    def test_explicit_bd25_profile_rejects_oversized_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            with patch.dict(macos_burn.CAPACITIES, {"BD25": 2048 * 100}):
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "BD25"):
+                    macos_burn.validate_for_burning(image, profile="BD25")
+
+    def test_auto_profile_uses_bd50_above_bd25_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp, sectors=300)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch.dict(macos_burn.CAPACITIES, {"BD25": 2048 * 100}), \
+                 patch("macos_burn.inspect_udf", return_value=good) as inspector:
+                self.assertEqual(macos_burn.validate_for_burning(image), image.resolve())
+                inspector.assert_called_once_with(image.resolve(), profile="BD50")
+
+    def test_symlink_rejected_before_udf_inspection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            link = Path(tmp) / "alias.iso"
+            try:
+                link.symlink_to(image)
+            except (OSError, NotImplementedError):
+                self.skipTest("Symlinks unavailable")
+            with patch("macos_burn.inspect_udf") as inspector:
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "Символическая"):
+                    macos_burn.validate_for_burning(link)
+                inspector.assert_not_called()
+
     def test_speed_and_device_rejected(self):
         with self.assertRaises(macos_burn.MacBurnError):
             macos_burn.burn_command(Path("test.iso"), speed=0)
@@ -73,6 +129,7 @@ class MacBurnTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             image = self.make_iso(tmp)
             with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf", return_value=SimpleNamespace(valid=True, errors=[])), \
                  patch("macos_burn.subprocess.run") as runner:
                 runner.return_value.returncode = 0
                 macos_burn.burn(image)
