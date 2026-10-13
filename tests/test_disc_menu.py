@@ -45,10 +45,15 @@ class MenuGraphTests(unittest.TestCase):
                     actions = [action for _, action in entries]
                     self.assertLessEqual(len(actions), 8)
                     self.assertEqual(actions[-1], 'page:0')
-                    previous = f'page:{page_number - 1}'
-                    following = f'page:{page_number + 1}'
-                    self.assertEqual(previous in actions, page_number > 1)
-                    self.assertEqual(following in actions, page_number < len(scene_pages))
+                    # Home is also page:0; identify previous/next by label.
+                    previous = [action for label, action in entries
+                                if 'Предыдущие главы' in label]
+                    following = [action for label, action in entries
+                                 if 'Следующие главы' in label]
+                    self.assertEqual(previous, [f'page:{page_number - 1}']
+                                     if page_number > 1 else [])
+                    self.assertEqual(following, [f'page:{page_number + 1}']
+                                     if page_number < len(scene_pages) else [])
                     chapter_actions = [a for a in actions if a.startswith('play:')]
                     start = (page_number - 1) * 5
                     self.assertEqual(chapter_actions,
