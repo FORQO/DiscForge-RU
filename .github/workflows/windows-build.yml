@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
+    branches: [feature/studio-fullhd-pmt-publish-20261013]
     tags: [ 'v*' ]
 jobs:
   build:
