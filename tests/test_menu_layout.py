@@ -89,10 +89,13 @@ class LayoutGuiTests(unittest.TestCase):
 
     def test_static_text_color_font_bold_and_roundtrip(self):
         self.editor.preview_selection('text:title')
-        # Choose an installed family: Arial is not present on Linux CI.
-        from PySide6.QtGui import QFontDatabase
-        family = next(name for name in QFontDatabase.families() if name != self.editor.font_family.currentFont().family())
-        self.editor.font_family.setCurrentFont(QFont(family))
+        # Pick a visible font in the actual combo; database-only private macOS
+        # fonts and Windows-only Arial are not selectable on every platform.
+        combo = self.editor.font_family
+        index = next(i for i in range(combo.count())
+                     if combo.itemText(i) != combo.currentText() and not combo.itemText(i).startswith('.'))
+        family = combo.itemText(index)
+        combo.setCurrentIndex(index)
         self.editor.font_size.setValue(72)
         self.editor.bold.setChecked(False)
         self.editor.italic.setChecked(True)
@@ -204,3 +207,4 @@ class ChapterTimingTests(unittest.TestCase):
         self.window.auto_interval.setValue(1)
         self.window.auto_chapter_button.click()
         self.assertEqual(self.window.chapters[self.path], [0, 60])
+
