@@ -136,9 +136,13 @@ class AuthoringTests(unittest.TestCase):
                 (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + bytes([0x47]) + bytes(187))
 
             with patch('core._require_binary'), patch('core.run_command', side_effect=encode), \
-                 patch('core.run_tsmuxer', side_effect=mux):
+                 patch('core.run_tsmuxer', side_effect=mux), \
+                 patch('core.inspect_bdmv') as preflight:
+                preflight.return_value.structurally_valid = True
                 result = create_bluray(info, 'BD25', str(root), 'ffmpeg', 'tsmuxer', False, False,
                                        threading.Event(), lambda msg: None, lambda pct: None, chapters=[0.0])
+            preflight.assert_called_once()
+            self.assertEqual(preflight.call_args.kwargs['expected_ac3'], 1)
             self.assertEqual(result.name, 'film_2')
             self.assertTrue((result / 'BDMV' / 'STREAM' / '00000.m2ts').exists())
 

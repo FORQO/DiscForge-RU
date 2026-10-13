@@ -8,8 +8,11 @@ on:
       - 'tests/test_bdmv_preflight.py'
       - 'tools/bdmv_audio_check.py'
       - 'tests/test_bdmv_audio_check.py'
+      - 'tests/test_bdmv_audio_integration.py'
+      - 'tests/test_core.py'
       - '.github/workflows/windows-build.yml'
   push:
+    branches: ['feature/fullhd-pmt-authoring-publish-gate-20261013']
     tags: [ 'v*' ]
 jobs:
   build:

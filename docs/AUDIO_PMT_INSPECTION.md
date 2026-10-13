@@ -39,10 +39,22 @@ python bdmv_preflight.py "Output/Movie" --profile BD25 --expected-ac3 1
 
 Default `bdmv_preflight.py` behavior remains unchanged unless the count is
 given; applications using the existing two-argument `inspect(root, profile)`
-API retain the structural-only check. This option is not yet automatically
-enabled in `core.create_bluray`, so it does not establish a built-in authoring
-publish gate. A fixture-backed tsMuxer integration test is required before
-making this check mandatory for automatic authoring.
+API retain the structural-only check.
+
+For **BD25/BD50 folder authoring**, `core.create_bluray` now enables the gate
+before moving the temporary BDMV folder to its final output location:
+`expected_ac3=1` for an audio source and `expected_ac3=0` for a silent
+source. A mismatch, malformed PAT/PMT, or inconclusive scan aborts publication;
+the temporary folder is cleaned. This tests the single-track authoring path,
+not decoded audio, multi-audio selection, BD-J switching or ISO validity.
+**ISO authoring is not covered by this gate.**
+
+The authoring pipeline regressions use synthetic CRC-valid transport packets
+with mocked FFmpeg/tsMuxer; they are **not real tsMuxer output fixtures**.
+Because this bounded PSI parser cannot reassemble tables spanning packets,
+a conforming clip might be rejected as inconclusive. Real tsMuxer-generated
+fixtures, Windows/macOS packaging and ASUS BW-16D1HT/player testing are still
+required before release-readiness claims.
 
 These checks only inspect PAT/PMT advertisements in a bounded part of M2TS,
 not audio decoding, stream selection in BD-J, audio synchronization, ISO UDF

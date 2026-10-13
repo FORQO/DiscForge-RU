@@ -369,10 +369,10 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         # Never publish an invalid Full HD folder as a ready-to-burn BDMV.
         # ISO images require a separate UDF/ISO inspection and are not certified here.
         if not iso and profile in ('BD25', 'BD50'):
-            report = inspect_bdmv(author_target, profile)
+            report = inspect_bdmv(author_target, profile, expected_ac3=1 if audio is not None else 0)
             if not report.structurally_valid:
                 raise DiscForgeError('Проверка BDMV не пройдена: ' + '; '.join(report.errors[:8]))
-            log('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.')
+            log('Проверка BDMV и AC-3 PAT/PMT пройдена; воспроизведение на плеере НЕ проверено.')
         shutil.move(str(author_target), str(target))
         progress(100)
         log(f'Готово: {target} ({size/1e9:.2f} ГБ).')
