@@ -167,10 +167,14 @@ class AuthoringTests(unittest.TestCase):
                                                  minimal_clpi() if relative.endswith('.clpi') else magic + b'0200')
                 (bdmv / 'STREAM' / '00000.m2ts').write_bytes(bytes(4) + b'\x47\x1f\xff\x10' + bytes(184))
 
+            # The mocked M2TS contains no PAT/PMT: test unique output paths
+            # independently from PSI, which has dedicated full integration tests.
             with patch('core._require_binary'), patch('core.run_command', side_effect=encode), \
-                 patch('core.run_tsmuxer', side_effect=mux):
+                 patch('core.run_tsmuxer', side_effect=mux), \
+                 patch('bdmv_preflight.inspect_m2ts_audio') as audio_gate:
                 result = create_bluray(info, 'BD25', str(root), 'ffmpeg', 'tsmuxer', False, False,
                                        threading.Event(), lambda msg: None, lambda pct: None, chapters=[0.0])
+            audio_gate.assert_called_once()
             self.assertEqual(result.name, 'film_2')
             self.assertTrue((result / 'BDMV' / 'STREAM' / '00000.m2ts').exists())
 
