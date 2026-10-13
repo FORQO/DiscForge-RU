@@ -7,6 +7,7 @@ macOS but neither an optical drive nor a blank disc. It is NOT a player test.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,56 @@ from bdmv_preflight import inspect as inspect_bdmv
 
 class MountedBDMVError(RuntimeError):
     """Read-only mount, structural inspection or cleanup failed."""
+
+
+@contextmanager
+def _temporary_mountpoint():
+    """Do not recursively remove a mounted ISO if detach fails."""
+    mountpoint = Path(tempfile.mkdtemp(prefix="discforge-bdmv-check-"))
+    try:
+        yield mountpoint
+    finally:
+        # An empty mountpoint can be removed safely. A still-mounted UDF
+        # filesystem must never be traversed by TemporaryDirectory.rmtree.
+        try:
+            mountpoint.rmdir()
+        except OSError:
+            pass
+
+
+def _detach_mount(mountpoint: Path) -> None:
+    """Bounded non-forced hdiutil detach."""
+    try:
+        detached = subprocess.run(
+            ["hdiutil", "detach", str(mountpoint)],
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise MountedBDMVError(
+            f"Не удалось отключить проверочный том ISO {mountpoint}: {exc}"
+        ) from exc
+    if detached.returncode != 0:
+        reason = (detached.stderr or detached.stdout or "hdiutil detach завершился с ошибкой").strip()
+        raise MountedBDMVError(
+            f"Не удалось отключить проверочный том ISO {mountpoint}: {reason[:500]}"
+        )
+
+
+def _cleanup_partial_attach(mountpoint: Path) -> None:
+    """A failed/timed-out attach can nevertheless leave a mounted volume."""
+    try:
+        mounted = mountpoint.is_mount()
+    except OSError as exc:
+        raise MountedBDMVError(
+            f"Не удалось проверить состояние точки монтирования {mountpoint}: {exc}"
+        ) from exc
+    if mounted:
+        try:
+            _detach_mount(mountpoint)
+        except MountedBDMVError as exc:
+            raise MountedBDMVError(
+                f"Проверочный том мог остаться смонтированным по адресу {mountpoint}: {exc}"
+            ) from exc
 
 
 def inspect_mounted_bdmv(image: str | Path, *, profile: str) -> None:
@@ -30,9 +81,7 @@ def inspect_mounted_bdmv(image: str | Path, *, profile: str) -> None:
     if profile not in ("BD25", "BD50"):
         raise MountedBDMVError("Поддерживаются только BD25 и BD50.")
 
-    with tempfile.TemporaryDirectory(prefix="discforge-bdmv-check-",
-                                     ignore_cleanup_errors=True) as directory:
-        mountpoint = Path(directory)
+    with _temporary_mountpoint() as mountpoint:
         try:
             attached = subprocess.run(
                 ["hdiutil", "attach", "-readonly", "-nobrowse",
@@ -40,9 +89,11 @@ def inspect_mounted_bdmv(image: str | Path, *, profile: str) -> None:
                 capture_output=True, text=True, timeout=120, check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
+            _cleanup_partial_attach(mountpoint)
             raise MountedBDMVError(f"Не удалось смонтировать ISO только для чтения: {exc}") from exc
         if attached.returncode != 0:
             reason = (attached.stderr or attached.stdout or "hdiutil attach завершился с ошибкой").strip()
+            _cleanup_partial_attach(mountpoint)
             raise MountedBDMVError(f"ISO не смонтирован: {reason[:500]}")
 
         validation_error = None
@@ -55,20 +106,7 @@ def inspect_mounted_bdmv(image: str | Path, *, profile: str) -> None:
             except (OSError, ValueError, RuntimeError) as exc:
                 validation_error = exc
         finally:
-            # Never use -force: a failed detach must prevent subsequent burning.
-            try:
-                detached = subprocess.run(
-                    ["hdiutil", "detach", str(mountpoint)],
-                    capture_output=True, text=True, timeout=60, check=False,
-                )
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                raise MountedBDMVError(
-                    f"Не удалось отключить проверочный том ISO {mountpoint}: {exc}"
-                ) from exc
-            if detached.returncode != 0:
-                reason = (detached.stderr or detached.stdout or "hdiutil detach завершился с ошибкой").strip()
-                raise MountedBDMVError(
-                    f"Не удалось отключить проверочный том ISO {mountpoint}: {reason[:500]}"
-                )
+            # Incomplete cleanup blocks burn; never use -force.
+            _detach_mount(mountpoint)
         if validation_error is not None:
             raise MountedBDMVError(str(validation_error)) from validation_error
