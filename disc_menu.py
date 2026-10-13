@@ -260,19 +260,24 @@ def validate_menu_navigation(chapters, design):
                 continue
             if int(value) >= (len(chapters) if kind == 'play' else len(graph)):
                 raise ValueError('Кнопка ссылается на отсутствующую главу или страницу. Исправьте её действие.')
-    pending, seen = [0], set()
+    # Do not return on the first Play button: a separate reachable page may
+    # have had every control hidden in the editor, trapping remote navigation.
+    pending, seen, playable = [0], set(), False
     while pending:
         page = pending.pop()
         if page in seen:
             continue
         seen.add(page)
+        if page != 0 and not graph[page]:
+            raise ValueError('Доступная страница меню осталась без кнопок. Восстановите кнопку перед созданием ISO.')
         for _, action in graph[page]:
             kind, value = resolve_action(design, action).split(':')
             if kind == 'play':
-                return
-            if kind == 'page':
+                playable = True
+            elif kind == 'page':
                 pending.append(int(value))
-    raise ValueError('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.')
+    if not playable:
+        raise ValueError('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.')
 
 
 def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[tuple[str, str]]]:
