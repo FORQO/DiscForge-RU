@@ -143,6 +143,9 @@ def burn(image: str | Path, *, device: str | None = None, speed: int | None = No
         raise MacBurnError(f"Не удалось запустить hdiutil: {exc}") from exc
     if completed.returncode != 0:
         raise MacBurnError(f"Запись или проверка завершилась с ошибкой (код {completed.returncode}).")
+    # hdiutil may report success after a source ISO changes during the write.
+    # Such a disc cannot be treated as verified; keep the original fingerprint.
+    _require_unchanged(source, fingerprint)
 
 
 def main(argv: list[str] | None = None) -> int:
