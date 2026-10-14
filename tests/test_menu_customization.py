@@ -55,7 +55,13 @@ class CustomMenuTests(unittest.TestCase):
             install_menu(root, restored, [0])
             with zipfile.ZipFile(root/'BDMV/JAR/00000.jar') as jar:
                 on_disc = QImage.fromData(jar.read('page0.png'))
-                self.assertEqual(on_disc, rendered)
+                # PNG readers may select a different internal QImage format.
+                # Compare all displayed pixels, independently of that storage.
+                self.assertEqual(on_disc.size(), rendered.size())
+                actual = on_disc.convertToFormat(QImage.Format_RGBA8888)
+                expected = rendered.convertToFormat(QImage.Format_RGBA8888)
+                self.assertTrue(bytes(actual.constBits()) == bytes(expected.constBits()),
+                                'On-disc menu pixels differ from the preview')
                 self.assertIn(b'page.0.0=play:0', jar.read('menu.properties'))
 
     def test_editor_language_switch_retains_independent_labels_and_reset(self):
