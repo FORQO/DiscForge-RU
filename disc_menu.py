@@ -504,7 +504,7 @@ def page_elements(design, chapters, page, entries_override=None):
 def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1, entries_override=None):
     """Return a QImage; caller owns a QGuiApplication (also for CLI authoring)."""
     from PySide6.QtCore import Qt, QRect
-    from PySide6.QtGui import QImage, QPainter, QColor, QFont, QLinearGradient, QPen
+    from PySide6.QtGui import QImage, QPainter, QColor, QFont, QLinearGradient, QPen, QPainterPath
     initialize_fonts()
     background = background_image(design.background) if design.background else None
     builtin = theme_background(design.theme) if not design.background and theme_background_path(design.theme) else None
@@ -533,9 +533,15 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
         painter.save()
         painter.setClipRect(rect)
         painter.setFont(font)
-        painter.setPen(QColor(style['text']))
-        shown = painter.fontMetrics().elidedText(text, Qt.ElideRight, rect.width())
-        painter.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, shown)
+        metrics = painter.fontMetrics()
+        shown = metrics.elidedText(text, Qt.ElideRight, rect.width())
+        # Raster glyph caches can change first-use antialiasing on FreeType.
+        # Font outlines give the preview and exported PNG the same geometry
+        # and rasterization, independently of the glyph cache's warm-up state.
+        outline = QPainterPath()
+        baseline = rect.y() + (rect.height() - metrics.height()) / 2 + metrics.ascent()
+        outline.addText(rect.x(), baseline, font, shown)
+        painter.fillPath(outline, QColor(style['text']))
         painter.restore()
     for element in page_elements(design, chapters, page, entries_override):
         rect = QRect(*element['rect'])
