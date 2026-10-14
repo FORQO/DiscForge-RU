@@ -1,4 +1,5 @@
 """Hardware-free regression tests for transient macOS ISO filesystem I/O errors."""
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,32 @@ class MacISOIOErrorTests(unittest.TestCase):
             image = Path(folder) / "film.iso"
             image.write_bytes(b"\0" * (3 * 2048))
             self.assertEqual(macos_burn.validate_image(image), image.resolve())
+
+
+    def test_udf_reader_io_failure_blocks_optical_writer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "film.iso"
+            image.write_bytes(b"\0" * (300 * 2048))
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf", side_effect=PermissionError("NAS disconnected")), \
+                 patch("macos_burn.subprocess.run") as writer:
+                with self.assertRaisesRegex(macos_burn.MacBurnError, "Не удалось прочитать UDF 2.50"):
+                    macos_burn.burn(image)
+                writer.assert_not_called()
+
+    def test_udf_reader_io_failure_returns_controlled_cli_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "film.iso"
+            image.write_bytes(b"\0" * (300 * 2048))
+            with patch("macos_burn.inspect_udf", side_effect=OSError("USB unavailable")), \
+                 patch("macos_burn.subprocess.run") as writer:
+                for arguments in (["check", str(image)], ["burn", str(image), "--dry-run"]):
+                    with self.subTest(arguments=arguments), \
+                         patch("macos_burn.sys.stderr", new_callable=io.StringIO) as error:
+                        self.assertEqual(macos_burn.main(arguments), 1)
+                        self.assertIn("ОШИБКА:", error.getvalue())
+                        self.assertIn("USB unavailable", error.getvalue())
+                writer.assert_not_called()
 
 
 if __name__ == "__main__":

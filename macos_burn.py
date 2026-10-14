@@ -63,7 +63,11 @@ def _validated_image_with_identity(path: str | Path, *, profile: str | None = No
         profile = "BD25" if fingerprint[2] <= CAPACITIES["BD25"] else "BD50"
     if profile not in CAPACITIES:
         raise MacBurnError("Для записи поддерживаются только профили BD25 и BD50.")
-    report = inspect_udf(image, profile=profile)
+    try:
+        report = inspect_udf(image, profile=profile)
+    except (OSError, ValueError) as exc:
+        # A read failure must be fatal before the writer is started.
+        raise MacBurnError(f"Не удалось прочитать UDF 2.50 ISO: {exc}") from exc
     if not report.valid:
         raise MacBurnError(
             f"ISO не прошёл проверку UDF 2.50 ({profile}): " + "; ".join(report.errors)
