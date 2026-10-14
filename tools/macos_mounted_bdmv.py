@@ -23,7 +23,12 @@ class MountedBDMVError(RuntimeError):
 @contextmanager
 def _temporary_mountpoint():
     """Do not recursively remove a mounted ISO if detach fails."""
-    mountpoint = Path(tempfile.mkdtemp(prefix="discforge-bdmv-check-"))
+    try:
+        mountpoint = Path(tempfile.mkdtemp(prefix="discforge-bdmv-check-"))
+    except (OSError, RuntimeError) as exc:
+        raise MountedBDMVError(
+            f"Не удалось создать временную точку монтирования ISO: {exc}"
+        ) from exc
     try:
         yield mountpoint
     finally:
@@ -40,7 +45,7 @@ def _detach_mount(mountpoint: Path) -> None:
     try:
         detached = subprocess.run(
             ["hdiutil", "detach", str(mountpoint)],
-            capture_output=True, text=True, timeout=60, check=False,
+            capture_output=True, text=True, errors="replace", timeout=60, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise MountedBDMVError(
@@ -57,7 +62,7 @@ def _cleanup_partial_attach(mountpoint: Path) -> None:
     """A failed/timed-out attach can nevertheless leave a mounted volume."""
     try:
         mounted = mountpoint.is_mount()
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         raise MountedBDMVError(
             f"Не удалось проверить состояние точки монтирования {mountpoint}: {exc}"
         ) from exc
@@ -86,7 +91,7 @@ def inspect_mounted_bdmv(image: str | Path, *, profile: str) -> None:
             attached = subprocess.run(
                 ["hdiutil", "attach", "-readonly", "-nobrowse",
                  "-mountpoint", str(mountpoint), str(image)],
-                capture_output=True, text=True, timeout=120, check=False,
+                capture_output=True, text=True, errors="replace", timeout=120, check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             _cleanup_partial_attach(mountpoint)
