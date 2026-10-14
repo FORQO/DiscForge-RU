@@ -22,3 +22,10 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Compile Python
         run: python -m py_compile core.py settings.py main.py macos_burn.py cli.py
+      - name: Preserve failed rendering diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendering-diagnostics-${{ matrix.python-version }}
+          path: build/test-artifacts/
+          if-no-files-found: ignore

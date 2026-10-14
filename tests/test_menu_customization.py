@@ -60,8 +60,24 @@ class CustomMenuTests(unittest.TestCase):
                 self.assertEqual(on_disc.size(), rendered.size())
                 actual = on_disc.convertToFormat(QImage.Format_RGBA8888)
                 expected = rendered.convertToFormat(QImage.Format_RGBA8888)
-                self.assertTrue(bytes(actual.constBits()) == bytes(expected.constBits()),
-                                'On-disc menu pixels differ from the preview')
+                actual_bytes, expected_bytes = bytes(actual.constBits()), bytes(expected.constBits())
+                if actual_bytes != expected_bytes:
+                    output = Path('build/test-artifacts/menu-pixels')
+                    output.mkdir(parents=True, exist_ok=True)
+                    actual.save(str(output/'on-disc.png'))
+                    expected.save(str(output/'preview.png'))
+                    again = render_page(restored, [0]).convertToFormat(QImage.Format_RGBA8888)
+                    again.save(str(output/'repeat.png'))
+                    roundtrip = QImage(str(output/'preview.png')).convertToFormat(QImage.Format_RGBA8888)
+                    changed = [i for i in range(0, len(actual_bytes), 4)
+                               if actual_bytes[i:i+4] != expected_bytes[i:i+4]]
+                    points = [(i//4 % actual.width(), i//4 // actual.width()) for i in changed]
+                    bounds = (min(x for x, y in points), min(y for x, y in points),
+                              max(x for x, y in points), max(y for x, y in points))
+                    self.fail(f'On-disc menu differs: {len(changed)} pixels, bounds={bounds}, '
+                              f'repeat_matches_disc={bytes(again.constBits()) == actual_bytes}, '
+                              f'PNG_roundtrip_matches_preview={bytes(roundtrip.constBits()) == expected_bytes}, '
+                              f'samples={[(points[n], list(expected_bytes[i:i+4]), list(actual_bytes[i:i+4])) for n, i in enumerate(changed[:8])]}')
                 self.assertIn(b'page.0.0=play:0', jar.read('menu.properties'))
 
     def test_editor_language_switch_retains_independent_labels_and_reset(self):
