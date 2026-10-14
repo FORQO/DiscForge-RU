@@ -53,7 +53,9 @@ function Get-Volume {
         self.assertEqual(result['ejects'], 0)
         mounted = json.loads(result['result'])
         self.assertTrue(mounted['owned'])
-        self.assertEqual(Path(mounted['root']), self.root / 'volume')
+        # Windows CI can expose TEMP through an 8.3 alias (RUNNER~1), while
+        # PowerShell returns its long path. Both must identify the same folder.
+        self.assertTrue(Path(mounted['root']).samefile(self.root / 'volume'))
 
     def test_volume_exists_before_filesystem_ready(self):
         result = self.run_script(r'''
