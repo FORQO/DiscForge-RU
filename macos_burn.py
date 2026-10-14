@@ -26,8 +26,9 @@ def validate_image(path: str | Path) -> Path:
         if not image.is_file():
             raise MacBurnError(f"Образ не найден: {image}")
         size = image.stat().st_size
-    except OSError as exc:
-        # Reject transient storage failures cleanly before attempting a burn.
+    except (OSError, RuntimeError) as exc:
+        # pathlib can raise RuntimeError for symlink loops on Python 3.11/3.12.
+        # Reject malformed paths without leaking a traceback or starting a writer.
         raise MacBurnError(f"Не удалось прочитать ISO: {exc}") from exc
     if size == 0 or size % 2048:
         raise MacBurnError("Некорректный размер ISO: требуется ненулевое число секторов по 2048 байт.")
@@ -51,11 +52,11 @@ def _require_unchanged(image: Path, fingerprint: tuple[int, int, int, int, int])
 def _validated_image_with_identity(path: str | Path, *, profile: str | None = None,
                                    inspect_bdmv: bool = False) -> tuple[Path, tuple[int, int, int, int, int]]:
     """Keep the preflight fingerprint through the actual burn, without a fresh baseline."""
-    original = Path(path).expanduser()
     try:
+        original = Path(path).expanduser()
         if original.is_symlink():
             raise MacBurnError("Символическая ссылка на ISO запрещена перед записью.")
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         raise MacBurnError(f"Не удалось проверить путь ISO: {exc}") from exc
     image = validate_image(original)
     fingerprint = _image_identity(image)
