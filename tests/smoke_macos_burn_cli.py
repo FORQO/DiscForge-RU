@@ -57,8 +57,9 @@ def main(argv: list[str] | None = None) -> int:
                0, "Записи не выполнялось")
         expect(invoke("check", str(bad)), 1, "ОШИБКА:")
         expect(invoke("burn", str(bad), "--dry-run"), 1, "ОШИБКА:")
+        expect(invoke("burn", str(good), "--yes"), 1, "--device")
 
-    print("Frozen macOS burner: 5/5 hardware-free smoke cases passed.")
+    print("Frozen macOS burner: 6/6 hardware-free smoke cases passed.")
     print("No physical drive, mountable image, or Blu-ray player was tested.")
     return 0
 

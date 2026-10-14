@@ -21,7 +21,7 @@
 python3 macos_burn.py drives
 python3 macos_burn.py check "/путь/к/фильму.iso" --profile BD25
 python3 macos_burn.py burn "/путь/к/фильму.iso" --dry-run
-python3 macos_burn.py burn "/путь/к/фильму.iso" --profile BD25 --speed 2 --yes
+python3 macos_burn.py burn "/путь/к/фильму.iso" --profile BD25 --device "ИДЕНТИФИКАТОР" --speed 2 --yes
 ```
 
 ### Контроль изменения ISO во время проверки
@@ -54,7 +54,7 @@ inode, размер и времена изменения ISO. Непосредс
 ```bash
 python3 macos_burn.py check "/путь/к/фильму.iso" --profile BD25 --inspect-bdmv
 python3 macos_burn.py burn "/путь/к/фильму.iso" --dry-run --inspect-bdmv
-python3 macos_burn.py burn "/путь/к/фильму.iso" --profile BD25 --inspect-bdmv --yes
+python3 macos_burn.py burn "/путь/к/фильму.iso" --profile BD25 --device "ИДЕНТИФИКАТОР" --inspect-bdmv --yes
 ```
 
 После успешной проверки метаданных UDF утилита монтирует ISO **только для чтения**
@@ -71,7 +71,12 @@ python3 macos_burn.py burn "/путь/к/фильму.iso" --profile BD25 --insp
 Обычный `--dry-run` не обращается к оптическому приводу; вместе с
 `--inspect-bdmv` он временно монтирует ISO, но **не записывает носитель**.
 
-Для выбора одного из нескольких приводов используйте `--device` с идентификатором из `hdiutil burn -list`.
+Для **реальной записи через CLI** параметр `--device` обязателен: сначала выполните
+`python3 macos_burn.py drives` и скопируйте точный идентификатор своего
+привода. Без него `burn --yes` останавливается до проверки ISO и обращения
+к оптическому устройству, чтобы `hdiutil` не выбрал другой привод автоматически.
+Для `check` и `burn --dry-run` указывать привод необязательно. Это ограничение
+CLI, а не утверждение о поддержке конкретной модели привода.
 
 `check` выполняет локальную структурную проверку **метаданных UDF 2.50** без macOS и без привода. Реальная запись теперь автоматически останавливается до обращения к приводу, если образ не проходит такую проверку. Без `--profile` размер автоматически относит образ к BD25 или BD50; явный `--profile` блокирует образ, который не помещается на выбранный тип носителя. Проверка не анализирует всё дерево файлов UDF, BDMV/BD-J и воспроизводимость.
 

@@ -36,7 +36,7 @@ class MacOSPathRuntimeTests(unittest.TestCase):
             patch("macos_burn.subprocess.run") as writer,
             contextlib.redirect_stderr(stderr),
         ):
-            self.assertEqual(macos_burn.main(["burn", "~/film.iso", "--yes"]), 1)
+            self.assertEqual(macos_burn.main(["burn", "~/film.iso", "--device", "mock-recorder", "--yes"]), 1)
             writer.assert_not_called()
         self.assertIn("Не удалось проверить путь ISO", stderr.getvalue())
 

@@ -69,7 +69,7 @@ class MacPostburnIntegrityTests(unittest.TestCase):
                  patch("macos_burn.inspect_udf", return_value=GOOD), \
                  patch("macos_burn.subprocess.run", side_effect=fake_burn), \
                  contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                self.assertEqual(macos_burn.main(["burn", str(image), "--yes"]), 1)
+                self.assertEqual(macos_burn.main(["burn", str(image), "--device", "mock-recorder", "--yes"]), 1)
             self.assertIn("ISO изменился", stderr.getvalue())
             self.assertNotIn("сообщил об успешной записи", stdout.getvalue())
 

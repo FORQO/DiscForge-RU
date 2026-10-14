@@ -36,7 +36,7 @@ class MountSetupFailures(unittest.TestCase):
                   patch.object(mount.subprocess, "run") as runner,
                   contextlib.redirect_stderr(err)):
                 self.assertEqual(macos_burn.main(
-                    ["burn", str(image), "--inspect-bdmv", "--yes"]
+                    ["burn", str(image), "--inspect-bdmv", "--device", "mock-recorder", "--yes"]
                 ), 1)
                 runner.assert_not_called()
             self.assertIn("временную точку", err.getvalue())

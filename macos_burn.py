@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                               help="macOS: смонтировать ISO только для чтения и проверить BDMV")
     burn_parser = commands.add_parser("burn", help="Записать готовый ISO с проверкой")
     burn_parser.add_argument("iso", help="Путь к ISO")
-    burn_parser.add_argument("--device", help="Идентификатор из hdiutil burn -list")
+    burn_parser.add_argument("--device", help="Обязательный для реальной записи идентификатор из hdiutil burn -list")
     burn_parser.add_argument("--speed", type=int, help="Скорость, например 2 или 4")
     burn_parser.add_argument("--profile", choices=("BD25", "BD50"),
                              help="Ограничить образ вместимостью выбранного носителя")
@@ -201,6 +201,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.yes:
             raise MacBurnError("Для реальной записи добавьте --yes; сначала проверьте ISO и носитель.")
+        if not args.device:
+            raise MacBurnError(
+                "Для реальной записи требуется явный --device из команды drives; "
+                "автоматический выбор привода отключён в CLI."
+            )
         print("Проверка ISO перед записью...")
         burn(args.iso, device=args.device, speed=args.speed, profile=args.profile,
              inspect_bdmv=args.inspect_bdmv)

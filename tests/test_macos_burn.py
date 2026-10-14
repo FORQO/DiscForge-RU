@@ -1,4 +1,5 @@
 """Pure unit tests for macOS burn command. They never touch optical hardware."""
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -149,6 +150,34 @@ class MacBurnTests(unittest.TestCase):
             with patch("macos_burn.subprocess.run") as runner:
                 self.assertEqual(macos_burn.main(["burn", str(image), "--dry-run"]), 1)
                 runner.assert_not_called()
+
+    def test_confirmed_cli_burn_never_autoselects_drive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf") as inspector, \
+                 patch("macos_burn.subprocess.run") as recorder, \
+                 patch("macos_burn.sys.stderr", new_callable=io.StringIO) as error:
+                self.assertEqual(macos_burn.main(["burn", str(image), "--yes"]), 1)
+                self.assertIn("--device", error.getvalue())
+                inspector.assert_not_called()
+                recorder.assert_not_called()
+
+    def test_confirmed_cli_burn_targets_only_selected_drive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf", return_value=good), \
+                 patch("macos_burn.subprocess.run",
+                       return_value=SimpleNamespace(returncode=0)) as recorder, \
+                 patch("builtins.print"):
+                self.assertEqual(macos_burn.main([
+                    "burn", str(image), "--device", "ASUS BW-16D1HT", "--yes",
+                ]), 0)
+            recorder.assert_called_once()
+            command = recorder.call_args.args[0]
+            self.assertEqual(command[command.index("-device") + 1], "ASUS BW-16D1HT")
 
     def test_without_yes_never_executes(self):
         with tempfile.TemporaryDirectory() as tmp:
