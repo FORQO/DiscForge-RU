@@ -634,8 +634,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         def encoded(value):
             progress(value)
             report('encode', value/90)
-        encode_key = [source_key, tools_key, selected_mode, bitrate, nvenc, fast, gpu_frames, player_profile, info.selected_audio,
-                      info.audio_modes, [(str(p.name), s) for p, s in audio], 1]
+        encode_key = [source_key, tools_key, selected_mode, bitrate, nvenc, fast, gpu_frames, info.selected_audio,
+                      info.audio_modes, [(str(p.name), s) for p, s in audio], 1] + ([player_profile] if player_profile != 'universal' else [])
         encoded_paths = [video, *(p for p, _ in audio)]
         from truehd_audio import paths as truehd_paths, interleave
         for p, s in audio:
