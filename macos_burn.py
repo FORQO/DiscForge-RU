@@ -99,8 +99,12 @@ def burn_command(image: Path, device: str | None = None, speed: int | None = Non
         "hdiutil", "burn", str(image), "-verifyburn", "-forceclose",
         "-nosynthesize", "-noaddpmap", "-nooptimizeimage",
     ]
-    if device:
-        if not device.strip() or device.startswith("-"):
+    if device is not None:
+        # An explicitly supplied invalid drive must not silently fall back
+        # to hdiutil's automatic selection (which may target another burner).
+        if (not isinstance(device, str) or not device or
+                device != device.strip() or device.startswith("-") or
+                any(ord(char) < 32 or ord(char) == 127 for char in device)):
             raise MacBurnError("Недопустимый идентификатор привода.")
         command.extend(["-device", device])
     if speed is not None:

@@ -106,6 +106,33 @@ class MacBurnTests(unittest.TestCase):
         with self.assertRaises(macos_burn.MacBurnError):
             macos_burn.burn_command(Path("test.iso"), device="-erase")
 
+    def test_explicit_invalid_device_is_never_silently_ignored(self):
+        # Empty --device used to select the default burner, contrary to intent.
+        for identifier in ("", " ", "-erase", " drive", "drive ",
+                           "drive\nsecond", "drive\x00", "drive\x7f"):
+            with self.subTest(identifier=repr(identifier)):
+                with self.assertRaisesRegex(macos_burn.MacBurnError,
+                                            "Недопустимый идентификатор"):
+                    macos_burn.burn_command(Path("test.iso"), device=identifier)
+
+    def test_valid_drive_name_with_internal_spaces(self):
+        command = macos_burn.burn_command(Path("test.iso"),
+                                          device="ASUS external burner", speed=2)
+        self.assertEqual(command[-4:],
+                         ["-device", "ASUS external burner", "-speed", "2"])
+
+    def test_invalid_device_never_reaches_optical_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.make_iso(tmp)
+            good = SimpleNamespace(valid=True, errors=[])
+            with patch("macos_burn.sys.platform", "darwin"), \
+                 patch("macos_burn.inspect_udf", return_value=good), \
+                 patch("macos_burn.subprocess.run") as writer:
+                with self.assertRaisesRegex(macos_burn.MacBurnError,
+                                            "Недопустимый идентификатор"):
+                    macos_burn.burn(image, device="")
+                writer.assert_not_called()
+
     def test_dry_run_never_executes(self):
         with tempfile.TemporaryDirectory() as tmp:
             image = self.make_iso(tmp)
