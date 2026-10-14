@@ -167,8 +167,10 @@ def main(argv: list[str] | None = None) -> int:
             print(list_drives())
             return 0
         if args.action == "check":
-            checked = validate_for_burning(args.iso, profile=args.profile,
-                                           inspect_bdmv=args.inspect_bdmv)
+            checked, fingerprint = _validated_image_with_identity(
+                args.iso, profile=args.profile, inspect_bdmv=args.inspect_bdmv
+            )
+            _require_unchanged(checked, fingerprint)
             print("Предварительная проверка UDF 2.50 пройдена:", checked)
             if args.inspect_bdmv:
                 print("Статическая проверка BDMV в смонтированном ISO пройдена.")
@@ -177,9 +179,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("Это НЕ проверка структуры BDMV, записанного диска или совместимости плеера.")
             return 0
         if args.dry_run:
-            image = validate_for_burning(args.iso, profile=args.profile,
-                                         inspect_bdmv=args.inspect_bdmv)
+            image, fingerprint = _validated_image_with_identity(
+                args.iso, profile=args.profile, inspect_bdmv=args.inspect_bdmv
+            )
             command = burn_command(image, args.device, args.speed)
+            _require_unchanged(image, fingerprint)
             print("Проверка UDF 2.50 пройдена. Будет выполнена команда:", repr(command))
             if args.inspect_bdmv:
                 print("Статическая проверка BDMV пройдена. Записи не выполнялось.")
