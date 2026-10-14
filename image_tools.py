@@ -64,6 +64,9 @@ class ImageTools(QWidget):
         row.addWidget(self.burn)
         box.addLayout(row)
         from iso_menu_panel import IsoMenuPanel
+        self.build_report = QPushButton('Отчёт проверки сборки')
+        self.build_report.clicked.connect(self.open_build_report)
+        box.addWidget(self.build_report)
         self.menu_panel = IsoMenuPanel(self, editor)
         box.addWidget(self.menu_panel)
         self.report = QPlainTextEdit()
@@ -77,6 +80,13 @@ class ImageTools(QWidget):
         box.addWidget(note)
         self.path.textChanged.connect(self.invalidate)
         self.profile.currentTextChanged.connect(self.invalidate)
+
+    def open_build_report(self):
+        path = Path(self.path.text()).with_name(Path(self.path.text()).name + '.verification.txt') if self.path.text().strip() else None
+        if path and path.is_file():
+            self.report.setPlainText('Сохранённый отчёт на момент сборки. Это не повторная проверка текущего ISO.\n\n' + path.read_text(encoding='utf-8-sig'))
+        else:
+            self.report.setPlainText('Рядом с выбранным ISO нет отчёта новой сборки. Проверка UDF доступна отдельно.')
 
     def invalidate(self, *_):
         self.verified = None

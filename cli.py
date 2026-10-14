@@ -41,13 +41,14 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument('--tsmuxer', default='tsMuxeR')
     b.add_argument('--folder', action='store_true', help='Создать BDMV вместо ISO')
     b.add_argument('--nvenc', action='store_true', help='Экспериментальный режим NVIDIA NVENC')
+    b.add_argument('--cpu-filters', action='store_true', help='Отключить NVDEC/CUDA, оставить CPU-фильтры')
     b.add_argument('--processing', choices=['auto','copy','video_copy','encode'], default='auto',
                    help='Автовыбор, копирование всех потоков, копирование видео + AC-3 или перекодирование')
     b.add_argument('--audio-track', type=int, action='append', help='Глобальный index дорожки из probe; можно повторить')
     b.add_argument('--no-audio', action='store_true', help='Не включать звук')
     b.add_argument('--chapter', type=_chapter, action='append', help='Глава вида 00:10:00')
     b.add_argument('--menu-title', help='Добавить меню BD-J с этим названием (требует PySide6)')
-    b.add_argument('--menu-theme', choices=['midnight', 'graphite', 'cinema'], default='graphite')
+    b.add_argument('--menu-theme', choices=['amber', 'sapphire', 'midnight', 'graphite', 'cinema'], default='amber')
     b.add_argument('--menu-language', choices=['ru', 'en'], default='ru')
     b.add_argument('--menu-background', help='Изображение фона меню')
     args = p.parse_args(argv)
@@ -81,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             done = create_bluray(info, args.profile, args.output, args.ffmpeg, args.tsmuxer,
                                  not args.folder, args.nvenc, threading.Event(), print,
                                  lambda n: print(f'\r{n:.0f}% ', end='', flush=True), chapters, menu,
-                                 processing_mode=args.processing, ffprobe=args.ffprobe)
+                                 processing_mode=args.processing, ffprobe=args.ffprobe, resilient=True, gpu_frames=not args.cpu_filters)
             print('\nРезультат:', done)
         return 0
     except (DiscForgeError, OSError, ValueError, RuntimeError) as exc:

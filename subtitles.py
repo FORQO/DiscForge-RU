@@ -132,7 +132,7 @@ def prepare_subtitles(info, work, ffmpeg, cancel, log, runner):
         runner(command, 'Извлечение субтитров', 0, 0, info.duration, cancel, log, lambda _: None)
         for raw, target, text in extracted:
             if text: normalize_srt(raw, target, info.duration)
-            else: raw.rename(target)
+            else: raw.replace(target)
     for target, t in outputs:
         if cancel.is_set(): raise RuntimeError('Операция отменена.')
         if target.suffix == '.sup':

@@ -141,6 +141,7 @@ class SmartCopyGUI(unittest.TestCase):
     def test_recommendation_updates_with_capacity_and_project_mode(self):
         with patch('main.save_settings'):
             w=Window()
+            w.disc_mode.setCurrentIndex(1)  # this test covers separate, individually budgeted discs
             r=CopyReport(video_ok=True,audio_ok=True,video_bytes=27_000_000_000)
             info=replace(media(),copy_report=r)
             w.media[info.path]=info;w.chapters[info.path]=[0]

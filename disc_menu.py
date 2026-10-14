@@ -19,6 +19,8 @@ import copy
 from menu_layout import TEXT_RECTS, element_rect, text_style, default_button_rect
 
 THEMES = {'midnight': ('#101721', '#202d3c', '#bacde1'),
+          'amber': ('#171a1e', '#33373c', '#ff9f38'),
+          'sapphire': ('#101b27', '#22394e', '#ffb24a'),
           'graphite': ('#303338', '#494e55', '#f39542'),
           'cinema': ('#181315', '#38272b', '#edbc83')}
 BUTTONS = ((150, 400, 760, 82), (150, 506, 760, 82),
@@ -26,6 +28,20 @@ BUTTONS = ((150, 400, 760, 82), (150, 506, 760, 82),
            (150, 824, 760, 82), (1010, 400, 760, 82),
            (1010, 506, 760, 82), (1010, 612, 760, 82))
 _font_loaded = False
+
+
+def theme_background_path(theme):
+    return Path(__file__).parent / 'assets/themes' / (theme + '.png') if theme in ('amber', 'sapphire') else None
+
+
+@lru_cache(maxsize=2)
+def theme_background(theme):
+    from PySide6.QtGui import QImage
+    path = theme_background_path(theme)
+    image = QImage(str(path))
+    if image.isNull():
+        raise ValueError('Не найден фон темы: ' + str(path))
+    return image
 
 TEXT = {
     'ru': {'subtitles': 'Субтитры', 'sub:0': 'Выключить', 'sub_previous': 'Предыдущие субтитры', 'sub_next': 'Следующие субтитры', 'sub_back': 'Назад', 'play': 'Смотреть фильм', 'chapters': 'Выбор главы', 'audio': 'Аудио', 'audio_previous': 'Предыдущие дорожки', 'audio_next': 'Следующие дорожки', 'audio_back': 'Назад', 'audio_hint': 'Вверх / Вниз — дорожка     OK — выбрать     Back — вернуться',
@@ -94,7 +110,7 @@ def initialize_fonts():
 @dataclass(frozen=True)
 class MenuDesign:
     title: str
-    theme: str = 'graphite'
+    theme: str = 'amber'
     language: str = 'ru'
     background: str = ''
     background_fit: str = 'cover'
@@ -109,8 +125,11 @@ class MenuDesign:
     audio_tracks: list[dict] = field(default_factory=list)
     subtitle_tracks: list[dict] = field(default_factory=list)
     chapter_titles: list[str] = field(default_factory=list)
+    logo_visible: bool = True
 
     def __post_init__(self):
+        if type(self.logo_visible) is not bool:
+            raise ValueError('Некорректная видимость логотипа.')
         if (not isinstance(self.chapter_titles, list) or len(self.chapter_titles) > 999 or
                 any(not isinstance(t, str) or len(t) > 120 or any(ord(c) < 32 for c in t) for t in self.chapter_titles)):
             raise ValueError('Некорректные названия глав меню.')
@@ -181,7 +200,7 @@ class MenuDesign:
         if not isinstance(self.layout, dict) or len(self.layout) > 2500:
             raise ValueError('Некорректная компоновка меню.')
         for key, rect in self.layout.items():
-            if (not (valid_id(key) or key in ['text:'+k for k in TEXT_RECTS])
+            if (not (key == 'logo' or valid_id(key) or key in ['text:'+k for k in TEXT_RECTS])
                     or not isinstance(rect, (tuple, list)) or len(rect) != 4
                     or any(type(n) is not int for n in rect)):
                 raise ValueError('Некорректная область элемента.')
@@ -226,9 +245,12 @@ class MenuDesign:
 
     @classmethod
     def from_dict(cls, title, data):
+        data = dict(data)
+        data.setdefault('theme', 'graphite')
+        data.setdefault('logo_visible', 'brand' not in data.get('hidden_text', []))
         return cls(title, **{key: data[key] for key in
                    ('theme', 'language', 'background', 'background_fit', 'dim', 'labels',
-                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks', 'chapter_titles') if key in data})
+                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks', 'chapter_titles', 'logo_visible') if key in data})
 
 
 def button_id(page, action):
@@ -264,6 +286,9 @@ def button_style(design, key):
     bg, _, accent = THEMES[design.theme]
     style = dict(shape='rounded', fill=bg, border='#45494f' if design.theme == 'graphite' else '#354252', text='#f5f6f8',
                  highlight=accent, width=1, font_size=28, opacity=75, font_family='Noto Sans', bold=False, italic=False)
+    if design.theme in ('amber', 'sapphire'):
+        style.update(shape='pill' if design.theme == 'amber' else 'rounded', border='#59616b',
+                     width=2, font_size=32, opacity=55, chevron=True, glow=True)
     style.update(design.button_styles.get(key, {}))
     return style
 
@@ -441,8 +466,8 @@ def subtitle_page_start(chapters, design):
     return audio_page_start(chapters) + (len(design.audio_tracks)+4)//5
 
 
-def page_elements(design, chapters, page):
-    graph = pages(chapters, design)
+def page_elements(design, chapters, page, entries_override=None):
+    graph = pages(chapters, design) if entries_override is None else [entries_override]
     result = []
     sub_page = bool(design.subtitle_tracks) and page >= subtitle_page_start(chapters, design)
     audio_page = bool(design.audio_tracks) and audio_page_start(chapters) <= page < subtitle_page_start(chapters, design)
@@ -461,7 +486,7 @@ def page_elements(design, chapters, page):
         result.append(dict(id='text:'+key, key=edit_key, rect=element_rect(design, 'text:'+key, TEXT_RECTS[key]),
                            text=text, shown=shown, style=text_style(design, key), button='', index=-1))
     for i, (shown, action) in enumerate(graph[page]):
-        bid = button_id(page, action)
+        bid = button_id(page, action) if entries_override is None else f'custom:collection_{i}'
         key = button_label_key(bid)
         if (sub_page or audio_page) and key in ('home', 'previous', 'next'):
             key = ('sub_' if sub_page else 'audio_') + ('back' if key == 'home' else key)
@@ -470,35 +495,36 @@ def page_elements(design, chapters, page):
             text = f'{TEXT[design.language]["chapter"]} {int(action.split(":")[1])+1}' if key.startswith('chapter:') else shown
         result.append(dict(id=bid, key=key, rect=element_rect(design, bid, default_button_rect(i)),
                            text=text, shown=shown, style=button_style(design, bid), button=bid, index=i))
+    if design.logo_visible:
+        result.append(dict(id='logo', key=None, rect=element_rect(design, 'logo', (1640, 64, 160, 120)),
+                           text='', shown='', style={}, button='', index=-1, image=True))
     return result
 
 
-def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1):
+def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1, entries_override=None):
     """Return a QImage; caller owns a QGuiApplication (also for CLI authoring)."""
     from PySide6.QtCore import Qt, QRect
     from PySide6.QtGui import QImage, QPainter, QColor, QFont, QLinearGradient, QPen
     initialize_fonts()
-    graph = pages(chapters, design)
-    entries = graph[page]
     background = background_image(design.background) if design.background else None
+    builtin = theme_background(design.theme) if not design.background and theme_background_path(design.theme) else None
     bg, secondary, accent = THEMES[design.theme]
     image = QImage(1920, 1080, QImage.Format_RGB32)
     image.fill(QColor(bg))
     painter = QPainter(image)
     painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
     gradient = QLinearGradient(0, 1080, 1920, 0)
     gradient.setColorAt(0, QColor(bg))
     gradient.setColorAt(1, QColor(secondary))
     painter.fillRect(image.rect(), gradient)
+    if builtin is not None:
+        painter.drawImage(image.rect(), builtin)
     if background is not None:
         mode = Qt.KeepAspectRatioByExpanding if design.background_fit == 'cover' else Qt.KeepAspectRatio
         scaled = background.scaled(1920, 1080, mode, Qt.SmoothTransformation)
         painter.drawImage((1920-scaled.width())//2, (1080-scaled.height())//2, scaled)
         painter.fillRect(image.rect(), QColor(0, 0, 0, round(design.dim * 255 / 100)))
-    if 'brand' not in design.hidden_text:
-        logo = brand_image()
-        if not logo.isNull():
-            painter.drawImage(QRect(1640, 64, 160, 120), logo)
     def label(rect, text, style):
         font = QFont(style['font_family'])
         font.setPixelSize(style['font_size'])
@@ -511,9 +537,15 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
         shown = painter.fontMetrics().elidedText(text, Qt.ElideRight, rect.width())
         painter.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, shown)
         painter.restore()
-    for element in page_elements(design, chapters, page):
+    for element in page_elements(design, chapters, page, entries_override):
         rect = QRect(*element['rect'])
         style = element['style']
+        if element.get('image'):
+            logo = brand_image()
+            if not logo.isNull():
+                scaled = logo.scaled(rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                painter.drawImage(rect.x()+(rect.width()-scaled.width())//2, rect.y()+(rect.height()-scaled.height())//2, scaled)
+            continue
         if not element['button']:
             label(rect, element['shown'], style)
             continue
@@ -524,12 +556,18 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
         radius = button_radius(style, rect.height())
         painter.drawRoundedRect(rect, radius, radius)
         inset = min(28, rect.width()//10)
-        label(rect.adjusted(inset, 0, -inset, 0), element['shown'], style)
-    # Draw focus last, just as the disc runtime does, including overlapping items.
-    for element in page_elements(design, chapters, page):
-        if element['button'] and element['index'] == focus:
-            paint_focus(painter, element)
+        label(rect.adjusted(inset, 0, -inset-(34 if style.get('chevron') else 0), 0), element['shown'], style)
+        if style.get('chevron'):
+            paint_chevron(painter, rect, style['border'])
     painter.end()
+    # Composite the exact exported patch, avoiding raster rounding differences
+    # between a translated patch painter and a full-frame painter.
+    for element in page_elements(design, chapters, page, entries_override):
+        if element['button'] and element['index'] == focus:
+            patch, x, y = focus_patch(image, element)
+            painter = QPainter(image)
+            painter.drawImage(x, y, patch)
+            painter.end()
     return image
 
 
@@ -542,8 +580,29 @@ def paint_focus(painter, element):
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setBrush(Qt.NoBrush)
+    if element['style'].get('glow'):
+        for width, alpha in ((14, 15), (8, 35)):
+            color = QColor(element['style']['highlight'])
+            color.setAlpha(alpha)
+            painter.setPen(QPen(color, width))
+            painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
     painter.setPen(QPen(QColor(element['style']['highlight']), 2))
     painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
+    if element['style'].get('chevron'):
+        paint_chevron(painter, rect, element['style']['highlight'])
+    painter.restore()
+
+
+def paint_chevron(painter, rect, color):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPen, QColor
+    if rect.width() < 120:
+        return
+    painter.save()
+    painter.setPen(QPen(QColor(color), 3))
+    x, y = rect.right()-32, rect.center().y()
+    painter.drawLine(QPointF(x-6, y-10), QPointF(x+4, y))
+    painter.drawLine(QPointF(x+4, y), QPointF(x-6, y+10))
     painter.restore()
 
 
@@ -551,7 +610,8 @@ def focus_patch(base, element):
     """Opaque, bounded patch preserves identical Qt rendering on BD-J players."""
     from PySide6.QtCore import QRect
     from PySide6.QtGui import QPainter
-    bounds = QRect(*element['rect']).adjusted(-6, -6, 6, 6).intersected(base.rect())
+    margin = 12 if element['style'].get('glow') else 6
+    bounds = QRect(*element['rect']).adjusted(-margin, -margin, margin, margin).intersected(base.rect())
     patch = base.copy(bounds)
     painter = QPainter(patch)
     painter.translate(-bounds.x(), -bounds.y())

@@ -58,6 +58,45 @@ class VlcPreviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ISO'):
             vlc_preview.launch_iso(self.iso, self.vlc, self.root)
 
+    def test_disc_root_with_unicode_and_spaces(self):
+        disc = self.root / 'Диск Blu-ray'
+        (disc / 'BDMV').mkdir(parents=True)
+        (disc / 'BDMV/index.bdmv').write_bytes(b'INDX')
+        with patch.object(vlc_preview.subprocess, 'Popen') as popen:
+            vlc_preview.launch_bluray(disc, self.vlc, self.root)
+        self.assertEqual(popen.call_args.args[0][-1], 'bluray:///' + disc.resolve().as_posix())
+        self.assertIn('--bluray-menu', popen.call_args.args[0])
+        self.assertEqual(popen.call_args.kwargs['env']['BDJ_JVM_PATH'],
+                         str(self.root / 'runtime/java/bin/server/jvm.dll'))
+
+    def test_non_bluray_directory_rejected(self):
+        with patch.object(vlc_preview.subprocess, 'Popen') as popen:
+            with self.assertRaisesRegex(ValueError, 'BDMV'):
+                vlc_preview.launch_bluray(self.root, self.vlc, self.root)
+            popen.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows argument parsing')
+    def test_explorer_command_preserves_drive_root_and_quoted_iso(self):
+        import ctypes
+        from ctypes import wintypes
+        from explorer_integration import commands
+        parse = ctypes.windll.shell32.CommandLineToArgvW
+        parse.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+        parse.restype = ctypes.POINTER(wintypes.LPWSTR)
+        free = ctypes.windll.kernel32.LocalFree
+        free.argtypes = [ctypes.c_void_p]
+        free.restype = ctypes.c_void_p
+        for command, target in zip(commands(self.root / 'Disk Forge.exe'), ['F:\\', str(self.iso)]):
+            count = ctypes.c_int()
+            pointer = parse(command.replace('%1', target), ctypes.byref(count))
+            try:
+                args = [pointer[i] for i in range(count.value)]
+                self.assertEqual(len(args), 3)
+                self.assertEqual(args[1], '--open-bluray')
+                self.assertEqual(Path(args[2]).resolve(), Path(target).resolve())
+            finally:
+                free(pointer)
+
     def test_frozen_dll_directory_restored_on_spawn_failure(self):
         if os.name != 'nt':
             self.skipTest('Windows DLL search path')

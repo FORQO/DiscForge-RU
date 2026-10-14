@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Sequence
@@ -56,6 +57,8 @@ class MediaInfo:
     source_chapters: tuple = ()
     chapter_notices: tuple = ()
     source_chapter_titles: tuple = ()
+    audio_modes: dict = field(default_factory=dict)
+    video_analysis: dict = field(default_factory=dict)
 
     @property
     def is_hdr(self) -> bool:
@@ -193,23 +196,24 @@ def prepare_processing(info, mode, profile, ffprobe, ffmpeg, cancel, log):
     from smart_copy import analyze_copy, choose_mode, signature, MODES
     if mode not in MODES:
         raise DiscForgeError('Неизвестный режим обработки.')
-    if mode == 'encode':
-        return info, 'encode', 'Выбрано полное перекодирование.'
     report = info.copy_report
-    if report is not None and report.signature != signature(info.path):
+    if report is not None and report.signature != signature(info.path, cancel):
         raise DiscForgeError('Исходник изменился после анализа. Удалите его из очереди и добавьте заново.')
+    if mode == 'encode':
+        return info, 'encode', 'Выбрано перекодирование видео; звук — по настройкам дорожек.'
     if report is None:
         log('Проверяем возможность копирования потоков без перекодирования…')
-        info = replace(probe_media(info.path, ffprobe), selected_audio=info.selected_audio)
+        info = replace(probe_media(info.path, ffprobe), selected_audio=info.selected_audio,
+                       selected_subtitles=info.selected_subtitles, audio_modes=info.audio_modes)
         report = analyze_copy(info, ffprobe, ffmpeg, cancel)
         info = replace(info, copy_report=report)
     selected, reason = choose_mode(mode, report, info, CAPACITIES[profile])
     return info, selected, reason
 
 
-def signature_changed(info):
+def signature_changed(info, cancel=None):
     from smart_copy import signature
-    return info.copy_report.signature != signature(info.path)
+    return info.copy_report.signature != signature(info.path, cancel)
 
 
 def make_copy_command(ffmpeg, info, video, audio, convert_audio=False):
@@ -224,7 +228,7 @@ def make_copy_command(ffmpeg, info, video, audio, convert_audio=False):
                     '-af', 'aresample=async=1:first_pts=0']
         else:
             cmd += ['-c:a', 'copy']
-        cmd += ['-f', 'ac3', str(target)]
+        cmd += ['-f', stream.get('output_format', 'ac3'), str(target)]
     return cmd
 
 
@@ -292,11 +296,19 @@ def write_meta(path: Path, video: Path, audio: Path | None,
             s, ms = divmod(rest, 1000)
             return f'{h:02d}:{m:02d}:{s:02d}.{ms:03d}'
         opts = '--custom-chapters=' + ';'.join(fmt(sec) for sec in chapters)
+    # TrueHD and its AC-3 companion share a PID. PES extension IDs distinguish
+    # the two substreams; the bundled tsMuxer does not enable them implicitly.
+    tracks = audio if isinstance(audio, list) else [(audio,{})] if audio is not None else []
+    if os.name == 'nt':
+        # Avoid the bundled muxer's unbuffered asynchronous Windows writer:
+        # a full-length job returned success with a truncated final M2TS block.
+        opts += ' --no-asyncio'
+    if any(s.get('output_codec') == 'truehd' for _, s in tracks):
+        opts += ' --new-audio-pes'
     content = 'MUXOPT --blu-ray ' + opts + '\n'
     content += f'V_MPEG4/ISO/AVC, {escaped(video)}, fps={fps}\n'
-    tracks = audio if isinstance(audio, list) else [(audio,{})] if audio is not None else []
     for target, stream in tracks:
-        content += f'A_AC3, {escaped(target)}, lang={language(stream)}\n'
+        content += f'{stream.get("output_mux", "A_AC3")}, {escaped(target)}, lang={language(stream)}\n'
     from subtitles import meta_lines
     content += meta_lines(subtitles, fps, width, height)
     path.write_text(content, encoding='utf-8')
@@ -454,7 +466,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                    cancel: threading.Event, log: Callable[[str], None],
                    progress: Callable[[int], None],
                    chapters: Sequence[float] | None = None,
-                   menu: MenuDesign | None = None, *, fast: bool = False, observer=None, processing_mode='encode', ffprobe='ffprobe') -> Path:
+                   menu: MenuDesign | None = None, *, fast: bool = False, observer=None, processing_mode='encode', ffprobe='ffprobe',
+                   resilient=False, gpu_frames=True, verification=None, video_bitrate=None, keep_authored=False) -> Path:
     """Encode to BD-oriented H.264 + AC3, then author BDMV directory or image.
 
     This is the first compatible-oriented implementation, NOT independently verified BD spec compliance.
@@ -468,6 +481,8 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             raise DiscForgeError(str(exc)) from exc
     from subtitles import select_subtitles, prepare_subtitles, menu_subtitles
     info = select_subtitles(info, info.selected_subtitles)
+    # TrueHD always requires the verified pipeline, including legacy API callers.
+    resilient = resilient or any(t.get('codec_name') == 'truehd' for t in selected_tracks(info))
     if menu is not None:
         if not isinstance(menu, MenuDesign):
             raise DiscForgeError('Некорректное меню проекта.')
@@ -505,11 +520,23 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     tracks = selected_tracks(info)
     if len(tracks) > 32:
         raise DiscForgeError('Blu-ray поддерживает не более 32 выбранных аудиодорожек.')
-    bitrate = int(info.copy_report.video_bytes*8/info.duration) if copying else bitrate_plan(info.duration, profile, len(tracks))
+    bitrate = int(info.copy_report.video_bytes*8/info.duration) if copying else video_bitrate if video_bitrate is not None else bitrate_plan(info.duration, profile, len(tracks))
+    if video_bitrate is not None and not copying:
+        if type(video_bitrate) is not int or not 5_000_000 <= video_bitrate <= 28_000_000:
+            raise DiscForgeError('Битрейт видео должен быть от 5 до 28 Мбит/с.')
+        bitrate = video_bitrate
+    if keep_authored and (iso or not resilient):
+        raise DiscForgeError('Внутренняя сборка коллекции требует папку BDMV и кэш.')
     root = Path(output_root).expanduser()
     root.mkdir(parents=True, exist_ok=True)
     estimated_stream = info.duration * (bitrate + 640_000 * len(tracks)) / 8 * 1.08
-    required = int(estimated_stream * (3 if iso and menu is not None else 2)) + 256_000_000
+    required = int(estimated_stream * (3 if iso and (menu is not None or resilient) else 2)) + 256_000_000
+    from build_cache import key as cache_key
+    resume_dir = root / '.diskforge-cache' / cache_key(str(Path(info.path).resolve()).casefold())[:24]
+    if resilient and (resume_dir / 'video.h264').is_file() and (resume_dir / 'disc/BDMV').is_dir():
+        # Cache may already contain the large elementary streams and authored disc.
+        # Reserve room for the new output; tool errors still leave checkpoints intact.
+        required = int(estimated_stream) + 256_000_000
     if shutil.disk_usage(root).free < required:
         raise DiscForgeError(f'Недостаточно места для сборки. Освободите примерно {required/1e9:.1f} ГБ в выходной папке.')
     target = unique_target(root, info.name, iso)
@@ -518,16 +545,64 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     if not copying:
         log('Предупреждение: кадры будут приведены к 23,976 fps; конвертация может повлиять на плавность.')
     else:
-        log('Видео копируется без изменения изображения и частоты кадров. ' + ('Звук преобразуется в AC-3.' if selected_mode == 'video_copy' else 'Звук копируется без перекодирования.'))
-    with tempfile.TemporaryDirectory(prefix='DiscForge_work_', dir=root) as tmp, pending_image(target) as pending_iso:
-        work = Path(tmp)
-        subtitle_outputs = prepare_subtitles(info, work, ffmpeg, cancel, log, run_command)
+        log('Видео копируется без изменения изображения и частоты кадров. ' + ('Решение по каждой аудиодорожке будет показано отдельно.' if resilient else 'Совместимый звук копируется, остальные выбранные дорожки преобразуются в AC-3.'))
+    from build_cache import BuildCache, digest
+    from settings import write_json
+    with BuildCache(root, info.path, cancel, log, enabled=resilient, verification=verification) as cache, pending_image(target) as pending_iso:
+        work = cache.root
+        source_stat = Path(info.path).stat()
+        source_key = None
+        if resilient:
+            log('Проверяем SHA-256 исходника и инструментов для безопасного возобновления…')
+            source_key = digest(info.path, cancel)
+        tools_key = {name: digest(shutil.which(path) or path, cancel) for name, path in
+                     [('ffmpeg', ffmpeg), ('tsmuxer', tsmuxer), ('ffprobe', ffprobe)]} if resilient else {}
+        from subtitles import TEXT_CODECS
+        subtitle_outputs = [(work / f'subtitle_{i}{".srt" if t["codec"] in TEXT_CODECS else ".sup"}', t)
+                            for i, t in enumerate(info.selected_subtitles)]
+        subtitle_key = [source_key, tools_key, list(info.selected_subtitles),
+                        [digest(t['path'], cancel) for t in info.selected_subtitles if t['source'] == 'external']]
+        if not cache.reusable('субтитры', subtitle_key, [p for p, _ in subtitle_outputs]):
+            cache.begin('субтитры')
+            subtitle_outputs = prepare_subtitles(info, work, ffmpeg, cancel, log, run_command)
+            if subtitle_outputs:
+                cache.commit('субтитры', subtitle_key, [p for p, _ in subtitle_outputs])
         if subtitle_outputs:
             log(f'Субтитров: {len(subtitle_outputs)}. Отдельные дорожки PGS, без наложения на видео.')
         video = work / 'video.h264'
         audio = [(work / f'audio_{i}.ac3', stream) for i, stream in enumerate(tracks)]
+        if copying and not resilient:
+            from audio_pipeline import copy_format
+            audio = [(p.with_suffix('.'+copy_format(s)[0]), dict(s, output_format=copy_format(s)[0], output_mux=copy_format(s)[1]))
+                     if copy_format(s) and info.copy_report.audio_results.get(s.get('index'), {}).get('ok') else (p,s)
+                     for p,s in audio]
+        if resilient:
+            from audio_pipeline import scan_audio, plan_audio
+            checks_path = work / 'audio-checks.json'
+            checks_key = [source_key, tools_key['ffprobe'], info.selected_audio, 2]
+            if cache.reusable('анализ аудио', checks_key, [checks_path]):
+                checks = {int(k): v for k, v in json.loads(checks_path.read_text(encoding='utf-8')).items()}
+            else:
+                cache.begin('анализ аудио')
+                log('Проверяем пакеты и синхронизацию выбранных аудиодорожек…')
+                checks = scan_audio(info, ffprobe, cancel)
+                write_json(checks_path, checks)
+                cache.commit('анализ аудио', checks_key, [checks_path])
+            audio = plan_audio(info, checks, work, log)
+            sound_bps = sum(s['output_bitrate'] for _, s in audio)
+            if copying and info.copy_report.video_max_bps + sound_bps > 44_000_000:
+                raise DiscForgeError('Суммарный битрейт видео и выбранного звука превышает 44 Мбит/с. Выберите AC-3 для крупных дорожек или перекодирование видео.')
+            if not copying:
+                average_sound = sum(s.get('output_average_bitrate', s['output_bitrate']) for _, s in audio)
+                bitrate = min(bitrate, 44_000_000-sound_bps, int(CAPACITIES[profile]*.93*8/info.duration-average_sound))
+                if video_bitrate is not None and bitrate != video_bitrate:
+                    raise DiscForgeError(f'Выбранные аудиодорожки ограничивают видео до {bitrate/1e6:.2f} Мбит/с. Уменьшите битрейт общего диска или измените выбор звука; качество автоматически не снижалось.')
+                if bitrate < 5_000_000:
+                    raise DiscForgeError('Выбранные звуковые дорожки не оставляют места для видео. Выберите AC-3 или BD50.')
         meta = work / 'project.meta'
         def report(stage, fraction):
+            if verification:
+                verification(None)
             if observer:
                 observer(stage, fraction)
         report('encode', 0)
@@ -536,26 +611,74 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         def encoded(value):
             progress(value)
             report('encode', value/90)
-        command = make_copy_command(ffmpeg, info, video, audio, selected_mode == 'video_copy') if copying else make_encode_command(ffmpeg, info, video, audio, bitrate, nvenc, fast)
-        run_command(command,
+        encode_key = [source_key, tools_key, selected_mode, bitrate, nvenc, fast, gpu_frames, info.selected_audio,
+                      info.audio_modes, [(str(p.name), s) for p, s in audio], 1]
+        encoded_paths = [video, *(p for p, _ in audio)]
+        from truehd_audio import paths as truehd_paths, interleave
+        for p, s in audio:
+            if s.get('output_codec') == 'truehd':
+                encoded_paths.extend(truehd_paths(p))
+        encode_start = time.monotonic()
+        reused_encode = cache.reusable('видео и аудио', encode_key, encoded_paths)
+        if not reused_encode:
+            cache.begin('видео и аудио')
+            command = make_copy_command(ffmpeg, info, video, audio if not resilient else [], selected_mode == 'video_copy') if copying else make_encode_command(ffmpeg, info, video, audio if not resilient else [], bitrate, nvenc, fast)
+            if resilient:
+                if not copying:
+                    command[command.index('-maxrate')+1] = str(min(30_000_000, 44_000_000-sound_bps))
+                if nvenc and gpu_frames and not copying:
+                    from gpu_pipeline import supported, cuda_command
+                    if supported(info, ffmpeg, cancel, log, run_command, make_video_command):
+                        command = cuda_command(command)
+                from audio_pipeline import append_audio
+                command = append_audio(command, audio, info)
+            run_command(command,
                     ('Копирование видео + AC-3' if selected_mode == 'video_copy' else 'Копирование потоков') if copying else ('Кодирование видео и звука' if audio else 'Кодирование видео'),
                     0, 90, info.duration, cancel, log, encoded)
+            for p, s in audio:
+                if s.get('output_codec') == 'truehd':
+                    log('Подготавливаем TrueHD/Atmos для Blu-ray без изменения основного потока…')
+                    interleave(p, cancel)
+            current_stat = Path(info.path).stat()
+            if (source_stat.st_size, source_stat.st_mtime_ns) != (current_stat.st_size, current_stat.st_mtime_ns):
+                raise DiscForgeError('Исходник изменился во время обработки. Этап не сохранён.')
+            if resilient:
+                log('Видео и звук подготовлены. Проверяем SHA-256 готовых потоков и сохраняем этап; GPU больше не требуется…')
+            cache.commit('видео и аудио', encode_key, encoded_paths, time.monotonic()-encode_start)
+        encoded(90)
         report('encode', 1)
-        if copying and signature_changed(info):
+        if copying and signature_changed(info, cancel):
             raise DiscForgeError('Файл изменился при копировании. Сборка остановлена.')
         write_meta(meta, video, audio, chapters, fps=info.copy_report.fps if copying else '23.976',
                    subtitles=subtitle_outputs, width=info.width if copying else 1920, height=info.height if copying else 1080)
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         # Author to an intermediate output first; move to destination only on success.
-        author_target = pending_iso if iso and menu is None else work / 'disc'
+        author_target = pending_iso if iso and menu is None and not resilient else work / 'disc'
+        authored_key = [encode_key, list(chapters) if chapters is not None else None, menu.to_dict() if menu else None,
+                        [(t, digest(p, cancel)) for p, t in subtitle_outputs],
+                        # The menu already contains the embedded PNG (base64).
+                        # It is content-hashed with the design, never a file path.
+                        digest(Path(__file__).parent/'assets/bdj/menu.jar', cancel) if menu else None,
+                        digest(meta, cancel), 2]
+        from disc_menu import theme_background_path
+        if menu and not menu.background and theme_background_path(menu.theme):
+            authored_key.append(digest(theme_background_path(menu.theme), cancel))
+        reused_disc = cache.reusable('диск и меню', authored_key, [author_target])
         log('Формирование структуры Blu-ray через tsMuxer...')
         report('mux', 0)
-        if observer:
-            run_tsmuxer(tsmuxer, meta, author_target, cancel, log,
+        if not reused_disc:
+            cache.begin('диск и меню')
+            if resilient and author_target.exists():
+                # Only this fixed child of the verified cache directory is removed.
+                if author_target.resolve() != (cache.root.resolve() / 'disc'):
+                    raise DiscForgeError('Некорректный рабочий каталог диска.')
+                shutil.rmtree(author_target)
+            if observer:
+                run_tsmuxer(tsmuxer, meta, author_target, cancel, log,
                         progress=lambda f: (progress(90+3*f), report('mux', f)))
-        else:
-            run_tsmuxer(tsmuxer, meta, author_target, cancel, log)
+            else:
+                run_tsmuxer(tsmuxer, meta, author_target, cancel, log)
         report('mux', 1)
         report('menu', 0)
         if cancel.is_set():
@@ -568,9 +691,10 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             menu = bind_tracks(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_tracks(info))
             from disc_audio import bind_subtitles
             menu = bind_subtitles(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_subtitles(info))
-            install_menu(author_target, menu, list(chapters))
+            if not reused_disc:
+                install_menu(author_target, menu, list(chapters))
             progress(94)
-        if iso and menu is None:
+        if iso and menu is None and not resilient:
             size = author_target.stat().st_size
         else:
             size = sum(f.stat().st_size for f in author_target.rglob('*') if f.is_file())
@@ -579,17 +703,40 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         if size > CAPACITIES[profile]:
             raise DiscForgeError(f'Размер результата {size / 1e9:.2f} ГБ превышает {profile}. Файлы болванки не затронуты.')
         # Validate the authored folder before packaging and before publishing.
-        if not iso or menu is not None:
+        if not iso or menu is not None or resilient:
             bdmv_report = inspect_bdmv(author_target, profile)
             if not bdmv_report.structurally_valid:
                 raise DiscForgeError('Проверка BDMV не пройдена: ' + '; '.join(bdmv_report.errors[:8]))
             log('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.')
+        validation = None
+        if resilient:
+            from disc_verify import verify_disc
+            validation = verify_disc(author_target, info, audio, subtitle_outputs, chapters, menu, ffprobe, cancel, log, ffmpeg=ffmpeg, verification=verification)
+            validation['source'] = source_key
+            validation['processing_mode'] = selected_mode
+            validation['audio'] = [{'index': s.get('index'), 'copy': s['output_copy'], 'format': s['output_mux']} for _, s in audio]
+            validation['reused_encode'] = reused_encode
+            validation['reused_disc'] = reused_disc
+            if not reused_disc:
+                cache.commit('диск и меню', authored_key, [author_target])
+        if keep_authored:
+            write_json(work / 'collection-title-verification.json', validation)
+            return author_target
         report('menu', 1)
-        if menu is not None and iso:
-            image = pending_iso
+        if (menu is not None or resilient) and iso:
+            image = work / 'image.iso' if resilient else pending_iso
             report('iso', 0)
-            create_iso(author_target, image, CAPACITIES[profile], cancel, log,
-                       progress=lambda f: (progress(94+5*f), report('iso', f)))
+            image_key = [authored_key, profile, tools_key, digest(Path(__file__).parent/'tools/windows_iso.ps1', cancel)]
+            if not cache.reusable('ISO', image_key, [image]):
+                cache.begin('ISO')
+                if resilient and image.exists():
+                    image.unlink()
+                create_iso(author_target, image, CAPACITIES[profile], cancel, log,
+                           progress=lambda f: (progress(94+5*f), report('iso', f)))
+                preliminary = inspect_iso(image, profile)
+                if not preliminary.valid:
+                    raise DiscForgeError('Созданный ISO не прошёл UDF-проверку: ' + '; '.join(preliminary.errors[:8]))
+                cache.commit('ISO', image_key, [image])
             report('iso', 1)
             author_target = image
             size = image.stat().st_size
@@ -599,9 +746,41 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             if not iso_report.valid:
                 raise DiscForgeError('Проверка ISO UDF 2.50 не пройдена: ' + '; '.join(iso_report.errors[:8]))
             log('Метаданные UDF 2.50 проверены; воспроизведение требует отдельного теста.')
+        if resilient:
+            if iso:
+                from disc_verify import verify_image_payload
+                from verification_progress import VerificationProgress
+                tracker = VerificationProgress(sum(f['size'] for f in validation['files'].values()) + size,
+                                               len(validation['files']) + 1, verification, scope='iso-final')
+                log('Проверяем содержимое ISO: подключаем только для чтения и сверяем SHA-256…')
+                try:
+                    verify_image_payload(author_target, validation['files'], cancel, tracker)
+                except ValueError:
+                    cache.begin('ISO')
+                    raise
+                validation['iso'] = tracker.digest(author_target, cancel, '2/2 · Контрольная сумма ISO')
+                validation['iso_payload_verified'] = True
+                tracker.finish()
+            report_file = target.with_name(target.name + '.verification.json')
+            write_json(report_file, validation)
+            summary = ('DiskForge — отчёт проверки\n\n'
+                       'Проверки структуры и связей пройдены.\n'
+                       f'Режим видео: {selected_mode}\n'
+                       f'Аудиодорожки: {len(audio)} · Субтитры: {len(subtitle_outputs)} · Главы: {validation["chapters"]}\n'
+                       f'Повторно использованы видео/аудио: {"да" if reused_encode else "нет"}\n'
+                       f'Повторно использованы диск/меню: {"да" if reused_disc else "нет"}\n'
+                       + (f'TrueHD/Atmos: {len(validation["lossless_truehd"])} дорожек побитно сверены с исходником; совместимый AC-3 проверен.\n' if validation.get('lossless_truehd') else '')
+                       + ('Содержимое ISO сверено с файлами BDMV по SHA-256.\nSHA-256 ISO: ' + validation['iso']['sha256'] + '\n' if iso else '')
+                       + '\nПолный список контрольных сумм: ' + report_file.name
+                       + '\nВоспроизведение и работа пульта на бытовом проигрывателе этим тестом не проверяются.\n')
+            target.with_name(target.name + '.verification.txt').write_text(summary, encoding='utf-8-sig')
+            log('Отчёт проверки: ' + str(report_file))
         if cancel.is_set():
             raise DiscForgeError('Операция отменена пользователем.')
         shutil.move(str(author_target), str(target))
+        if resilient:
+            # Keep expensive intermediates for later edits and retries; explicit UI cleanup is available.
+            log('Кэш этапов сохранён. Его можно удалить после проверки готового диска.')
         report('verify', 1)
         progress(100)
         log(f'Готово: {target} ({size/1e9:.2f} ГБ).')

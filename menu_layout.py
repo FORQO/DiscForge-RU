@@ -13,6 +13,8 @@ def text_style(design, key):
     size = {'brand': 19, 'title': 60, 'subtitle': 25, 'chapter_heading': 25, 'hint': 20}[key]
     color = THEMES[design.theme][2] if key == 'brand' else '#f5f6f8' if key == 'title' else '#aeb3bc'
     result = dict(font_size=size, font_family='Noto Sans', text=color, bold=key == 'title', italic=False)
+    if design.theme in ('amber', 'sapphire') and key == 'title':
+        result.update(font_size=68 if design.theme == 'amber' else 76, bold=design.theme == 'sapphire')
     result.update(design.text_styles.get(key, {}))
     return result
 

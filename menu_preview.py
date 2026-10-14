@@ -44,6 +44,8 @@ class MenuPreview(QWidget):
         return QPointF((point.x()-rect.x())*1920/rect.width(), (point.y()-rect.y())*1080/rect.height())
 
     def handles(self, element):
+        if element.get('locked_geometry'):
+            return {}
         r = self.display_rect(element['rect'])
         return {key: QRect(x-5, y-5, 10, 10) for key, x, y in (
             ('nw', r.left(), r.top()), ('n', r.center().x(), r.top()), ('ne', r.right(), r.top()),
@@ -70,7 +72,7 @@ class MenuPreview(QWidget):
             return
         self.selection = element['id']
         self.selected.emit(self.selection)
-        self.drag = dict(element=element, start=point, rect=QRect(element['rect']), edge=edge, moved=False)
+        self.drag = None if element.get('locked_geometry') else dict(element=element, start=point, rect=QRect(element['rect']), edge=edge, moved=False)
         self.update()
 
     def mouseMoveEvent(self, event):
@@ -125,8 +127,11 @@ class MenuPreview(QWidget):
             return
         self.commit_edit()
         point = self.canvas_point(event.position()).toPoint()
+        element = next((e for e in reversed(self.elements) if e['rect'].contains(point)), None)
+        if element and element.get('image'):
+            return
         element = next((e for e in reversed(self.elements) if e['text_rect'].contains(point)), None)
-        if element is None:
+        if element is None or element.get('locked_text'):
             return
         self.selection = element['id']
         self.selected.emit(self.selection)
@@ -134,7 +139,7 @@ class MenuPreview(QWidget):
         self.guides = []
         self.edit_key = element['key']
         self.original_text = element['text']
-        self.inline.setMaxLength(80 if self.edit_key == 'title' else 120)
+        self.inline.setMaxLength(80 if self.edit_key == 'title' or self.edit_key.startswith('movie:') else 120)
         self.inline.setText(element['text'])
         rect = self.display_rect(element['rect'])
         rect.setHeight(max(28, rect.height()))

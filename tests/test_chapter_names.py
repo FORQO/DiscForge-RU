@@ -97,6 +97,7 @@ class NameEditorTests(unittest.TestCase):
         self.w.tabs.setCurrentWidget(editor)
         self.w.resize(1600, 1000)
         self.w.show()
+        editor.open_movie(self.path)
         editor.page = 1
         editor.refresh()
         self.app.processEvents()

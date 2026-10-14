@@ -59,6 +59,17 @@ def launch_iso(filename, vlc=None, root=None):
     iso = Path(filename).resolve()
     if not iso.is_file() or iso.suffix.lower() != '.iso' or iso.stat().st_size == 0:
         raise ValueError('Выберите существующий непустой ISO-образ.')
+    return launch_bluray(iso, vlc, root)
+
+
+def launch_bluray(filename, vlc=None, root=None):
+    """Accept an ISO or the root of a mounted/physical Blu-ray disc."""
+    source = Path(filename).resolve()
+    if source.is_dir():
+        if not (source / 'BDMV/index.bdmv').is_file():
+            raise ValueError('На выбранном диске не найдена структура Blu-ray (BDMV/index.bdmv).')
+    elif not source.is_file() or source.suffix.lower() != '.iso' or source.stat().st_size == 0:
+        raise ValueError('Выберите непустой ISO-образ или диск Blu-ray.')
     executable = Path(vlc) if vlc else find_vlc()
     if executable is None:
         raise FileNotFoundError('Не найден VLC 64-bit. Выберите установленный vlc.exe.')
@@ -75,7 +86,7 @@ def launch_iso(filename, vlc=None, root=None):
     # Private JVM must not inherit options injected for another Java application.
     for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS'):
         env.pop(name, None)
-    mrl = 'bluray:///' + iso.as_posix()
+    mrl = 'bluray:///' + source.as_posix()
     command = [str(executable), '--no-one-instance', '--no-one-instance-when-started-from-file',
                '--bluray-menu', mrl]
     # PyInstaller's DLL directory otherwise leaks into the external process.

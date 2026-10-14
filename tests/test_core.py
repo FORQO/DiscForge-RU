@@ -4,6 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
+import os
 from pathlib import Path
 from core import (DiscForgeError, bitrate_plan, CAPACITIES, parse_probe,
                   make_audio_command, make_video_command, write_meta, safe_name, unique_target,
@@ -93,6 +94,8 @@ class BackendTests(unittest.TestCase):
             write_meta(f, Path(temp)/'v.h264', Path(temp)/'a.ac3')
             contents = f.read_text(encoding='utf-8')
             self.assertIn('--blu-ray', contents)
+            if os.name == 'nt':
+                self.assertIn('--no-asyncio', contents)
             self.assertIn('V_MPEG4/ISO/AVC', contents)
             self.assertIn('A_AC3', contents)
     def test_safe_unique(self):

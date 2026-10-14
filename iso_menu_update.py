@@ -26,33 +26,55 @@ def powershell(code, iso):
                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if result.returncode:
         message = result.stderr.decode('utf-8', errors='replace')[-1600:]
-        if 'ISO has no readable mounted volume' in message:
-            raise RuntimeError('Windows не смогла прочитать подключённый ISO. Для некоторых образов ранних версий '
-                               'нужно сначала скопировать файл через Проводник в обычную папку и выбрать эту копию. '
-                               'Исходный файл и его права доступа не изменены.')
+        if 'ISO_MOUNT_VOLUME_TIMEOUT' in message:
+            raise RuntimeError('Windows не предоставила доступ к тому ISO за 15 секунд. '
+                               'Образ не изменён. Повторите подключение; при сборке готовые этапы остаются в кэше. '
+                               'Эта ошибка подключения сама по себе не означает повреждение образа.')
         raise RuntimeError(message)
     return result.stdout.decode('utf-8-sig').strip()
+
+
+def mount_script(wait_seconds=15):
+    """Wait for Storage/Explorer to expose a readable volume after mounting."""
+    return r'''
+$disk = Get-DiskImage -ImagePath $env:DISCFORGE_ISO
+$owned = -not $disk.Attached
+try {
+    if ($owned) { $disk = Mount-DiskImage -ImagePath $env:DISCFORGE_ISO -StorageType ISO -Access ReadOnly -PassThru }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $root = $null
+    do {
+        # Mount-DiskImage can finish before Get-Volume has a volume/letter.
+        # Refresh the image association each time; never pick an unrelated drive.
+        $disk = Get-DiskImage -ImagePath $env:DISCFORGE_ISO
+        $volumes = @($disk | Get-Volume -ErrorAction SilentlyContinue)
+        foreach ($volume in $volumes) {
+            $candidate = $volume.Path
+            if ($volume.DriveLetter) { $candidate = [string]$volume.DriveLetter + ':\' }
+            if (-not $candidate) { continue }
+            try {
+                Get-ChildItem -LiteralPath $candidate -Force -ErrorAction Stop | Select-Object -First 1 | Out-Null
+                $root = $candidate
+                break
+            } catch { } # The volume can exist before the filesystem is ready.
+        }
+        if ($root) { break }
+        if ($timer.Elapsed.TotalSeconds -ge __WAIT_SECONDS__) { throw 'ISO_MOUNT_VOLUME_TIMEOUT' }
+        Start-Sleep -Milliseconds 500
+    } while ($true)
+    @{root=$root; owned=$owned} | ConvertTo-Json -Compress
+} catch {
+    if ($owned) { Dismount-DiskImage -ImagePath $env:DISCFORGE_ISO -ErrorAction SilentlyContinue | Out-Null }
+    throw
+}
+'''.replace('__WAIT_SECONDS__', str(max(0, min(15, int(wait_seconds)))))
 
 
 @contextmanager
 def mounted_iso(iso):
     if sys.platform != 'win32':
         raise RuntimeError('Обновление ISO пока доступно только в Windows.')
-    data = json.loads(powershell(r'''
-$disk = Get-DiskImage -ImagePath $env:DISCFORGE_ISO
-$owned = -not $disk.Attached
-try {
-    if ($owned) { $disk = Mount-DiskImage -ImagePath $env:DISCFORGE_ISO -StorageType ISO -Access ReadOnly -PassThru }
-    $volume = $disk | Get-Volume
-    $root = $volume.Path
-    if ($volume.DriveLetter) { $root = [string]$volume.DriveLetter + ':\' }
-    if (-not $root) { throw 'ISO has no readable mounted volume' }
-    @{root=$root; owned=$owned} | ConvertTo-Json -Compress
-} catch {
-    if ($owned) { Dismount-DiskImage -ImagePath $env:DISCFORGE_ISO -ErrorAction SilentlyContinue | Out-Null }
-    throw
-}
-''', iso))
+    data = json.loads(powershell(mount_script(), iso))
     try:
         yield Path(data['root'])
     finally:
@@ -99,13 +121,15 @@ def chapter_positions(playlist):
 def open_menu(root):
     playlists = list((root / 'BDMV/PLAYLIST').glob('*.mpls'))
     if len(playlists) != 1 or playlists[0].name != '00000.mpls':
-        raise ValueError('Поддерживается ISO DiscForge с одним фильмом и плейлистом 00000.')
+        raise ValueError('Прямое обновление меню ISO поддерживает один фильм (плейлист 00000). Для коллекции откройте сохранённый проект и соберите ISO снова: подготовленные видео и звук будут взяты из проверенного кэша.')
     chapters = chapter_positions(playlists[0])
     path = root / 'BDMV/JAR/00000.jar'
     if not path.is_file() or path.stat().st_size > 256 * 1024 * 1024:
         raise ValueError('В ISO не найдено поддерживаемое меню DiscForge.')
     with zipfile.ZipFile(path) as jar:
         names = jar.namelist()
+        if 'discforge-collection.json' in names:
+            raise ValueError('Для изменения меню коллекции откройте сохранённый проект и соберите ISO снова. Проверенный кэш видео и звука будет использован повторно.')
         if (len(names) != len(set(names)) or 'DiscForgeXlet.class' not in names or 'menu.properties' not in names
                 or sum(i.file_size for i in jar.infolist()) > 512 * 1024 * 1024
                 or any(i.file_size > 32 * 1024 * 1024 for i in jar.infolist())):

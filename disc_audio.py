@@ -5,8 +5,15 @@ from audio_selection import selected_tracks, language
 
 
 def menu_tracks(info):
-    return [dict(language=language(t), title=' '.join(''.join(c if ord(c) >= 32 else ' ' for c in str((t.get('tags') or {}).get('title', ''))).split())[:80])
-            for t in selected_tracks(info)] if info else []
+    from truehd_audio import label
+    result = []
+    for t in selected_tracks(info) if info else []:
+        title = ' '.join(''.join(c if ord(c) >= 32 else ' ' for c in str((t.get('tags') or {}).get('title', ''))).split())[:80]
+        if t.get('codec_name') == 'truehd':
+            codec = 'AC-3' if info.audio_modes.get(str(t.get('index'))) == 'ac3' else label(t)
+            title = codec + (' · ' + title if title else '')
+        result.append(dict(language=language(t), title=title[:80]))
+    return result
 
 
 def track_label(track, number, locale):
@@ -21,7 +28,7 @@ def track_label(track, number, locale):
     return f'{number:02} · {name}' + (' · ' + track['title'] if track['title'] else '')
 
 
-def playlist_tracks(path, *, subtitles=False):
+def playlist_tracks(path, *, subtitles=False, coding=False):
     """Read bounded primary audio STN entries, requiring consistent PlayItems.
 
     BD-J stream numbers are one-based positions, never ffprobe indices or PIDs.
@@ -65,6 +72,8 @@ def playlist_tracks(path, *, subtitles=False):
                 lang = data[entry_end+3:entry_end+6].decode('ascii', errors='replace').lower()
                 require(bool(re.fullmatch('[a-z]{3}', lang)))
                 tracks.append(dict(language=lang, title='', pid=pid))
+                if coding:
+                    tracks[-1]['coding_type'] = data[entry_end+1]
             if subtitles and index >= videos+audios:
                 require(stream_type == 1 and entry_end+5 <= attr_end and data[entry_end+1] == 0x90)
                 lang = data[entry_end+2:entry_end+5].decode('ascii', errors='replace').lower()

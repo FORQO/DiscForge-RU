@@ -22,14 +22,22 @@ RATES = {Fraction(24000,1001): '23.976', Fraction(24): '24',
          Fraction(50): '50', Fraction(60000,1001): '59.94'}
 
 
-def signature(path):
+def signature(path, cancel=None):
     p = Path(path)
     st = p.stat()
+    h = hashlib.sha256()
     with p.open('rb') as f:
-        head = f.read(65536)
-        f.seek(max(0, st.st_size-65536))
-        tail = f.read(65536)
-    return (str(p.resolve()), st.st_size, st.st_mtime_ns, hashlib.sha256(head+tail).hexdigest())
+        while True:
+            if cancel is not None and cancel.is_set():
+                raise RuntimeError('Анализ отменён.')
+            block = f.read(4*1024*1024)
+            if not block:
+                break
+            h.update(block)
+    after = p.stat()
+    if (st.st_size, st.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError('Исходник изменился во время проверки.')
+    return (str(p.resolve()), st.st_size, st.st_mtime_ns, h.hexdigest())
 
 
 @dataclass
@@ -52,6 +60,8 @@ class CopyReport:
         if not self.audio_results:
             return self
         results = [self.audio_results.get(t.get('index'), {'ok':False, 'bytes':0, 'reason':'дорожка не проверена'}) for t in tracks]
+        results = [dict(r, ok=False, reason=f'дорожка #{t.get("index")}: выбрано преобразование в AC-3')
+                   if getattr(info, 'audio_modes', {}).get(str(t.get('index'))) == 'ac3' else r for t, r in zip(tracks, results)]
         return replace(self, audio_ok=all(r['ok'] for r in results),
                        audio_bytes=sum(r['bytes'] if r['ok'] else math.ceil(info.duration*640000/8) for r in results),
                        audio_reason='; '.join(dict.fromkeys(r['reason'] for r in results if not r['ok'])))
@@ -60,16 +70,20 @@ class CopyReport:
         self = self.for_selection(info)
         if not self.video_ok:
             return 'encode', 'Нужно перекодирование: ' + '; '.join(self.reasons)
-        audio_bps = sum(int(t.get('bit_rate') or 640000) if self.audio_results.get(t.get('index'), {}).get('ok') else 640000 for t in selected_tracks(info))
+        from audio_pipeline import copy_format
+        audio_bps = sum(copy_format(t)[2] if copy_format(t) and self.audio_results.get(t.get('index'), {}).get('ok')
+                        and getattr(info, 'audio_modes', {}).get(str(t.get('index'))) != 'ac3' else 640000 for t in selected_tracks(info))
         if self.video_max_bps + audio_bps > 44_000_000:
             return 'encode', 'Суммарный битрейт выбранных потоков слишком высок. Выберите меньше дорожек или перекодирование.'
         audio_size = self.audio_bytes if self.audio_ok or self.audio_results else math.ceil(info.duration*640000/8)*len(selected_tracks(info))
+        audio_size += sum(math.ceil(info.duration*640000/8) for t in selected_tracks(info)
+                          if t.get('codec_name') == 'truehd' and info.audio_modes.get(str(t.get('index'))) != 'ac3')
         estimated = int((self.video_bytes+audio_size)*1.07)+256_000_000
         if estimated > capacity:
             return 'encode', 'Исходные потоки с запасом на меню не помещаются на выбранный диск. Выберите BD50 или перекодирование.'
         if self.audio_ok:
             return 'copy', 'Рекомендуется без перекодирования: видео и выбранные аудиодорожки прошли проверки, размер подходит. Качество исходных потоков сохраняется.'
-        return 'video_copy', 'Рекомендуется копировать видео, преобразовать только звук в AC-3: ' + self.audio_reason
+        return 'video_copy', 'Рекомендуется копировать видео; обработка звука определяется отдельно для каждой дорожки: ' + self.audio_reason
 
 
 def stream_lines(command, cancel, consume):
@@ -151,15 +165,18 @@ def metadata_reasons(info):
         reasons.append('прогрессивная развёртка не подтверждена')
     if v.get('sample_aspect_ratio') != '1:1':
         reasons.append('квадратные пиксели не подтверждены')
+    if any(item.get('rotation', 0) for item in v.get('side_data_list', [])):
+        reasons.append('поворот изображения задан в контейнере; его нужно применить при преобразовании')
     return reasons
 
 
 class HeaderCheck:
-    def __init__(self, fps=None):
+    def __init__(self, fps=None, dimensions=None):
         self.current = None
         self.fields = {}
         self.seen = {}
         self.fps = fps
+        self.dimensions = dimensions
 
     def finish(self):
         if self.current is None:
@@ -184,6 +201,17 @@ class HeaderCheck:
                 raise ValueError('параметры SPS не входят в поддерживаемый профиль копирования Blu-ray')
             if f['nal_hrd_parameters_present_flag'] != 1 or f.get('cpb_cnt_minus1') != 0:
                 raise ValueError('HRD потока не соответствует проверяемому режиму')
+            if self.dimensions is not None:
+                if 'pic_width_in_mbs_minus1' not in f or 'pic_height_in_map_units_minus1' not in f:
+                    raise ValueError('не подтверждены размеры изображения в SPS')
+                width = (f['pic_width_in_mbs_minus1']+1)*16 - 2*(f.get('frame_crop_left_offset',0)+f.get('frame_crop_right_offset',0))
+                height = (f['pic_height_in_map_units_minus1']+1)*16 - 2*(f.get('frame_crop_top_offset',0)+f.get('frame_crop_bottom_offset',0))
+                if (width, height) != self.dimensions:
+                    raise ValueError('размеры SPS не совпадают с контейнером')
+                mbs = (f['pic_width_in_mbs_minus1']+1)*(f['pic_height_in_map_units_minus1']+1)
+                dpb_limit = {31:18000, 32:20480, 40:32768, 41:32768}.get(f['level_idc'], 0)
+                if mbs * f['max_dec_frame_buffering'] > dpb_limit:
+                    raise ValueError('буфер декодированных кадров превышает уровень H.264')
             rate = (f['bit_rate_value_minus1[0]']+1)*2**(6+f['bit_rate_scale'])
             buffer = (f['cpb_size_value_minus1[0]']+1)*2**(4+f['cpb_size_scale'])
             if rate>40_000_000 or buffer>30_000_000:
@@ -252,7 +280,8 @@ class PacketCheck:
             raise ValueError('обнаружен повреждённый пакет')
         if index == self.audio_index:
             pts = float(fields['pts_time'])
-            duration = float(fields['duration_time'])
+            truehd = self.info.audio_codec == 'truehd'
+            duration = 1/1200 if truehd and fields.get('duration_time', 'N/A') == 'N/A' else float(fields['duration_time'])
             if not math.isfinite(pts) or not math.isfinite(duration) or duration<=0:
                 raise ValueError('неизвестные временные метки звука')
             if self.audio_end is not None and abs(pts-self.audio_end)>.002:
@@ -305,7 +334,7 @@ def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
     cancel = cancel or threading.Event()
     result = CopyReport()
     try:
-        result.signature = signature(info.path)
+        result.signature = signature(info.path, cancel)
         result.reasons = metadata_reasons(info)
         if result.reasons:
             return result
@@ -330,12 +359,15 @@ def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
         stream_lines([ffprobe,'-v','error','-show_packets','-show_entries',
                       'packet=stream_index,pts_time,dts_time,duration_time,size,flags','-of','compact=p=0',info.path], cancel, feed)
         packets.complete()
-        headers = HeaderCheck(float(Fraction(info.video_fps)))
+        headers = HeaderCheck(float(Fraction(info.video_fps)), (info.width, info.height))
         stream_lines([ffmpeg,'-hide_banner','-nostdin','-loglevel','info','-i',info.path,
                       '-map',f'0:{packets.video_index}','-an','-c:v','copy','-bsf:v',
                       'h264_mp4toannexb,filter_units=pass_types=7|8,trace_headers','-f','null','-'],cancel,headers.feed)
         headers.complete()
-        if signature(info.path) != result.signature:
+        from avc_audit import inspect_idr
+        if inspect_idr(info, ffmpeg, cancel) != packets.count:
+            raise ValueError('число кадров AVC не совпадает с пакетами контейнера')
+        if signature(info.path, cancel) != result.signature:
             raise ValueError('файл изменился во время анализа')
         result.video_ok = True
         result.video_bytes = packets.video_bytes
@@ -343,12 +375,12 @@ def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
         result.video_max_bps = (sps['bit_rate_value_minus1[0]']+1)*2**(6+sps['bit_rate_scale'])
         for index, checked in audio_checks.items():
             a = checked.info.audio_details
-            ok = (index not in audio_errors and checked.info.audio_codec=='ac3' and int(a.get('sample_rate') or 0)==48000
-                  and 1<=checked.info.audio_channels<=6 and 0<int(a.get('bit_rate') or 0)<=640000
+            from audio_pipeline import copy_format
+            ok = (index not in audio_errors and copy_format(a) is not None
                   and checked.audio_start is not None and abs(checked.audio_start-packets.first_pts)<=.05
                   and checked.audio_end is not None and abs(checked.audio_end-packets.first_pts-info.duration)<=.1)
             result.audio_results[index] = dict(ok=ok, bytes=checked.audio_bytes,
-                reason=audio_errors.get(index, f'дорожка #{index}: {checked.info.audio_codec}; требуется AC-3 48 кГц с совместимыми временными метками'))
+                reason='' if ok else audio_errors.get(index, f'дорожка #{index}: {checked.info.audio_codec}; не подтверждены поддерживаемый AC-3 / DTS core / LPCM и непрерывные временные метки'))
         selected = result.for_selection(info)
         result.audio_ok, result.audio_bytes, result.audio_reason = selected.audio_ok, selected.audio_bytes, selected.audio_reason
         result.fps = RATES[Fraction(info.video_fps)]

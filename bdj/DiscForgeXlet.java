@@ -37,6 +37,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     private int highlightX, highlightY;
     private Player player;
     private int page, focus;
+    private String movie = "";
     private int selectedAudio = 1;
     private int selectedSubtitle = 0;
     private volatile boolean audioPopup;
@@ -121,6 +122,12 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     }
 
     private void loadPage(int number) throws Exception {
+        String nextMovie = config.getProperty("page." + number + ".movie", movie);
+        if (!nextMovie.equals(movie)) {
+            movie = nextMovie;
+            selectedAudio = 1;
+            selectedSubtitle = 0;
+        }
         Image image = loadImage("page" + number + ".png");
         Image previous = background;
         background = image;
@@ -173,9 +180,15 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         }
     }
 
-    private int audioCount() { return Integer.parseInt(config.getProperty("audio.count", "0")); }
+    private String movieProperty(String key, String fallback) {
+        return config.getProperty("movie." + movie + "." + key, config.getProperty(key, fallback));
+    }
 
-    private int subtitleCount() { return Integer.parseInt(config.getProperty("subtitle.count", "0")); }
+    private int movieHome() { return Integer.parseInt(movieProperty("home", "0")); }
+
+    private int audioCount() { return Integer.parseInt(movieProperty("audio.count", "0")); }
+
+    private int subtitleCount() { return Integer.parseInt(movieProperty("subtitle.count", "0")); }
 
     private SubtitlingControl subtitleControl() throws Exception {
         SubtitlingControl control = (SubtitlingControl) player.getControl("org.bluray.media.SubtitlingControl");
@@ -258,8 +271,12 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                         loadFocus(); repaint();
                     }
                 }
-                else if (action.equals("home")) { closePlayer(); loadPage(0); scene.setVisible(true); }
-                else if (action.equals("resume") || (audioPopup && (action.equals("page:0") || action.equals("play:0")))) resumeMovie();
+                else if (action.equals("home")) {
+                    int destination = playing || page != movieHome() ? movieHome() : 0;
+                    if (!playing && config.getProperty("movies") != null && config.getProperty("page." + page + ".movie") == null) destination = 0;
+                    closePlayer(); loadPage(destination); scene.setVisible(true);
+                }
+                else if (action.equals("resume") || (audioPopup && (action.equals("page:" + movieHome()) || action.equals("play:0")))) resumeMovie();
                 else if (action.equals("audio-popup")) {
                     if (player.setRate(0.0f) != 0.0f) throw new Exception("Player could not pause for audio menu");
                     playing = false;
@@ -273,27 +290,28 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
                         int current = control.isSubtitlingOn() ? control.getCurrentStreamNumber() : 0;
                         if (current >= 0 && current <= subtitleCount()) selectedSubtitle = current;
                     }
-                    if (audioCount() > 0 && subtitleCount() > 0) loadPage(0);
+                    if (audioCount() > 0 && subtitleCount() > 0) loadPage(movieHome());
                     else if (subtitleCount() > 0)
-                        loadPage(Integer.parseInt(config.getProperty("subtitle.page")) + selectedSubtitle / 5);
-                    else loadPage(Integer.parseInt(config.getProperty("audio.page")) + (selectedAudio - 1) / 5);
+                        loadPage(Integer.parseInt(movieProperty("subtitle.page", "0")) + selectedSubtitle / 5);
+                    else loadPage(Integer.parseInt(movieProperty("audio.page", "0")) + (selectedAudio - 1) / 5);
                     scene.setVisible(true);
                     System.out.println("DiscForge: audio popup at " + player.getMediaTime().getSeconds());
                 }
                 else if (action.startsWith("sub:")) {
                     selectSubtitle(Integer.parseInt(action.substring(4)));
                     if (audioPopup) resumeMovie();
-                    else loadPage(0);
+                    else loadPage(movieHome());
                 }
                 else if (action.startsWith("audio:")) {
                     selectAudio(Integer.parseInt(action.substring(6)));
                     if (audioPopup) resumeMovie();
-                    else loadPage(0);
+                    else loadPage(movieHome());
                 }
                 else if (action.startsWith("page:")) loadPage(Integer.parseInt(action.substring(5)));
                 else if (action.startsWith("play:")) {
                     closePlayer();
-                    Player next = Manager.createPlayer(new MediaLocator("bd://1.PLAYLIST:" + config.getProperty("playlist")));
+                    Player next = Manager.createPlayer(new MediaLocator("bd://1.PLAYLIST:" + movieProperty("playlist", "00000")));
+                    System.out.println("DiscForge: playlist " + movieProperty("playlist", "00000"));
                     player = next;
                     next.prefetch();
                     long deadline = System.currentTimeMillis() + 15000;

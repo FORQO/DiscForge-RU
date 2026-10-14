@@ -1,6 +1,7 @@
 """Live menu preview, using the same page images as the on-disc Xlet."""
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QIcon
+from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox, QSlider, QColorDialog, QSpinBox, QLayout, QFontComboBox, QSplitter, QScrollArea, QGroupBox, QFormLayout, QGridLayout, QFrame)
 from disc_menu import (MenuDesign, render_page, pages, import_background, TEXT, BUTTONS,
@@ -8,6 +9,8 @@ from disc_menu import (MenuDesign, render_page, pages, import_background, TEXT, 
 from menu_layout import text_style
 import copy
 import uuid
+from dataclasses import replace
+from collection_menu import catalog_page
 
 
 from menu_preview import MenuPreview
@@ -15,6 +18,8 @@ from menu_preview import MenuPreview
 
 class MenuEditor(QWidget):
     changed = Signal()
+    movie_requested = Signal(str)
+    movie_renamed = Signal(str, str)
 
     def __init__(self):
         super().__init__()
@@ -27,6 +32,7 @@ class MenuEditor(QWidget):
         self.labels = {}
         self.hidden_buttons = []
         self.hidden_text = []
+        self.logo_visible = True
         self.button_styles = {}
         self.element_layout = {}
         self.text_styles = {}
@@ -34,6 +40,12 @@ class MenuEditor(QWidget):
         self.history = []
         self.deleted_history = []
         self.selected_button = ''
+        self.collection_items = []
+        self.collection_enabled = False
+        self.collection_root = True
+        self.catalog_page = 0
+        self.movie_path = None
+        self.movie_name = ''
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self.splitter = QSplitter(Qt.Horizontal)
@@ -44,6 +56,13 @@ class MenuEditor(QWidget):
         canvas_layout = QVBoxLayout(canvas)
         canvas_layout.setContentsMargins(0, 0, 0, 0)
         canvas_layout.setSpacing(6)
+        self.context_selector = QComboBox()
+        self.context_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.context_selector.setMinimumContentsLength(20)
+        self.context_selector.setAccessibleName('Просмотр меню общего диска или фильма')
+        self.context_selector.currentIndexChanged.connect(self._context_changed)
+        self.context_selector.hide()
+        canvas_layout.addWidget(self.context_selector)
         self.preview = MenuPreview()
         self.preview.setObjectName('preview')
         canvas_layout.addWidget(self.preview, 1)
@@ -59,9 +78,15 @@ class MenuEditor(QWidget):
             remote.addWidget(button)
         remote.addStretch()
         canvas_layout.addLayout(remote)
-        self.fullscreen_button = QPushButton('На весь экран · F11')
+        self.fullscreen_button = QPushButton()
+        self.fullscreen_button.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/fullscreen.svg')))
+        self.fullscreen_button.setIconSize(QSize(21, 21))
+        self.fullscreen_button.setFixedSize(34, 34)
+        self.fullscreen_button.setStyleSheet('padding: 0px;')
+        self.fullscreen_button.setToolTip('На весь экран · F11')
+        self.fullscreen_button.setAccessibleName('На весь экран')
         self.fullscreen_button.clicked.connect(self.show_fullscreen)
-        canvas_layout.addWidget(self.fullscreen_button, 0, Qt.AlignHCenter)
+        remote.addWidget(self.fullscreen_button)
         self.caption = QLabel('Клик — выбрать · Двойной клик — изменить текст · Del — удалить. Перетаскивайте элементы и маркеры размера; Alt отключает прилипание.')
         self.caption.setWordWrap(True)
         self.caption.setObjectName('hint')
@@ -97,10 +122,12 @@ class MenuEditor(QWidget):
         self.title.setPlaceholderText('Название на обложке меню')
         general.addWidget(self.title)
         self.theme = QComboBox()
+        self.theme.addItem('Кино · Янтарь', 'amber')
+        self.theme.addItem('Кино · Сапфир', 'sapphire')
         self.theme.addItem('Полночь', 'midnight')
         self.theme.addItem('Графит', 'graphite')
         self.theme.addItem('Кинотеатр', 'cinema')
-        self.theme.setCurrentIndex(self.theme.findData('graphite'))
+        self.theme.setCurrentIndex(self.theme.findData('amber'))
         self.language = QComboBox()
         self.language.addItem('Русский', 'ru')
         self.language.addItem('English', 'en')
@@ -140,6 +167,7 @@ class MenuEditor(QWidget):
         self.label_value.setPlaceholderText('Своя подпись; пусто — стандартная')
         element.addWidget(self.label_value)
         reset = QPushButton('Сбросить подпись')
+        self.reset_label = reset
         reset.clicked.connect(self.label_value.clear)
         reset.clicked.connect(self.edit_label)
         element.addWidget(reset)
@@ -252,6 +280,77 @@ class MenuEditor(QWidget):
         self.fullscreen.showFullScreen()
         self.fullscreen.setFocus()
 
+    def set_collection(self, items, enabled, selected_path):
+        """Keep source identities out of the shared menu design and saved style."""
+        previous = (self.collection_items, self.collection_enabled, self.movie_path)
+        self.collection_items = list(items)
+        if enabled and not self.collection_enabled:
+            self.collection_root = True
+        self.collection_enabled = enabled
+        self.movie_path = selected_path
+        self.movie_name = dict(items).get(selected_path, '')
+        if not self.movie_name:
+            self.collection_root = True
+        self.catalog_page = min(self.catalog_page, max(0, (len(items)-1)//5))
+        self.context_selector.blockSignals(True)
+        self.context_selector.clear()
+        self.context_selector.addItem(f'Общий диск · фильмов: {len(items)}', None)
+        for path, name in items:
+            self.context_selector.addItem('Фильм: ' + name, path)
+            self.context_selector.setItemData(self.context_selector.count()-1, path, Qt.ToolTipRole)
+        self.context_selector.setCurrentIndex(0 if self.collection_root else max(0, self.context_selector.findData(selected_path)))
+        self.context_selector.blockSignals(False)
+        self.context_selector.setVisible(enabled)
+        if previous != (self.collection_items, self.collection_enabled, self.movie_path):
+            self.select_button('')
+            if self.is_catalog():
+                self.caption.setText('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.')
+        if previous[1:] != (self.collection_enabled, self.movie_path):
+            self.populate_labels()
+        if not self.label_value.hasFocus():
+            self.sync_label()
+        self.refresh()
+
+    def _context_changed(self, index):
+        self.preview.commit_edit()
+        if index <= 0:
+            self.show_catalog()
+        else:
+            self.open_movie(self.context_selector.itemData(index))
+
+    def show_catalog(self):
+        self.collection_root = True
+        self.page = self.focus = 0
+        self.history = []
+        self.select_button('')
+        self.caption.setText('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.')
+        self.context_selector.blockSignals(True)
+        self.context_selector.setCurrentIndex(0)
+        self.context_selector.blockSignals(False)
+        self.populate_labels()
+        self.sync_label()
+        self.refresh()
+
+    def open_movie(self, path):
+        if path not in dict(self.collection_items):
+            return
+        self.collection_root = False
+        self.page = self.focus = 0
+        self.history = []
+        self.select_button('')
+        self.movie_requested.emit(path)
+        self.caption.setText(f'Меню фильма «{self.movie_name}». «Выбор главы» открывает только его сцены; «Назад» — предыдущий уровень меню.')
+        self.populate_labels()
+        self.sync_label()
+        self.refresh()
+
+    def display_design(self):
+        design = self.current_design(preview=True)
+        return replace(design, title=self.movie_name) if self.collection_enabled and not self.collection_root and self.movie_name else design
+
+    def is_catalog(self):
+        return self.collection_enabled and self.collection_root
+
     def design(self):
         self.preview.commit_edit()
         return self.current_design() if self.enabled.isChecked() else None
@@ -260,7 +359,7 @@ class MenuEditor(QWidget):
         return MenuDesign(self.title.text().strip() or ('Blu-ray' if preview else ''),
                           self.theme.currentData(), self.language.currentData(), self.background,
                           self.fit.currentData(), self.dim.value(), self.labels,
-                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text, self.audio_tracks, self.subtitle_tracks, self.chapter_titles)
+                          self.hidden_buttons, self.button_styles, self.element_layout, self.text_styles, self.custom_buttons, self.hidden_text, self.audio_tracks, self.subtitle_tracks, self.chapter_titles, self.logo_visible)
 
     def settings(self):
         self.preview.commit_edit()
@@ -283,6 +382,7 @@ class MenuEditor(QWidget):
         self.background, self.labels = design.background, dict(design.labels)
         self.hidden_buttons = list(design.hidden_buttons)
         self.hidden_text = list(design.hidden_text)
+        self.logo_visible = design.logo_visible
         self.audio_tracks = copy.deepcopy(design.audio_tracks)
         self.subtitle_tracks = copy.deepcopy(design.subtitle_tracks)
         self.chapter_titles = list(design.chapter_titles)
@@ -326,14 +426,16 @@ class MenuEditor(QWidget):
                           ('home', 'Главное меню'), ('previous', 'Предыдущие главы'),
                           ('next', 'Следующие главы'), ('subtitle', 'Подзаголовок'),
                           ('brand', 'Верхняя надпись'), ('hint', 'Подсказка внизу')]:
+            if self.is_catalog() and key not in ('title', 'brand', 'hint'):
+                continue
             self.label_key.addItem(name, key)
-        for i in range(len(self.chapters)):
+        for i in range(0 if self.is_catalog() else len(self.chapters)):
             self.label_key.addItem(f'Название главы {i + 1}', f'chapter:{i}')
-        for i in range(len(self.subtitle_tracks)):
+        for i in range(0 if self.is_catalog() else len(self.subtitle_tracks)):
             self.label_key.addItem(f'Название субтитров {i+1}', f'sub:{i+1}')
-        for i in range(len(self.audio_tracks)):
+        for i in range(0 if self.is_catalog() else len(self.audio_tracks)):
             self.label_key.addItem(f'Название аудиодорожки {i+1}', f'audio:{i+1}')
-        for i, button in enumerate(self.custom_buttons):
+        for i, button in enumerate([] if self.is_catalog() else self.custom_buttons):
             self.label_key.addItem(f'Своя кнопка {i+1}', button['id'])
         self.label_key.setCurrentIndex(max(0, self.label_key.findData(selected)))
         self.label_key.blockSignals(False)
@@ -345,7 +447,7 @@ class MenuEditor(QWidget):
             return
         self.label_value.setMaxLength(80 if key == 'title' else 120)
         if key == 'title':
-            self.label_value.setText(self.title.text())
+            self.label_value.setText(self.movie_name if self.collection_enabled and not self.collection_root else self.title.text())
             self.label_value.setPlaceholderText('Название фильма')
             return
         lang = self.language.currentData()
@@ -353,8 +455,10 @@ class MenuEditor(QWidget):
         self.label_value.setPlaceholderText(self.current_design(preview=True).text(key) or TEXT[lang].get(key, f'{TEXT[lang]["chapter"]} {int(key.split(":")[-1])+1}' if key.startswith('chapter:') else ''))
 
     def edit_label(self, *_):
+        if self.label_key.currentData() is None:
+            return
         if self.label_key.currentData() == 'title':
-            self.title.setText(self.label_value.text().strip() or 'Мой Blu-ray')
+            self.inline_text('title', self.label_value.text().strip() or 'Мой Blu-ray')
             return
         key = self.language.currentData() + ':' + self.label_key.currentData()
         value = self.label_value.text().strip()
@@ -401,18 +505,34 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def refresh(self, *_):
-        design = self.current_design(preview=True)
+        design = self.display_design()
         self.dim_label.setText(f'Затемнение: {self.dim.value()}%')
-        graph = pages(self.chapters, design)
-        self.page = min(self.page, len(graph)-1)
-        self.focus = min(self.focus, max(0, len(graph[self.page])-1))
-        self.back_button.setEnabled(bool(self.history))
-        image = render_page(design, self.chapters, self.page, self.focus)
+        if self.is_catalog():
+            design, entries = catalog_page(design, [name for _, name in self.collection_items], self.catalog_page)
+            self.focus = min(self.focus, max(0, len(entries)-1))
+            image = render_page(design, [0.0], 0, self.focus, entries_override=entries)
+            elements = page_elements(design, [0.0], 0, entries)
+            for element in elements:
+                if element['button']:
+                    action = entries[element['index']][1]
+                    element.update(id='catalog:'+action, key=action, locked_geometry=True, locked_text=not action.startswith('movie:'))
+                elif element['id'] == 'text:subtitle':
+                    element['locked_text'] = True
+            self.back_button.setEnabled(self.catalog_page > 0)
+        else:
+            graph = pages(self.chapters, design)
+            self.page = min(self.page, len(graph)-1)
+            self.focus = min(self.focus, max(0, len(graph[self.page])-1))
+            self.back_button.setEnabled(bool(self.history) or self.collection_enabled)
+            image = render_page(design, self.chapters, self.page, self.focus)
+            elements = page_elements(design, self.chapters, self.page)
         self.preview.image = image
-        elements = page_elements(design, self.chapters, self.page)
         for element in elements:
             rect = QRect(*element['rect'])
             element['rect'] = rect
+            if element.get('image'):
+                element['text_rect'] = QRect()
+                continue
             style = element['style']
             font = QFont(style['font_family'])
             font.setPixelSize(style['font_size'])
@@ -428,6 +548,24 @@ class MenuEditor(QWidget):
 
     def press(self, key):
         self.preview.commit_edit()
+        if self.is_catalog():
+            _, entries = catalog_page(self.current_design(preview=True), [name for _, name in self.collection_items], self.catalog_page)
+            if key in ('up', 'down') and entries:
+                self.focus = (self.focus + (1 if key == 'down' else -1)) % len(entries)
+            elif key in ('back', 'home'):
+                self.catalog_page = max(0, self.catalog_page-1) if key == 'back' else 0
+                self.focus = 0
+            elif key in ('enter', 'ok') and entries:
+                kind, value = entries[self.focus][1].split(':')
+                if kind == 'movie':
+                    self.open_movie(self.collection_items[int(value)][0])
+                    return
+                self.catalog_page, self.focus = int(value), 0
+            self.refresh()
+            return
+        if self.collection_enabled and (key == 'home' or key == 'back' and not self.history):
+            self.show_catalog()
+            return
         entries = pages(self.chapters, self.current_design(preview=True))[self.page]
         if key == 'back':
             if self.history:
@@ -462,11 +600,21 @@ class MenuEditor(QWidget):
                 self.page = self.focus = 0
                 self.select_button('')
             else:
-                self.caption.setText(f'На плеере начнётся воспроизведение главы {int(value) + 1}.')
+                owner = f' «{self.movie_name}»' if self.collection_enabled else ''
+                name = self.display_design().text(f'chapter:{value}') or f'Глава {int(value)+1}'
+                self.caption.setText(f'На плеере начнётся воспроизведение главы {int(value)+1}: {name} · фильм{owner} · с {self.chapters[int(value)]:g} с.')
         self.refresh()
 
     def inline_text(self, key, value):
+        if key.startswith('movie:'):
+            index = int(key.split(':')[1])
+            if 0 <= index < len(self.collection_items):
+                self.movie_renamed.emit(self.collection_items[index][0], value)
+            return
         if key == 'title':
+            if self.collection_enabled and not self.collection_root:
+                self.movie_renamed.emit(self.movie_path, value)
+                return
             if value:
                 self.title.setText(value)
         else:
@@ -484,6 +632,19 @@ class MenuEditor(QWidget):
         if hasattr(self, 'preview'):
             self.preview.selection = key
         self.style_panel.setEnabled(bool(key))
+        fixed_label = key == 'logo' or key.startswith('catalog:') or (self.is_catalog() and key == 'text:subtitle')
+        self.label_key.setEnabled(not fixed_label)
+        self.label_value.setEnabled(not fixed_label)
+        self.reset_label.setEnabled(not fixed_label)
+        if key.startswith('catalog:'):
+            self.style_panel.setEnabled(False)
+            self.label_value.setEnabled(False)
+            self.caption.setText('Кнопка фильма: OK — открыть его меню; двойной клик по названию — переименовать. Порядок и состав задаются списком фильмов слева.')
+            return
+        if key == 'logo':
+            self.style_panel.setEnabled(False)
+            self.caption.setText('Логотип · перетащите или измените размер. Del — удалить, «Вернуть удалённый элемент» — восстановить.')
+            return
         if not key:
             return
         is_text = key.startswith('text:')
@@ -516,6 +677,13 @@ class MenuEditor(QWidget):
         self.select_button(key)
         if key and key != previous:
             self.inspector.verticalScrollBar().setValue(self.label_key.parentWidget().y())
+        if self.is_catalog():
+            _, entries = catalog_page(self.current_design(preview=True), [name for _, name in self.collection_items], self.catalog_page)
+            for i, (_, action) in enumerate(entries):
+                if 'catalog:'+action == key:
+                    self.focus = i
+            self.refresh()
+            return
         entries = pages(self.chapters, self.current_design(preview=True))[self.page]
         for i, (_, action) in enumerate(entries):
             if button_id(self.page, action) == key:
@@ -523,7 +691,7 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def style_changed(self, *_):
-        if not self.selected_button:
+        if not self.selected_button or self.selected_button.startswith('catalog:'):
             return
         is_text = self.selected_button.startswith('text:')
         style = self.text_styles.setdefault(self.selected_button[5:], {}) if is_text else self.button_styles.setdefault(self.selected_button, {})
@@ -533,7 +701,7 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def choose_color(self, name):
-        if not self.selected_button:
+        if not self.selected_button or self.selected_button.startswith('catalog:'):
             return
         is_text = self.selected_button.startswith('text:')
         style = text_style(self.current_design(preview=True), self.selected_button[5:]) if is_text else button_style(self.current_design(preview=True), self.selected_button)
@@ -553,6 +721,16 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def delete_button(self):
+        if self.selected_button.startswith('catalog:'):
+            self.caption.setText('Чтобы убрать фильм и его кнопку с общего диска, выберите этот фильм в списке слева и нажмите «Удалить».')
+            return
+        if self.selected_button == 'logo':
+            self.logo_visible = False
+            self.deleted_history.append('logo')
+            self.select_button('')
+            self.caption.setText('Логотип удалён со всех страниц меню. Его можно вернуть вместе с положением и размером.')
+            self.refresh()
+            return
         if self.selected_button.startswith('text:'):
             key = self.selected_button[5:]
             if key not in self.hidden_text:
@@ -570,7 +748,11 @@ class MenuEditor(QWidget):
             self.refresh()
 
     def restore_button(self):
-        key = self.deleted_history.pop() if self.deleted_history else (self.hidden_buttons[-1] if self.hidden_buttons else 'text:'+self.hidden_text[-1] if self.hidden_text else None)
+        key = self.deleted_history.pop() if self.deleted_history else ('logo' if not self.logo_visible else self.hidden_buttons[-1] if self.hidden_buttons else 'text:'+self.hidden_text[-1] if self.hidden_text else None)
+        if key == 'logo':
+            self.logo_visible = True
+            self.refresh()
+            return
         if key and key.startswith('text:'):
             if key[5:] in self.hidden_text:
                 self.hidden_text.remove(key[5:])
@@ -588,6 +770,8 @@ class MenuEditor(QWidget):
             self.refresh()
 
     def change_geometry(self, key, rect, font_size=0):
+        if key.startswith('catalog:'):
+            return
         self.element_layout[key] = list(rect)
         if font_size and key.startswith('text:'):
             self.text_styles.setdefault(key[5:], {})['font_size'] = font_size
@@ -598,6 +782,9 @@ class MenuEditor(QWidget):
 
     def add_button(self):
         self.preview.commit_edit()
+        if self.is_catalog():
+            self.caption.setText('Кнопки фильмов добавляются автоматически: нажмите «Добавить видео» слева. Свои кнопки можно добавлять в меню конкретного фильма.')
+            return
         if len(self.custom_buttons) >= 500:
             self.caption.setText('Достигнут предел дополнительных кнопок проекта (500).')
             return
@@ -651,6 +838,9 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def align_buttons(self):
+        if self.is_catalog():
+            self.caption.setText('Кнопки общего диска выровнены автоматически. Их порядок задаётся списком фильмов слева.')
+            return
         elements = [e for e in self.preview.elements if e['button']]
         if not elements:
             return
