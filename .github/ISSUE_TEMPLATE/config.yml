@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "FORQO · Документация проекта"
+    url: "https://github.com/FORQO/DiscForge-RU#readme"
+    about: "Описание проекта, возможности, инструкции и ограничения."

@@ -1,0 +1,52 @@
+name: "Ошибка · FORQO"
+description: "Воспроизводимая проблема в DiskForge"
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "### FORQO · DiskForge\n\nПомогите разобраться в задаче: опишите конкретный сценарий и результат.\nИспользуйте искусственные примеры. Перед отправкой удалите личные данные, токены и пароли из текста, скриншотов, файлов и журналов."
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Что произошло"
+      description: "Опишите фактическое поведение и его влияние на вашу задачу."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Шаги воспроизведения"
+      description: "Укажите минимальный сценарий, на котором возникает проблема."
+      placeholder: "1. Открыть…\n2. Выполнить…\n3. Получить…"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Ожидаемый результат"
+      description: "Как должно работать в этом сценарии?"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Версия или ссылка"
+      description: "Номер сборки, ветка / commit или URL страницы, где возникла проблема."
+      placeholder: "Версия / commit / URL"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Окружение"
+      description: "Укажите платформу и параметры, необходимые для повторения проблемы."
+      placeholder: "ОС и версия: Windows 10/11\nCPU / GPU:\nВерсии VLC / FFmpeg, если важны:\nПараметры искусственного медиа-примера, если важны:"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Пример и диагностика"
+      description: "При необходимости добавьте искусственный пример, скриншот или короткий фрагмент журнала. Отметьте, воспроизводится ли проблема каждый раз."
+    validations:
+      required: false

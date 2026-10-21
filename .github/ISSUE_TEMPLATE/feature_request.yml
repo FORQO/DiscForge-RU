@@ -1,0 +1,43 @@
+name: "Предложение · FORQO"
+description: "Идея или улучшение для DiskForge"
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: "### FORQO · DiskForge\n\nОпишите задачу пользователя и результат, который хотите получить. Перед отправкой посмотрите похожие Issues.\nПримеры и вложения должны быть без личных данных, токенов и паролей."
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Задача пользователя"
+      description: "Что вы хотите сделать и что сейчас мешает?"
+      placeholder: "Когда я… мне нужно… потому что…"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Предлагаемое решение"
+      description: "Какое поведение или изменение интерфейса поможет решить задачу?"
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: "Критерий успеха"
+      description: "По какому конкретному сценарию можно проверить, что улучшение полезно?"
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Альтернативы"
+      description: "Какие обходные пути или другие решения вы уже пробовали?"
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: "Дополнительный контекст"
+      description: "Если важны платформа, версия, примеры или макет — добавьте их здесь."
+    validations:
+      required: false
