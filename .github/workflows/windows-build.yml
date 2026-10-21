@@ -34,7 +34,7 @@ jobs:
         env:
           PYTHONUTF8: '1'
         run: python tools/package_windows.py --app dist/DiscForge_RU --output release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiscForge-RU-Windows-x64
           path: release/

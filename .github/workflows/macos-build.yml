@@ -22,7 +22,7 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --windowed --add-data "assets:assets" --add-data "LICENSE:." --add-data "THIRD_PARTY_NOTICES.md:." --name DiscForge-RU main.py
       - name: Pack .app
         run: ditto -c -k --sequesterRsrc --keepParent dist/DiscForge-RU.app DiscForge-RU-macOS.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiscForge-RU-macOS-unsigned
           path: DiscForge-RU-macOS.zip
