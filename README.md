@@ -98,6 +98,10 @@ python cli.py build film.mkv --processing auto --audio-track 1 --menu-title "М�
 
 [Сообщить об ошибке](https://github.com/FORQO/DiscForge-RU/issues). Для ошибки приложите версию, шаги, журнал и сведения о потоках без личных путей; сам фильм присылать не нужно.
 
+## Участие
+
+[Как внести вклад](CONTRIBUTING.md) · [Кодекс поведения FORQO](CODE_OF_CONDUCT.md).
+
 ---
 
 <p align="center"><sub><a href="https://github.com/FORQO"><b>FORQO</b></a> · SOFTWARE ENGINEERING<br>Desktop applications · Open source · RU interfaces</sub></p>
