@@ -9,4 +9,4 @@ Upstream source downloads: https://download.qt.io/official_releases/QtForPython/
 
 DiscForge imposes no restriction on replacing these libraries with compatible
 modified versions, or reverse engineering for debugging those modifications.
-Application source and packaging commands: https://github.com/maxliv234-star/DiscForge-RU/tree/v1.0.0
+Application source and packaging commands: https://github.com/FORQO/DiscForge-RU/tree/v1.0.0

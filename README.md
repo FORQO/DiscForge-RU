@@ -6,7 +6,7 @@
 
 Бесплатное приложение для Windows 10/11 x64: объединяет фильмы и серии на BD25/BD50, создаёт интерактивное меню, главы и переключаемые аудиодорожки и субтитры. Совместимое видео можно сохранить без перекодирования. Всё обрабатывается локально, без аккаунта.
 
-[Скачать 1.4.0](https://github.com/maxliv234-star/DiscForge-RU/releases/tag/v1.4.0) · [Что нового](docs/RELEASE_1.4.0.md) · [Руководство](docs/USER_GUIDE.md) · [Roadmap](docs/ROADMAP.md) · [Сообщить об ошибке](https://github.com/maxliv234-star/DiscForge-RU/issues)
+[Скачать 1.4.0](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.4.0) · [Что нового](docs/RELEASE_1.4.0.md) · [Руководство](docs/USER_GUIDE.md) · [Roadmap](docs/ROADMAP.md) · [Сообщить об ошибке](https://github.com/FORQO/DiscForge-RU/issues)
 
 ![DiskForge 1.4.0: общий диск и редактор меню](docs/images/interface-menu-1.4.png)
 

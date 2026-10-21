@@ -1,6 +1,6 @@
 # Сборка и выпуск
 
-Репозиторий: https://github.com/maxliv234-star/DiscForge-RU . Основная ветка — `main`. Текущий выпуск — 1.4.0, Windows x64.
+Репозиторий: https://github.com/FORQO/DiscForge-RU . Основная ветка — `main`. Текущий выпуск — 1.4.0, Windows x64.
 
 ## Локальная сборка
 
