@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install packages
@@ -26,7 +26,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build application
         run: python -m PyInstaller --noconfirm --clean --windowed --icon assets/brand/diskforge.ico --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: build/dependencies
           key: windows-tools-ffmpeg902-tsmuxer270-java8u504
@@ -34,7 +34,7 @@ jobs:
         env:
           PYTHONUTF8: '1'
         run: python tools/package_windows.py --app dist/DiscForge_RU --output release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiscForge-RU-Windows-x64
           path: release/
@@ -46,7 +46,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: DiscForge-RU-Windows-x64
           path: release

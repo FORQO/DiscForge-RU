@@ -11,7 +11,7 @@ jobs:
         python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - run: sudo apt-get update && sudo apt-get install -y libegl1
@@ -28,7 +28,7 @@ jobs:
         run: python -m py_compile core.py settings.py main.py macos_burn.py cli.py
       - name: Preserve failed rendering diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rendering-diagnostics-${{ matrix.python-version }}
           path: build/test-artifacts/
