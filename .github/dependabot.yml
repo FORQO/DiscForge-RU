@@ -4,6 +4,11 @@ version: 2
 updates:
   - package-ecosystem: "pip"
     directory: "/"
+    # Do not re-propose the known CPython 3.11 refcount regression.
+    # A later release is still eligible and must pass the full Python matrix.
+    ignore:
+      - dependency-name: "pyside6-essentials"
+        versions: ["6.12.0"]
     schedule:
       interval: "weekly"
       day: "monday"
