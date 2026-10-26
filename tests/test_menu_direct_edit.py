@@ -115,8 +115,10 @@ class DirectEditTests(unittest.TestCase):
         self.editor.press('down')
         self.editor.press('enter')
         self.assertEqual(self.editor.page, 1)
-        for _ in range(5):
-            self.editor.press('down')
+        # The next-page button is to the right of the first chapter. Directional
+        # navigation follows geometry, rather than advancing through list order.
+        self.editor.press('right')
+        self.assertEqual(self.editor.focus, 5)
         self.editor.press('enter')
         self.assertEqual(self.editor.page, 2)
         self.editor.press('back')
