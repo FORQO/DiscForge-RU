@@ -26,6 +26,7 @@ def main():
         p.add_argument('--'+key, required=True)
     p.add_argument('--reuse', help='Reuse a prior test run to prove the movie checkpoints are reusable')
     p.add_argument('--named-reversed', action='store_true', help='Rename and reorder movies, verify playlist and track bindings')
+    p.add_argument('--film-enhancement', action='store_true', help='Improve only the first movie; preserve the second video')
     args = p.parse_args()
     app = QGuiApplication.instance() or QGuiApplication([])
     cancel = threading.Event()
@@ -48,6 +49,8 @@ def main():
         jobs.append((replace(media, copy_report=report), [0.0, 2.0]))
     events = []
     modes = ['video_copy', 'copy']
+    if args.film_enhancement:
+        config['video_enhancements'] = {str(Path(jobs[0][0].path).resolve()): True}
     expected_titles = [m.name for m, _ in jobs]
     if args.named_reversed:
         config['movie_names'] = {jobs[0][0].path: 'Серия 1 — Встреча', jobs[1][0].path: 'Серия 2 — Возвращение'}
@@ -69,6 +72,20 @@ def main():
     from iso_menu_update import mounted_iso
     with mounted_iso(target) as mounted:
         assert len(list((mounted/'BDMV/PLAYLIST').glob('*.mpls'))) == 2
+        if args.film_enhancement:
+            # Decoded frame checksums prove the unselected movie kept its picture,
+            # even when transport headers/timestamps change during Blu-ray muxing.
+            def picture_hashes(path):
+                result = subprocess.run([config['ffmpeg'], '-v', 'error', '-i', str(path),
+                    '-map', '0:v:0', '-an', '-f', 'framemd5', '-'], check=True, capture_output=True,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                return [line.rsplit(',', 1)[-1].strip() for line in result.stdout.decode().splitlines()
+                        if line and not line.startswith('#')]
+            for i, (media, _) in enumerate(jobs):
+                before = picture_hashes(media.path)
+                after = picture_hashes(mounted/f'BDMV/STREAM/{i:05}.m2ts')
+                enhanced = config['video_enhancements'].get(str(Path(media.path).resolve()), False)
+                assert (before != after) if enhanced else (before == after), (media.name, enhanced)
         with zipfile.ZipFile(mounted/'BDMV/JAR/00000.jar') as jar:
             props = dict(line.split('=', 1) for line in jar.read('menu.properties').decode('ascii').splitlines() if '=' in line)
             assert props['movie.0.playlist'] == '00000'
