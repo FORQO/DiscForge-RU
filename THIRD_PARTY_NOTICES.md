@@ -49,7 +49,7 @@ distribution requirements remain separate. IMAPI2FS and isoburn are Windows
 components. Eclipse ECJ and the BD-J API archive are used only to rebuild
 the Xlet with Java; no API stubs or compiler classes are bundled in menu.jar.
 
-The Windows 1.0 portable distribution additionally includes Eclipse Temurin
+The Windows portable distribution additionally includes Eclipse Temurin
 OpenJDK 8u504-b01 JRE (x64) in runtime/java for an external VLC preview process.
 Its LICENSE, ASSEMBLY_EXCEPTION, THIRD_PARTY_README and release files accompany
 the runtime. OpenJDK is GPLv2 with the Classpath Exception; corresponding release
@@ -57,7 +57,7 @@ sources: https://github.com/adoptium/jdk8u/releases/tag/jdk8u504-b01 .
 VLC is separately installed and is not redistributed with DiscForge.
 
 
-## Windows 1.0 portable tools
+## Windows portable tools
 
 - FFmpeg/ffprobe 9.0.2 essentials, unmodified static GPLv3 build by Gyan Doshi.
   Distribution: https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2 .
@@ -66,7 +66,7 @@ VLC is separately installed and is not redistributed with DiscForge.
   provided in tools/FFmpeg-README.txt; GPLv3 text in tools/FFmpeg-LICENSE.txt.
 - tsMuxer 2.7.0 x64, Apache-2.0. Source and build instructions:
   https://github.com/justdan96/tsMuxer/tree/2.7.0 . Full license is included.
-- PySide6 Essentials / Shiboken / Qt 6.8.3: LGPLv3, dynamically linked and replaceable;
+- PySide6 Essentials / Shiboken / Qt 6.12.0 in the Windows 1.5.0 package: LGPLv3, dynamically linked and replaceable;
   licenses and source links are in licenses/Qt-NOTICE.txt. No additional restriction
   on replacement or debugging modified LGPL libraries is imposed.
 - Python: PSF license, copied from the packaging interpreter into licenses.

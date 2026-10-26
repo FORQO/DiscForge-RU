@@ -166,8 +166,10 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (playing || busy || pending != null) return;
         int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
         if (count == 0) return;
-        if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_RIGHT) queue("focus:next");
-        if (key == KeyEvent.VK_UP || key == KeyEvent.VK_LEFT) queue("focus:previous");
+        if (key == KeyEvent.VK_DOWN) queue("focus:down");
+        if (key == KeyEvent.VK_UP) queue("focus:up");
+        if (key == KeyEvent.VK_RIGHT) queue("focus:right");
+        if (key == KeyEvent.VK_LEFT) queue("focus:left");
         if (key == KeyEvent.VK_ENTER) queue(config.getProperty("page." + page + "." + focus));
     }
 
@@ -250,6 +252,43 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         System.out.println("DiscForge: resumed movie at " + player.getMediaTime().getSeconds());
     }
 
+    // Identical to menu_navigation.nearest_button: doubled centres, open
+    // half-plane, distance / sideways displacement / stable index; no wrapping.
+    static int nearestButton(int[][] rects, int current, String direction) {
+        if (current < 0 || current >= rects.length) return current;
+        boolean horizontal = direction.equals("left") || direction.equals("right");
+        if (!horizontal && !direction.equals("up") && !direction.equals("down")) return current;
+        int cx = 2 * rects[current][0] + rects[current][2];
+        int cy = 2 * rects[current][1] + rects[current][3];
+        int target = current, bestSideways = Integer.MAX_VALUE;
+        long bestDistance = Long.MAX_VALUE;
+        for (int i = 0; i < rects.length; i++) {
+            int dx = 2 * rects[i][0] + rects[i][2] - cx;
+            int dy = 2 * rects[i][1] + rects[i][3] - cy;
+            int forward = horizontal ? dx : dy;
+            if (direction.equals("left") || direction.equals("up")) forward = -forward;
+            if (i == current || forward <= 0) continue;
+            int sideways = Math.abs(horizontal ? dy : dx);
+            long distance = (long) dx * dx + (long) dy * dy;
+            if (distance < bestDistance || (distance == bestDistance && sideways < bestSideways)) {
+                target = i; bestDistance = distance; bestSideways = sideways;
+            }
+        }
+        return target;
+    }
+
+    private void moveFocus(String direction) throws Exception {
+        int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+        int[][] rects = new int[count][4];
+        String[] fields = {"x", "y", "w", "h"};
+        for (int i = 0; i < count; i++) {
+            String prefix = "page." + page + "." + i + ".";
+            for (int j = 0; j < 4; j++) rects[i][j] = Integer.parseInt(config.getProperty(prefix + fields[j]));
+        }
+        int target = nearestButton(rects, focus, direction);
+        if (target != focus) { focus = target; loadFocus(); repaint(); }
+    }
+
     public void run() {
         while (!stopped) {
             String action;
@@ -265,11 +304,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
             try {
                 error = null;
                 if (action.startsWith("focus:")) {
-                    int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
-                    if (count > 0) {
-                        focus = (focus + count + (action.equals("focus:next") ? 1 : -1)) % count;
-                        loadFocus(); repaint();
-                    }
+                    moveFocus(action.substring(6));
                 }
                 else if (action.equals("home")) {
                     int destination = playing || page != movieHome() ? movieHome() : 0;

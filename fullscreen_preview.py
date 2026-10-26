@@ -16,7 +16,8 @@ class FullscreenPreview(QDialog):
         bar = QWidget()
         row = QHBoxLayout(bar)
         row.addStretch()
-        for label, action in [('Вверх', 'up'), ('Вниз', 'down'), ('OK', 'enter'), ('Назад', 'back'), ('Главное меню', 'home')]:
+        for label, action in [('Вверх', 'up'), ('Вниз', 'down'), ('Влево', 'left'), ('Вправо', 'right'),
+                              ('OK', 'enter'), ('Назад', 'back'), ('Главное меню', 'home')]:
             button = QPushButton(label)
             button.setFocusPolicy(Qt.NoFocus)
             button.clicked.connect(lambda checked=False, key=action: self.navigate(key))
@@ -38,7 +39,7 @@ class FullscreenPreview(QDialog):
         if event.key() in (Qt.Key_Escape, Qt.Key_F11):
             self.close()
             return
-        action = {Qt.Key_Up: 'up', Qt.Key_Left: 'up', Qt.Key_Down: 'down', Qt.Key_Right: 'down',
+        action = {Qt.Key_Up: 'up', Qt.Key_Left: 'left', Qt.Key_Down: 'down', Qt.Key_Right: 'right',
                   Qt.Key_Return: 'enter', Qt.Key_Enter: 'enter', Qt.Key_Backspace: 'back', Qt.Key_Home: 'home'}.get(event.key())
         if action:
             self.navigate(action)

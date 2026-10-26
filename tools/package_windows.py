@@ -9,7 +9,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = '1.4.0'
+VERSION = '1.5.0'
 DOWNLOADS = {
     'ffmpeg.zip': ('https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip',
                    '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'),
