@@ -19,7 +19,9 @@ class CacheTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # macOS exposes temporary files through both /var and /private/var;
+        # project report keys use canonical paths, as they do in the application.
+        self.root = Path(self.temp.name).resolve()
         self.source = self.root/'film.mkv'
         self.source.write_bytes(b'film')
         self.config = {'output': str(self.root)}
