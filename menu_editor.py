@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from disc_menu import (MenuDesign, render_page, pages, import_background, TEXT, BUTTONS,
                        button_id, button_label_key, button_style, page_elements, resolve_action)
 from menu_layout import text_style
+from menu_navigation import nearest_button
 import copy
 import uuid
 from dataclasses import replace
@@ -71,12 +72,14 @@ class MenuEditor(QWidget):
         self.back_button = QPushButton('Назад')
         self.back_button.clicked.connect(lambda: self.press('back'))
         remote.addWidget(self.back_button)
-        for caption, key in [('Вверх', 'up'), ('Вниз', 'down'), ('OK', 'enter'), ('Главное меню', 'home')]:
+        self.remote_buttons = {}
+        for caption, key in [('Вверх', 'up'), ('Вниз', 'down'), ('Влево', 'left'), ('Вправо', 'right'),
+                             ('OK', 'enter'), ('Главное меню', 'home')]:
             button = QPushButton(caption)
             button.setAccessibleName({'up': 'Вверх', 'down': 'Вниз'}.get(key, caption))
             button.clicked.connect(lambda _=False, k=key: self.press(k))
             remote.addWidget(button)
-        remote.addStretch()
+            self.remote_buttons[key] = button
         canvas_layout.addLayout(remote)
         self.fullscreen_button = QPushButton()
         self.fullscreen_button.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/fullscreen.svg')))
@@ -87,6 +90,7 @@ class MenuEditor(QWidget):
         self.fullscreen_button.setAccessibleName('На весь экран')
         self.fullscreen_button.clicked.connect(self.show_fullscreen)
         remote.addWidget(self.fullscreen_button)
+        remote.addStretch()
         self.caption = QLabel('Клик — выбрать · Двойной клик — изменить текст · Del — удалить. Перетаскивайте элементы и маркеры размера; Alt отключает прилипание.')
         self.caption.setWordWrap(True)
         self.caption.setObjectName('hint')
@@ -256,6 +260,7 @@ class MenuEditor(QWidget):
         self.preview.text_committed.connect(self.inline_text)
         self.preview.delete_requested.connect(self.delete_button)
         self.preview.geometry_changed.connect(self.change_geometry)
+        self.preview.navigate.connect(self.press)
         self.magnet.toggled.connect(lambda enabled: setattr(self.preview, 'snapping', enabled))
         from PySide6.QtGui import QShortcut, QKeySequence
         self.fullscreen_shortcut = QShortcut(QKeySequence('F11'), self)
@@ -546,12 +551,17 @@ class MenuEditor(QWidget):
         self.preview.update()
         self.changed.emit()
 
+    def move_focus(self, direction):
+        buttons = sorted((e for e in self.preview.elements if e['button']), key=lambda e: e['index'])
+        rects = [(r.x(), r.y(), r.width(), r.height()) for r in (e['rect'] for e in buttons)]
+        self.focus = nearest_button(rects, self.focus, direction)
+
     def press(self, key):
         self.preview.commit_edit()
         if self.is_catalog():
             _, entries = catalog_page(self.current_design(preview=True), [name for _, name in self.collection_items], self.catalog_page)
-            if key in ('up', 'down') and entries:
-                self.focus = (self.focus + (1 if key == 'down' else -1)) % len(entries)
+            if key in ('up', 'down', 'left', 'right') and entries:
+                self.move_focus(key)
             elif key in ('back', 'home'):
                 self.catalog_page = max(0, self.catalog_page-1) if key == 'back' else 0
                 self.focus = 0
@@ -576,10 +586,10 @@ class MenuEditor(QWidget):
                 self.history.append((self.page, self.focus))
             self.page = self.focus = 0
             self.select_button('')
-        elif key in ('up', 'down'):
+        elif key in ('up', 'down', 'left', 'right'):
             if entries:
-                self.focus = (self.focus + (1 if key == 'down' else -1)) % len(entries)
-        elif entries:
+                self.move_focus(key)
+        elif key in ('enter', 'ok') and entries:
             action = resolve_action(self.current_design(preview=True), entries[self.focus][1])
             kind, value = action.split(':')
             if kind == 'page':

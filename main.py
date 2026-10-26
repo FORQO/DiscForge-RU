@@ -39,8 +39,9 @@ from source_chapters import titles_for_chapters, is_chapter_label
 from gpu_monitor import GpuMonitor
 from collection_titles import movie_title, normalize_names, validate_title
 from bitrate_advisor import recommend as recommend_bitrate, analyze_bitrate, planned_rate, normalize_rates
+from video_treatment import enhancement_for, project_enhancements
 
-VERSION = '1.4.0'
+VERSION = '1.5.0'
 LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
 ICON = Path(__file__).parent / 'assets/brand/diskforge.ico'
 
@@ -167,7 +168,7 @@ class BuildThread(QThread):
             selected_modes = []
             self.timing_changed.emit('Проверка режима обработки', -1)
             for media, chapters in self.jobs:
-                requested = self.processing_mode
+                requested = 'encode' if enhancement_for(self.config, media.path) else self.processing_mode
                 if self.config.get('collection'):
                     from disc_capacity import video_mode
                     requested = video_mode(media, requested, 10**18)
@@ -199,6 +200,8 @@ class BuildThread(QThread):
                 plan['verify'] = max(2, stream_size * (3 if self.as_iso else 1) / 100_000_000)
                 if mode != 'encode':
                     plan['encode'] = max(2,stream_size/100_000_000, media.duration/50 if mode=='video_copy' else 0)
+                elif self.config.get('quiet_rate', 0):
+                    plan['encode'] = max(plan['encode'], media.duration/self.config['quiet_rate'])
                 plans.append(plan)
         except Exception as exc:
             self.message.emit(str(exc))
@@ -236,6 +239,7 @@ class BuildThread(QThread):
                     chapters=chapters,
                     menu=self.menu_for(media, chapters), fast=self.fast, observer=timing, processing_mode=selected_modes[i-1], ffprobe=self.config.get("ffprobe", "ffprobe"),
                     resilient=True, gpu_frames=self.config.get('gpu_frames', True),
+                    enhance=enhancement_for(self.config, media.path), quiet_rate=self.config.get('quiet_rate', 0.0),
                     verification=verification,
                     video_bitrate=self.config.get('video_rates', {}).get(str(Path(media.path).resolve())),
                 )
@@ -267,6 +271,8 @@ class Window(QMainWindow):
         self.chapter_names = {}
         self.movie_names = {}
         self.bitrate_overrides = {}
+        self.quality_records = {}
+        self.video_enhancements = {}
         self._chapter_owner = None
         self.audio_selections: dict[str, list[int]] = {}
         self.audio_modes = {}
@@ -449,6 +455,31 @@ class Window(QMainWindow):
         self.gpu_frames.setChecked(True)
         self.gpu_frames.setToolTip('Перед сборкой проверяется реальный файл. При несовместимости фильтры работают на CPU, кодер — NVENC.')
         form.addRow('', self.gpu_frames)
+        self.enhance_video = QCheckBox('Бережное улучшение выбранного фильма · без AI')
+        self.enhance_video.setToolTip('Только для фильма, выбранного слева. Требует его перекодирования. '
+            'Декодирование и фильтры работают на CPU; NVENC можно оставить включённым. Остальные фильмы не меняются.')
+        form.addRow('', self.enhance_video)
+        self.quiet_mode = QComboBox()
+        for caption, rate in [('Выключен · максимальная скорость', 0.0),
+                              ('Тихий · 0,5× длительности видео', 0.5),
+                              ('Тихий · 1× длительности видео', 1.0),
+                              ('Умеренный · 2× длительности видео', 2.0)]:
+            self.quiet_mode.addItem(caption, rate)
+        self.quiet_mode.setToolTip('Лимит темпа обработки при перекодировании и в пробах. '
+            '1×: час видео обрабатывается не быстрее примерно часа; 0,5× — двух часов. '
+            'Не ограничивает мощность видеокарты и не гарантирует её температуру. Копирование не замедляется.')
+        form.addRow('Тихий режим:', self.quiet_mode)
+        self.enhance_video.toggled.connect(self._treatment_changed)
+        treatment_note = QLabel('Улучшение — только для выбранного фильма; фильтры CPU, кодер выбранный. '
+            'В режиме «Авто» остальные совместимые фильмы копируются без перекодирования. '
+            'Тихий режим общий для всей очереди.')
+        treatment_note.setWordWrap(True)
+        treatment_note.setObjectName('hint')
+        form.addRow('', treatment_note)
+        self.quality_trial_button = QPushButton('Проба качества…')
+        self.quality_trial_button.setToolTip('Закодировать короткую сцену с разными битрейтами, сравнить кадры и применить выбранный битрейт к этому фильму.')
+        self.quality_trial_button.clicked.connect(self._quality_trial)
+        form.addRow('', self.quality_trial_button)
         resume_note = QLabel('Завершённые этапы сохраняются автоматически. После ошибки откройте последнюю сборку и нажмите «Создать Blu-ray».')
         resume_note.setWordWrap(True)
         form.addRow('', resume_note)
@@ -691,7 +722,36 @@ class Window(QMainWindow):
             self._save_config()
 
     def _config(self) -> dict[str, str]:
-        return dict({key: edit.text().strip() for key, edit in self.path_fields.items()}, ui_theme=self.ui_theme)
+        return dict({key: edit.text().strip() for key, edit in self.path_fields.items()}, ui_theme=self.ui_theme,
+                    video_enhancements=dict(self.video_enhancements), quiet_rate=self.quiet_mode.currentData())
+
+    def _requested_mode(self, info):
+        return 'encode' if enhancement_for({'video_enhancements': self.video_enhancements}, info.path) else MODES[self.processing_mode.currentIndex()]
+
+    def _trial_config(self, info):
+        config = self._config()
+        config['enhance'] = enhancement_for(config, info.path)
+        return config
+
+    def _sync_treatment_controls(self):
+        path = self._selected_path()
+        self.enhance_video.blockSignals(True)
+        self.enhance_video.setChecked(bool(path and enhancement_for({'video_enhancements': self.video_enhancements}, path)))
+        self.enhance_video.blockSignals(False)
+        self.enhance_video.setEnabled(path in self.media and self._movies_editable())
+
+    def _treatment_changed(self, *_):
+        path = self._selected_path()
+        if path not in self.media or not self._movies_editable():
+            self._sync_treatment_controls()
+            return
+        path = str(Path(path).resolve())
+        if self.enhance_video.isChecked():
+            self.video_enhancements[path] = True
+        else:
+            self.video_enhancements.pop(path, None)
+        self._update_recommendation()
+        self._update_capacity()
 
     def _save_config(self) -> None:
         try:
@@ -789,10 +849,12 @@ class Window(QMainWindow):
             return
         advice = recommend_bitrate(info, 10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()])
         from disc_capacity import video_mode
-        mode = video_mode(info, MODES[self.processing_mode.currentIndex()], 10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()])
+        mode = video_mode(info, self._requested_mode(info), 10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()])
         if mode == 'encode':
             rate = self._video_rates().get(str(Path(info.path).resolve()))
             current = f'Текущий план: перекодирование {rate/1e6:g} Мбит/с.' if rate else 'Текущий план: прежний расчёт под ёмкость отдельного диска.'
+            if enhancement_for({'video_enhancements': self.video_enhancements}, info.path):
+                current += ' Бережное улучшение включено только для этого фильма.'
         else:
             current = 'Текущий план: копировать видео без изменения битрейта; звук — по выбранным настройкам.'
         self.recommendation.setText(advice.explanation + '\n\n' + current)
@@ -816,6 +878,7 @@ class Window(QMainWindow):
                 for info in self.media.values()}
 
     def _sync_bitrate_controls(self):
+        self._sync_treatment_controls()
         info = self.media.get(self._selected_path())
         path = str(Path(info.path).resolve()) if info else None
         self.custom_bitrate.blockSignals(True)
@@ -826,10 +889,42 @@ class Window(QMainWindow):
         self.custom_bitrate.blockSignals(False)
         self.movie_bitrate.blockSignals(False)
         from disc_capacity import video_mode
-        encodes = info is not None and video_mode(info, MODES[self.processing_mode.currentIndex()],
+        encodes = info is not None and video_mode(info, self._requested_mode(info),
             10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()]) == 'encode'
         self.custom_bitrate.setEnabled(encodes and self._movies_editable())
         self.movie_bitrate.setEnabled(encodes and self._movies_editable() and self.custom_bitrate.isChecked())
+        self.quality_trial_button.setEnabled(info is not None and not info.is_hdr and self._movies_editable())
+
+    def _quality_trial(self):
+        info = self.media.get(self._selected_path())
+        if not info or not self._movies_editable():
+            return
+        from quality_dialog import QualityDialog
+        from disc_capacity import video_mode
+        copying = video_mode(info, self._requested_mode(info),
+            10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()]) != 'encode'
+        rate = planned_rate(info, self.bitrate_policy.currentData(), self.bitrate_overrides, self.collection_bitrate.value()*1_000_000)
+        dialog = QualityDialog(info, self._trial_config(info), rate, self.encoder.currentIndex(),
+                               self.encode_speed.currentIndex() == 0, self.gpu_frames.isChecked(), copying, self,
+                               saved_record=self.quality_records.get(str(Path(info.path).resolve())))
+        self.quality_dialog = dialog
+        try:
+            if dialog.exec() == QualityDialog.Accepted and dialog.selected_rate is not None:
+                # The dialog is modal: source identity and encoder controls cannot
+                # change behind it. Bind the result to the original film, not a row.
+                if self.media.get(info.path) != info:
+                    self._message('Фильм изменился. Повторите пробу перед применением.')
+                    return
+                self.bitrate_overrides[str(Path(info.path).resolve())] = dialog.selected_rate
+                self._bitrate_settings_changed()
+                self._message(f'Проба качества: {info.name} — {dialog.selected_rate/1e6:g} Мбит/с для перекодирования.' +
+                              (' Сейчас выбран режим копирования; исходное видео сохраняется без потерь.' if copying else ''))
+        finally:
+            if isinstance(dialog.saved_record, dict):
+                self.quality_records[str(Path(info.path).resolve())] = dialog.saved_record
+                self._message('Результаты проб сохранены в текущем проекте. Сохраните проект, чтобы открыть их позже.')
+            self.quality_dialog = None
+            dialog.deleteLater()
 
     def _bitrate_settings_changed(self, *_):
         self._update_recommendation()
@@ -857,7 +952,8 @@ class Window(QMainWindow):
                 continue
             advice = recommend_bitrate(info, 10**18 if common else CAPACITIES[self.profile.currentText()])
             budget = estimate([(info, self.chapters.get(path, [0.]))], self.profile.currentText(), MODES[self.processing_mode.currentIndex()],
-                              collection=common, bitrate=self.collection_bitrate.value()*1_000_000, rates=rates, menu=False)
+                              collection=common, bitrate=self.collection_bitrate.value()*1_000_000, rates=rates, menu=False,
+                              enhancements=self.video_enhancements)
             mode = budget.titles[0][2]
             name = movie_title(path, self.movie_names)
             rate = rates.get(str(Path(path).resolve()))
@@ -867,7 +963,8 @@ class Window(QMainWindow):
             target = f'{rate/1e6:g} Мбит/с' if rate else 'По ёмкости'
             if mode != 'encode':
                 target = 'Исходное'
-            rows.append((path, name, source, 'Перекодирование' if mode == 'encode' else 'Копия видео', target,
+            treatment = 'Улучшение + перекодирование' if enhancement_for({'video_enhancements': self.video_enhancements}, path) else 'Перекодирование' if mode == 'encode' else 'Копия видео'
+            rows.append((path, name, source, treatment, target,
                          f'{(budget.video+budget.audio+budget.subtitles)/1e9:.2f}', advice.explanation))
         if getattr(self, '_bitrate_rows', None) == rows:
             return
@@ -1150,6 +1247,8 @@ class Window(QMainWindow):
         self.chapter_names.pop(path, None)
         self.movie_names.pop(path, None)
         self.bitrate_overrides.pop(str(Path(path).resolve()), None)
+        self.quality_records.pop(str(Path(path).resolve()), None)
+        self.video_enhancements.pop(str(Path(path).resolve()), None)
         self.audio_selections.pop(path, None)
         self.subtitle_selections.pop(path, None)
         self.subtitle_panel.external.pop(path, None)
@@ -1203,7 +1302,8 @@ class Window(QMainWindow):
         groups = [jobs] if common else [[job] for job in jobs]
         return [estimate(group, self.profile.currentText(), MODES[self.processing_mode.currentIndex()],
                          collection=common, bitrate=self.collection_bitrate.value()*1_000_000,
-                         menu=self.menu_editor.enabled.isChecked(), rates=self._video_rates()) for group in groups]
+                         menu=self.menu_editor.enabled.isChecked(), rates=self._video_rates(),
+                         enhancements=self.video_enhancements) for group in groups]
 
     def _update_capacity(self):
         if not hasattr(self, 'menu_editor'):
@@ -1235,11 +1335,12 @@ class Window(QMainWindow):
 
     def _build_video_description(self, info, config):
         from disc_capacity import video_mode
-        mode = video_mode(info, MODES[self.processing_mode.currentIndex()], 10**18 if config['collection'] else CAPACITIES[self.profile.currentText()])
+        mode = video_mode(info, self._requested_mode(info), 10**18 if config['collection'] else CAPACITIES[self.profile.currentText()])
         if mode != 'encode':
             return 'копирование видео без потерь; звук по настройкам'
         rate = config.get('video_rates', {}).get(str(Path(info.path).resolve()))
-        return f'перекодирование видео {rate/1e6:g} Мбит/с; возможны потери качества' if rate else 'перекодирование видео с расчётом под ёмкость диска'
+        prefix = 'бережное улучшение + ' if enhancement_for(config, info.path) else ''
+        return prefix + (f'перекодирование видео {rate/1e6:g} Мбит/с; возможны потери качества' if rate else 'перекодирование видео с расчётом под ёмкость диска')
 
     def start_build(self) -> None:
         if not self.media:
@@ -1387,6 +1488,8 @@ class Window(QMainWindow):
                 'files': [self.movies.item(i).data(Qt.UserRole) for i in range(self.movies.count())],
                 'movie_names': dict(self.movie_names),
                 'bitrate_policy': self.bitrate_policy.currentData(), 'bitrate_overrides': dict(self.bitrate_overrides),
+                'quality_trials': dict(self.quality_records),
+                'video_enhancements': dict(self.video_enhancements), 'quiet_rate': self.quiet_mode.currentData(),
                 'subtitles': self.subtitle_selections, 'audio': self.audio_selections, 'audio_modes': self.audio_modes, 'gpu_frames': self.gpu_frames.isChecked(), 'chapters': self.chapters, 'chapter_names': self.chapter_names, 'profile': self.profile.currentText(),
                 'collection': self.disc_mode.currentIndex() == 0, 'collection_bitrate': self.collection_bitrate.value(),
                 'encoder': self.encoder.currentIndex(), 'encode_speed': self.encode_speed.currentIndex(), 'processing_mode': MODES[self.processing_mode.currentIndex()], 'output': self.output_folder.text().strip(), 'as_iso': self.output_mode.currentIndex() == 0}
@@ -1482,6 +1585,9 @@ class Window(QMainWindow):
                     loaded_names[normalized]['titles'] = checked.chapter_titles
             loaded_movie_names = normalize_names(data.get('movie_names', {}), normalized_paths)
             loaded_rates = normalize_rates(data.get('bitrate_overrides', {}), normalized_paths)
+            loaded_enhancements = project_enhancements(data, normalized_paths)
+            from quality_cache import load_records
+            loaded_quality, skipped_quality = load_records(data.get('quality_trials'), normalized_paths)
             loaded_policy = data.get('bitrate_policy', 'manual')
             if loaded_policy not in ('auto', 'manual'):
                 raise ValueError('Неизвестный режим подбора битрейта.')
@@ -1495,10 +1601,17 @@ class Window(QMainWindow):
             self.collection_bitrate.setValue(rate if type(rate) is int and 5 <= rate <= 28 else 12)
             self.bitrate_policy.setCurrentIndex(self.bitrate_policy.findData(loaded_policy))
             self.bitrate_overrides.update(loaded_rates)
+            self.quality_records.update(loaded_quality)
+            self.video_enhancements.update(loaded_enhancements)
             self.encoder.setCurrentIndex(data.get('encoder') if data.get('encoder') in (0, 1, 2) else 2)
             self.encode_speed.setCurrentIndex(1 if data.get('encode_speed') == 1 else 0)
             mode = data.get('processing_mode', 'auto')
+            if 'video_enhancements' not in data and data.get('enhance') is True:
+                mode = 'auto'  # Previous global improvement forced encode; per-film flags now do that.
             self.processing_mode.setCurrentIndex(MODES.index(mode) if mode in MODES else 0)
+            from video_treatment import QUIET_RATES
+            quiet = data.get('quiet_rate', 0.0)
+            self.quiet_mode.setCurrentIndex(self.quiet_mode.findData(quiet) if type(quiet) in (int, float) and quiet in QUIET_RATES else 0)
             if isinstance(data.get('output'), str):
                 self.output_folder.setText(data['output'])
             self.output_mode.setCurrentIndex(0 if data.get('as_iso', True) else 1)
@@ -1511,6 +1624,8 @@ class Window(QMainWindow):
             self.subtitle_selections.update(loaded_subtitles)
             self._queue_scan(normalized_paths)
             self._message('Проект открыт: ' + str(path))
+            if skipped_quality:
+                self._message(f'Повреждённые отчёты проб пропущены: {skipped_quality}. Остальной проект загружен.')
         except (OSError, ValueError, TypeError, OverflowError, DiscForgeError) as exc:
             QMessageBox.warning(self, 'Ошибка проекта', str(exc))
 
@@ -1527,12 +1642,16 @@ class Window(QMainWindow):
         self.movie_names.clear()
         self.bitrate_overrides.clear()
         self.audio_selections.clear()
+        self.quality_records.clear()
+        self.video_enhancements.clear()
         self.audio_modes.clear()
         self.subtitle_selections.clear()
         self.subtitle_panel.external.clear()
         self.chapter_list.clear()
         self.menu_editor.apply_design(MenuDesign('Моя коллекция Blu-ray'))
         self.menu_editor.enabled.setChecked(True)
+        self.enhance_video.setChecked(False)
+        self.quiet_mode.setCurrentIndex(0)
         self.processing_mode.setCurrentIndex(0)
         self.disc_mode.setCurrentIndex(0)
         self.collection_bitrate.setValue(12)
@@ -1558,6 +1677,16 @@ class Window(QMainWindow):
             event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:
+        trial = getattr(self, 'quality_dialog', None)
+        if trial is not None:
+            # A modal dialog can still be open when the parent receives a close
+            # request. Never destroy a child QThread while FFmpeg is running.
+            if not getattr(trial, '_parent_closing', False):
+                trial._parent_closing = True
+                trial.finished.connect(lambda _=0: QTimer.singleShot(0, self.close))
+            trial.reject()
+            event.ignore()
+            return
         if self.build_thread and self.build_thread.isRunning():
             if not self._close_after_build and QMessageBox.question(self, 'Сохранить этапы и выйти?',
                     'Текущий незавершённый этап будет остановлен. Готовые этапы и проект останутся в выходной папке. '
@@ -1672,6 +1801,26 @@ def main() -> int:
         checks['collection_builder'] = w.disc_mode.count() == 2
         checks['bitrate_advisor'] = w.bitrate_policy.currentData() == 'auto' and w.bitrate_table.columnCount() == 5
         checks['individual_bitrate'] = w.movie_bitrate.minimum() == 5 and w.movie_bitrate.maximum() == 28
+        from quality_dialog import QualityDialog
+        trial = QualityDialog(MediaInfo('self-test.mkv', 60, 1, 'h264', 1920, 1080,
+                                        '24000/1001', '', '', 0, 0, 0), w._config(), 8_000_000, parent=w)
+        checks['quality_trial'] = (len(trial.rates) == 3 and trial.table.columnCount() == 7
+                                   and not trial.apply_button.isEnabled() and not w.quality_trial_button.isEnabled())
+        checks['quality_metrics'] = hasattr(trial, 'advice_label') and not trial.pick_recommended.isEnabled()
+        checks['quality_scenes'] = (trial._plan().automatic and trial.scene_count.value() == 3
+                                    and not trial.start.isEnabled() and not trial.weak_scene.isEnabled())
+        checks['quality_search'] = trial.retry_rates.isChecked() and trial._plan().retry_rates
+        checks['quality_project'] = hasattr(trial, 'saved_record') and 'quality_trials' in w._project_data()
+        checks['remote_four_arrows'] = all(key in w.menu_editor.remote_buttons for key in ('up', 'down', 'left', 'right'))
+        from video_treatment import frame_filter
+        checks['gentle_video'] = hasattr(w, 'enhance_video') and 'hqdn3d=' in frame_filter()
+        checks['film_enhancement'] = 'video_enhancements' in w._project_data() and not w.video_enhancements
+        checks['quiet_mode'] = w.quiet_mode.count() == 4 and w._config()['quiet_rate'] == 0
+        checks['before_after'] = trial.comparison_mode.count() == 3
+        from menu_navigation import nearest_button
+        checks['spatial_navigation'] = nearest_button([(0, 0, 100, 100), (200, 0, 100, 100)], 0, 'right') == 1 and nearest_button([(0, 0, 100, 100)], 0, 'down') == 0
+        trial.reject()
+        trial.deleteLater()
         checks['collection_titles'] = w.movie_title_edit.maxLength() == 80
         checks['collection_order'] = w.movies.dragDropMode() == QListWidget.InternalMove and w.movie_up is not None
         checks['collection_preview'] = hasattr(w.menu_editor, 'context_selector') and callable(w.menu_editor.show_catalog)

@@ -44,16 +44,16 @@ def theme_background(theme):
     return image
 
 TEXT = {
-    'ru': {'subtitles': 'Субтитры', 'sub:0': 'Выключить', 'sub_previous': 'Предыдущие субтитры', 'sub_next': 'Следующие субтитры', 'sub_back': 'Назад', 'play': 'Смотреть фильм', 'chapters': 'Выбор главы', 'audio': 'Аудио', 'audio_previous': 'Предыдущие дорожки', 'audio_next': 'Следующие дорожки', 'audio_back': 'Назад', 'audio_hint': 'Вверх / Вниз — дорожка     OK — выбрать     Back — вернуться',
+    'ru': {'subtitles': 'Субтитры', 'sub:0': 'Выключить', 'sub_previous': 'Предыдущие субтитры', 'sub_next': 'Следующие субтитры', 'sub_back': 'Назад', 'play': 'Смотреть фильм', 'chapters': 'Выбор главы', 'audio': 'Аудио', 'audio_previous': 'Предыдущие дорожки', 'audio_next': 'Следующие дорожки', 'audio_back': 'Назад', 'audio_hint': 'Стрелки — дорожка     OK — выбрать     Back — вернуться',
            'previous': '←  Предыдущие главы', 'next': 'Следующие главы  →',
            'home': '←  Главное меню', 'subtitle': 'Избранное в вашей коллекции',
            'chapter': 'Глава', 'of': 'из', 'brand': 'B L U - R A Y',
-           'hint': 'Вверх / Вниз — выбор     OK — открыть     Back — главное меню'},
-    'en': {'subtitles': 'Subtitles', 'sub:0': 'Off', 'sub_previous': 'Previous subtitles', 'sub_next': 'Next subtitles', 'sub_back': 'Back', 'play': 'Play movie', 'chapters': 'Scene selection', 'audio': 'Audio', 'audio_previous': 'Previous tracks', 'audio_next': 'Next tracks', 'audio_back': 'Back', 'audio_hint': 'Up / Down  Track     OK  Select     Back  Return',
+           'hint': 'Стрелки — выбор     OK — открыть     Back — главное меню'},
+    'en': {'subtitles': 'Subtitles', 'sub:0': 'Off', 'sub_previous': 'Previous subtitles', 'sub_next': 'Next subtitles', 'sub_back': 'Back', 'play': 'Play movie', 'chapters': 'Scene selection', 'audio': 'Audio', 'audio_previous': 'Previous tracks', 'audio_next': 'Next tracks', 'audio_back': 'Back', 'audio_hint': 'Arrows  Track     OK  Select     Back  Return',
            'previous': '←  Previous scenes', 'next': 'Next scenes  →',
            'home': '←  Main menu', 'subtitle': 'A film from your collection',
            'chapter': 'Chapter', 'of': 'of', 'brand': 'B L U - R A Y',
-           'hint': 'Up / Down  Select     OK  Open     Pop-up Menu / Back  Main menu'},
+           'hint': 'Arrows  Select     OK  Open     Pop-up Menu / Back  Main menu'},
 }
 
 

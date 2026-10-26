@@ -51,14 +51,17 @@ def video_mode(info, requested, capacity):
     return info.copy_report.recommendation(info, capacity)[0]
 
 
-def estimate(items, profile, mode='auto', *, collection=False, bitrate=12_000_000, menu=True, rates=None):
+def estimate(items, profile, mode='auto', *, collection=False, bitrate=12_000_000, menu=True, rates=None,
+             enhancements=None):
     from core import CAPACITIES, bitrate_plan
     cap = CAPACITIES[profile]
     video = audio = subs = 0
     rows = []
     pages = 1
     for info, chapters in items:
-        selected = video_mode(info, mode, 10**18 if collection else cap)
+        from video_treatment import enhancement_for
+        requested = 'encode' if enhancement_for({'video_enhancements': enhancements or {}}, info.path) else mode
+        selected = video_mode(info, requested, 10**18 if collection else cap)
         if selected == 'encode':
             rate = (rates or {}).get(str(Path(info.path).resolve()))
             if rate is None:

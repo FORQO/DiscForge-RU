@@ -156,10 +156,15 @@ def bitrate_plan(duration: float, profile: str, has_audio: bool) -> int:
     return video_bps
 
 
-def make_video_command(ffmpeg: str, src: str, dst: str, bitrate: int, nvenc: bool, fast: bool = False) -> list[str]:
+def make_video_command(ffmpeg: str, src: str, dst: str, bitrate: int, nvenc: bool, fast: bool = False,
+                       *, enhance=False, quiet_rate=0.0) -> list[str]:
     # 1080p23.976 H.264/8-bit. 25/30/50/60 fps files have their frame rate converted.
     vf = ('fps=24000/1001,scale=1920:1080:force_original_aspect_ratio=decrease,'
           'pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1')
+    from video_treatment import validate, frame_filter, pace
+    validate(enhance, quiet_rate)
+    if enhance:
+        vf = frame_filter()
     cmd = [ffmpeg, '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1',
            '-i', src, '-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-pix_fmt', 'yuv420p',
            '-r', '24000/1001', '-c:v', 'h264_nvenc' if nvenc else 'libx264',
@@ -171,7 +176,7 @@ def make_video_command(ffmpeg: str, src: str, dst: str, bitrate: int, nvenc: boo
     else:
         cmd += ['-preset', 'p3' if fast else 'p5', '-bluray-compat', '1']
     cmd += ['-f', 'h264', dst]
-    return cmd
+    return pace(cmd, quiet_rate)
 
 
 def make_audio_command(ffmpeg: str, src: str, dst: str, channels: int) -> list[str]:
@@ -180,8 +185,8 @@ def make_audio_command(ffmpeg: str, src: str, dst: str, channels: int) -> list[s
             '-ar', '48000', '-ac', '6' if channels > 2 else '2', '-f', 'ac3', dst]
 
 
-def make_encode_command(ffmpeg, info, video, audio, bitrate, nvenc, fast=False):
-    cmd = make_video_command(ffmpeg, info.path, str(video), bitrate, nvenc, fast)
+def make_encode_command(ffmpeg, info, video, audio, bitrate, nvenc, fast=False, *, enhance=False, quiet_rate=0.0):
+    cmd = make_video_command(ffmpeg, info.path, str(video), bitrate, nvenc, fast, enhance=enhance, quiet_rate=quiet_rate)
     tracks = audio_outputs(info, audio)
     cmd[cmd.index('-maxrate')+1] = str(min(30_000_000, 44_000_000-640_000*len(tracks)))
     for target, stream in tracks:
@@ -339,14 +344,14 @@ def _require_binary(binary: str, label: str) -> None:
 
 def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                 duration: float, cancel: threading.Event,
-                log: Callable[[str], None], progress: Callable[[int], None]) -> None:
+                log: Callable[[str], None], progress: Callable[[int], None], *, cwd=None) -> None:
     log(f'{stage}...')
     if cancel.is_set():
         raise DiscForgeError('Операция отменена пользователем.')
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors='replace', bufsize=1, creationflags=creationflags)
+                                text=True, errors='replace', bufsize=1, creationflags=creationflags, cwd=cwd)
     except OSError as e:
         raise DiscForgeError(f'Не удаётся запустить {Path(cmd[0]).name}: {e}') from e
     errors = []
@@ -467,11 +472,18 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                    progress: Callable[[int], None],
                    chapters: Sequence[float] | None = None,
                    menu: MenuDesign | None = None, *, fast: bool = False, observer=None, processing_mode='encode', ffprobe='ffprobe',
-                   resilient=False, gpu_frames=True, verification=None, video_bitrate=None, keep_authored=False) -> Path:
+                   resilient=False, gpu_frames=True, verification=None, video_bitrate=None, keep_authored=False,
+                   enhance=False, quiet_rate=0.0) -> Path:
     """Encode to BD-oriented H.264 + AC3, then author BDMV directory or image.
 
     This is the first compatible-oriented implementation, NOT independently verified BD spec compliance.
     """
+    from video_treatment import validate as validate_treatment, describe as describe_treatment, VERSION as TREATMENT_VERSION
+    validate_treatment(enhance, quiet_rate)
+    if enhance:
+        if processing_mode in ('copy', 'video_copy'):
+            raise DiscForgeError('Улучшение меняет кадры и требует перекодирования. Выберите режим перекодирования или отключите улучшение.')
+        processing_mode = 'encode'
     if not Path(info.path).is_file():
         raise DiscForgeError('Исходный файл не найден.')
     if info.selected_audio is not None:
@@ -608,11 +620,15 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         report('encode', 0)
         if not copying:
             log('Видеокодер: ' + ('NVIDIA NVENC' if nvenc else 'CPU x264') + (' · быстрый режим' if fast else ' · сбалансированный режим'))
+            describe_treatment(enhance, quiet_rate, log)
         def encoded(value):
             progress(value)
             report('encode', value/90)
         encode_key = [source_key, tools_key, selected_mode, bitrate, nvenc, fast, gpu_frames, info.selected_audio,
                       info.audio_modes, [(str(p.name), s) for p, s in audio], 1]
+        if enhance:
+            encode_key.append(TREATMENT_VERSION)
+        # Pacing changes time only; completed streams remain reusable.
         encoded_paths = [video, *(p for p, _ in audio)]
         from truehd_audio import paths as truehd_paths, interleave
         for p, s in audio:
@@ -622,11 +638,11 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         reused_encode = cache.reusable('видео и аудио', encode_key, encoded_paths)
         if not reused_encode:
             cache.begin('видео и аудио')
-            command = make_copy_command(ffmpeg, info, video, audio if not resilient else [], selected_mode == 'video_copy') if copying else make_encode_command(ffmpeg, info, video, audio if not resilient else [], bitrate, nvenc, fast)
+            command = make_copy_command(ffmpeg, info, video, audio if not resilient else [], selected_mode == 'video_copy') if copying else make_encode_command(ffmpeg, info, video, audio if not resilient else [], bitrate, nvenc, fast, enhance=enhance, quiet_rate=quiet_rate)
             if resilient:
                 if not copying:
                     command[command.index('-maxrate')+1] = str(min(30_000_000, 44_000_000-sound_bps))
-                if nvenc and gpu_frames and not copying:
+                if nvenc and gpu_frames and not copying and not enhance:
                     from gpu_pipeline import supported, cuda_command
                     if supported(info, ffmpeg, cancel, log, run_command, make_video_command):
                         command = cuda_command(command)

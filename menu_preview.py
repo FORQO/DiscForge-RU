@@ -10,6 +10,7 @@ class MenuPreview(QWidget):
     text_committed = Signal(str, str)
     delete_requested = Signal()
     geometry_changed = Signal(str, list, int)
+    navigate = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -173,6 +174,12 @@ class MenuPreview(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete and self.selection:
             self.delete_requested.emit()
+            return
+        action = {Qt.Key_Up: 'up', Qt.Key_Down: 'down', Qt.Key_Left: 'left', Qt.Key_Right: 'right',
+                  Qt.Key_Return: 'enter', Qt.Key_Enter: 'enter', Qt.Key_Backspace: 'back', Qt.Key_Home: 'home'}.get(event.key())
+        if action:
+            self.navigate.emit(action)
+            event.accept()
             return
         super().keyPressEvent(event)
 

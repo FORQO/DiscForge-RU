@@ -71,6 +71,8 @@ def merge_menu(root, sources, design, titles):
                 i = element['index']
                 prefix = f'page.{page}.{i}'
                 props[prefix] = entries[i][1]
+                for field, value in zip(('x', 'y', 'w', 'h'), element['rect']):
+                    props[prefix+'.'+field] = str(value)
                 patch, x, y = focus_patch(base, element)
                 name = f'focus{page}_{i}.png'
                 out.writestr(name, _png(patch))
@@ -167,6 +169,8 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
     modes = modes or ['auto']*len(jobs)
     if len(modes) != len(jobs) or any(mode not in ('auto', 'copy', 'video_copy', 'encode') for mode in modes):
         raise ValueError('Режим обработки должен быть задан для каждого фильма.')
+    from video_treatment import enhancement_for
+    modes = ['encode' if enhancement_for(config, media.path) else mode for (media, _), mode in zip(jobs, modes)]
     budgets = [estimate([job], profile, mode, collection=True, bitrate=bitrate, rates=rates) for job, mode in zip(jobs, modes)]
     from disc_capacity import Budget
     budget = Budget(CAPACITIES[profile], *(sum(getattr(b, field) for b in budgets) for field in ('video', 'audio', 'subtitles', 'overhead')), tuple(row for b in budgets for row in b.titles))
@@ -189,6 +193,7 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
             cancel, log, lambda v: progress((i+v/100)*85/len(jobs)), chapters=chapters, menu=film_design,
             fast=fast, processing_mode=mode, ffprobe=config.get('ffprobe', 'ffprobe'), resilient=True,
             gpu_frames=config.get('gpu_frames', True), verification=verification, video_bitrate=rates.get(str(Path(media.path).resolve()), bitrate), keep_authored=True,
+            enhance=enhancement_for(config, media.path), quiet_rate=config.get('quiet_rate', 0.0),
             observer=(lambda stage, fraction: timing(f'Фильм {i+1}/{len(jobs)} · {stage}', -1)) if timing else None)
         sources.append(source)
         reports.append(json.loads((source.parent/'collection-title-verification.json').read_text(encoding='utf-8')))
