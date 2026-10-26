@@ -1,12 +1,16 @@
-This application build uses unmodified Qt for Python / PySide6 Essentials
-and Shiboken 6.8.3, dynamically loaded from _internal/PySide6 and _internal/shiboken6.
+The Windows 1.5.0 portable build uses unmodified Qt for Python / PySide6 Essentials
+and Shiboken 6.12.0, dynamically loaded from _internal/PySide6 and _internal/shiboken6.
 Qt and these bindings are available under the GNU Lesser General Public License
 version 3. The LGPL and underlying GPL texts are provided in this directory.
 
-Qt source: https://code.qt.io/cgit/qt/qtbase.git/tree/?h=v6.8.3
-Qt for Python source: https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.8.3
-Upstream source downloads: https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.8.3-src/
+Qt source: https://code.qt.io/cgit/qt/qtbase.git/tree/?h=v6.12.0
+Qt for Python source: https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.12.0
+Upstream source downloads: https://download.qt.io/official_releases/QtForPython/
+
+Source installations on Python 3.11 use Qt for Python / PySide6 Essentials and
+Shiboken 6.8.3 as specified in requirements.txt. Corresponding source:
+https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.8.3
 
 DiscForge imposes no restriction on replacing these libraries with compatible
 modified versions, or reverse engineering for debugging those modifications.
-Application source and packaging commands: https://github.com/FORQO/DiscForge-RU/tree/v1.0.0
+Application source and packaging commands: https://github.com/FORQO/DiscForge-RU/tree/v1.5.0
