@@ -57,6 +57,10 @@ jobs:
       - name: Stage Windows assets
         shell: bash
         run: |
+          cp build/studio-journey/journey.json release/journey-Windows.json
+          cp build/studio-journey/vlc-single-iso.json release/vlc-single-Windows.json
+          cp build/studio-journey/vlc-collection-iso.json release/vlc-collection-Windows.json
+          cp docs/RELEASE_STUDIO_1.5.1.md release/RELEASE_STUDIO_1.5.1.md
           mv release/verification.json release/verification-Windows.json
           rm release/SHA256SUMS.txt
           printf '%s' "$GITHUB_SHA" > release/source-Windows.txt
@@ -102,6 +106,7 @@ jobs:
           mkdir release
           cp dist/DiskForge-Studio-1.5.1-macOS-arm64.zip release/
           cp build/macos-self-test.json release/verification-macOS.json
+          cp build/studio-journey/journey.json release/journey-macOS.json
           cp docs/MACOS.md release/README-macOS.md
           printf '%s' "$GITHUB_SHA" > release/source-macOS.txt
       - uses: actions/upload-artifact@v7
