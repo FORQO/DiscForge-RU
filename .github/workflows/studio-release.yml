@@ -1,17 +1,19 @@
-name: Studio unified release
+name: Studio 1.5.1 qualification
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: studio-v1.5.0-release
+  group: studio-v1.5.1-release
   cancel-in-progress: false
 jobs:
   tests:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     uses: ./.github/workflows/tests.yml
   windows:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +38,22 @@ jobs:
         env:
           PYTHONUTF8: '1'
         run: python tools/package_windows.py --app dist/DiscForge_RU --output release
+      - name: Install VLC for real menu playback
+        run: choco install vlc --no-progress -y
+      - name: Full Windows Studio journey
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONUTF8: '1'
+        run: python tools/studio_journey.py --ffmpeg "$PWD/dist/DiscForge_RU/tools/ffmpeg.exe" --ffprobe "$PWD/dist/DiscForge_RU/tools/ffprobe.exe" --tsmuxer "$PWD/dist/DiscForge_RU/tools/tsMuxeR.exe" --java "$PWD/dist/DiscForge_RU/runtime/java" --output "$PWD/build/studio-journey"
+      - name: Keep Windows journey diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: QA-Windows
+          path: |
+            build/studio-journey/*.json
+            build/studio-journey/*.png
+            build/studio-journey/*.log
       - name: Stage Windows assets
         shell: bash
         run: |
@@ -48,7 +66,7 @@ jobs:
           path: release/
           if-no-files-found: error
   macos:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -68,10 +86,21 @@ jobs:
         run: .venv/bin/python -m unittest discover -s tests -v
       - name: Build and verify packaged app
         run: bash build_app_macos.sh
+      - name: Full macOS Studio journey
+        run: .venv/bin/python tools/studio_journey.py --ffmpeg "$PWD/dist/DiskForge.app/Contents/Resources/bin/ffmpeg" --ffprobe "$PWD/dist/DiskForge.app/Contents/Resources/bin/ffprobe" --tsmuxer "$PWD/bin/tsMuxeR" --output "$PWD/build/studio-journey"
+      - name: Keep macOS journey diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: QA-macOS
+          path: |
+            build/studio-journey/*.json
+            build/studio-journey/*.png
+            build/studio-journey/*.log
       - name: Stage macOS assets
         run: |
           mkdir release
-          cp dist/DiskForge-Studio-1.5.0-macOS-arm64.zip release/
+          cp dist/DiskForge-Studio-1.5.1-macOS-arm64.zip release/
           cp build/macos-self-test.json release/verification-macOS.json
           cp docs/MACOS.md release/README-macOS.md
           printf '%s' "$GITHUB_SHA" > release/source-macOS.txt
@@ -81,6 +110,7 @@ jobs:
           path: release/
           if-no-files-found: error
   publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: [tests, windows, macos]
     runs-on: ubuntu-latest
     permissions:
@@ -96,9 +126,8 @@ jobs:
           path: release
       - name: Verify common source and prepare checksums
         run: python tools/prepare_studio_release.py release
-      - name: Publish both platforms together
+      - name: Prepare draft with both platforms
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.5.0-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.0 — Windows и macOS" --notes-file docs/RELEASE_STUDIO_1.5.0.md --draft
-          gh release edit v1.5.0-studio --draft=false --latest
+          gh release create v1.5.1-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — Windows и macOS" --notes-file docs/RELEASE_STUDIO_1.5.1.md --draft

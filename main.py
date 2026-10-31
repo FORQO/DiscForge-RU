@@ -41,7 +41,7 @@ from collection_titles import movie_title, normalize_names, validate_title
 from bitrate_advisor import recommend as recommend_bitrate, analyze_bitrate, planned_rate, normalize_rates
 from video_treatment import enhancement_for, project_enhancements
 
-VERSION = '1.5.0'
+VERSION = '1.5.1'
 LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
 ICON = Path(__file__).parent / 'assets/brand/diskforge.ico'
 

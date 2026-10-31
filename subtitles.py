@@ -143,12 +143,21 @@ def prepare_subtitles(info, work, ffmpeg, cancel, log, runner):
 
 def meta_lines(outputs, fps, width, height):
     result = ''
-    font = 'Arial' if sys.platform == 'win32' else 'OpenSans' if sys.platform == 'darwin' else 'FreeSans'
     for target, t in outputs:
         path = target.resolve().as_posix()
         if any(c in path for c in '\r\n"'): raise ValueError('Недопустимый путь субтитров.')
         result += f'{"S_TEXT/UTF8" if target.suffix == ".srt" else "S_HDMV/PGS"}, "{path}", lang={t["language"]}, fps={fps}, video-width={width}, video-height={height}'
         if target.suffix == '.srt':
+            # FreeType tsMuxer accepts a TTF path; do not depend on installed fonts.
+            font = 'Arial'
+            if sys.platform != 'win32':
+                root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+                bundled = root / 'assets/fonts/NotoSans-Regular.ttf'
+                if not bundled.is_file():
+                    raise ValueError('Не найден комплектный шрифт субтитров: ' + str(bundled))
+                font = bundled.resolve().as_posix()
+                if any(c in font for c in '\r\n"'):
+                    raise ValueError('Недопустимый путь шрифта субтитров.')
             result += f', font-name="{font}", font-size=48, font-color=0xffffffff, font-border=2, bottom-offset=60'
         result += '\n'
     return result
