@@ -1,0 +1,104 @@
+name: Studio unified release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-v1.5.0-release
+  cancel-in-progress: false
+jobs:
+  tests:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/tests.yml
+  windows:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Windows regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONUTF8: '1'
+        run: python -m unittest discover -s tests -v
+      - name: Build Studio
+        run: python -m PyInstaller --noconfirm --clean --windowed --icon assets/brand/diskforge.ico --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
+      - uses: actions/cache@v6
+        with:
+          path: build/dependencies
+          key: windows-tools-ffmpeg902-tsmuxer270-java8u504
+      - name: Bundle dependencies and verify packaged app
+        env:
+          PYTHONUTF8: '1'
+        run: python tools/package_windows.py --app dist/DiscForge_RU --output release
+      - name: Stage Windows assets
+        shell: bash
+        run: |
+          mv release/verification.json release/verification-Windows.json
+          rm release/SHA256SUMS.txt
+          printf '%s' "$GITHUB_SHA" > release/source-Windows.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Studio-Windows
+          path: release/
+          if-no-files-found: error
+  macos:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: brew install ffmpeg
+      - name: Prepare Python
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+      - name: macOS regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv/bin/python -m unittest discover -s tests -v
+      - name: Build and verify packaged app
+        run: bash build_app_macos.sh
+      - name: Stage macOS assets
+        run: |
+          mkdir release
+          cp dist/DiskForge-Studio-1.5.0-macOS-arm64.zip release/
+          cp build/macos-self-test.json release/verification-macOS.json
+          cp docs/MACOS.md release/README-macOS.md
+          printf '%s' "$GITHUB_SHA" > release/source-macOS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Studio-macOS
+          path: release/
+          if-no-files-found: error
+  publish:
+    needs: [tests, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: Studio-*
+          merge-multiple: true
+          path: release
+      - name: Verify common source and prepare checksums
+        run: python tools/prepare_studio_release.py release
+      - name: Publish both platforms together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.5.0-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.0 — Windows и macOS" --notes-file docs/RELEASE_STUDIO_1.5.0.md --draft
+          gh release edit v1.5.0-studio --draft=false --latest

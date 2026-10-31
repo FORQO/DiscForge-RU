@@ -14,8 +14,8 @@ Python, Qt, FFmpeg, ffprobe, tsMuxer и Java входят в комплект. V
 
 Сохранены создание BD25/BD50, коллекции фильмов, звук и субтитры, главы, редактирование меню, пробы качества и VMAF/SSIM, улучшение отдельных фильмов, NVDEC/CUDA/NVENC при наличии совместимой NVIDIA, возобновление сборки и проверки ISO.
 
-Публикация выполняется после полного набора тестов Windows и Linux/Python 3.11–3.13, сборки EXE и самопроверки упакованного приложения. В `verification.json` — результаты самопроверки, в `SHA256SUMS.txt` — контрольная сумма ZIP.
+Публикация выполняется после полного набора тестов Windows и Linux/Python 3.11–3.13, сборки EXE и самопроверки упакованного приложения. В `verification-Windows.json` общего релиза (локально — `verification.json`) — результаты самопроверки, в `SHA256SUMS.txt` — контрольная сумма ZIP.
 
 Windows-сборка не имеет цифровой подписи. Авторинг ориентирован на Full HD Blu-ray; запись болванок из интерфейса пока отсутствует. Физический привод и бытовые проигрыватели этой сборкой не тестировались.
 
-[Версия для macOS Apple Silicon](https://github.com/FORQO/DiscForge-RU/releases/tag/macos-v1.5.0-studio).
+[Версия для macOS Apple Silicon](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio).

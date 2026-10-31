@@ -4,12 +4,12 @@
 
 <p align="center"><b>Фильмы и серии на одном Blu-ray: меню, главы, звук и субтитры.</b></p>
 
-<p align="center"><a href="#быстрый-старт">Быстрый старт</a> · <a href="#возможности">Возможности</a> · <a href="docs/README.md">Документация</a> · <a href="#разработка">Разработка</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/windows-v1.5.0-studio">Windows</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/macos-v1.5.0-studio">macOS Studio</a></p>
+<p align="center"><a href="#быстрый-старт">Быстрый старт</a> · <a href="#возможности">Возможности</a> · <a href="docs/README.md">Документация</a> · <a href="#разработка">Разработка</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio">Windows</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio">macOS Studio</a></p>
 
 | Платформа / направление | Статус | Технологии |
 | :--- | :--- | :--- |
-| Windows 10/11 x64 | [Studio 1.5.0 · готовый ZIP](https://github.com/FORQO/DiscForge-RU/releases/tag/windows-v1.5.0-studio) | Python · PySide6 · FFmpeg |
-| macOS · Apple Silicon (M1 и новее) | [Studio 1.5.0 · готовое приложение .app](https://github.com/FORQO/DiscForge-RU/releases/tag/macos-v1.5.0-studio) | Python · PySide6 · FFmpeg · UDF 2.50 |
+| Windows 10/11 x64 | [Studio 1.5.0 · готовый ZIP](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio) | Python · PySide6 · FFmpeg |
+| macOS · Apple Silicon (M1 и новее) | [Studio 1.5.0 · готовое приложение .app](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio) | Python · PySide6 · FFmpeg · UDF 2.50 |
 
 ---
 
@@ -41,13 +41,13 @@
 
 ### macOS · Studio
 
-1. Скачайте [DiskForge-Studio-1.5.0-macOS-arm64.zip](https://github.com/FORQO/DiscForge-RU/releases/download/macos-v1.5.0-studio/DiskForge-Studio-1.5.0-macOS-arm64.zip), распакуйте и перенесите `DiskForge.app` в «Программы».
+1. Скачайте [DiskForge-Studio-1.5.0-macOS-arm64.zip](https://github.com/FORQO/DiscForge-RU/releases/download/v1.5.0-studio/DiskForge-Studio-1.5.0-macOS-arm64.zip), распакуйте и перенесите `DiskForge.app` в «Программы».
 2. Добавьте видео, выберите дорожки и главы, оформите меню. Справа доступны «Оформление», «Объект» и «Расстановка»; «Предпросмотр» показывает пульт под изображением.
 3. Нажмите «Создать ISO…», выберите BD25/BD50, формат ISO/BDMV и папку результата. Python и Homebrew для запуска не требуются; VLC устанавливается отдельно.
 
 Нужен Mac с Apple Silicon (M1 и новее). Приложение имеет локальную подпись, без нотарификации Apple. Если macOS блокирует запуск, откройте «Системные настройки → Конфиденциальность и безопасность → Всё равно открыть» для DiskForge.
 
-[Релиз и контрольные суммы](https://github.com/FORQO/DiscForge-RU/releases/tag/macos-v1.5.0-studio) · [Инструкция для Mac](docs/MACOS.md) · [Исходники Studio](https://github.com/FORQO/DiscForge-RU/tree/main).
+[Релиз и контрольные суммы](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio) · [Инструкция для Mac](docs/MACOS.md) · [Исходники Studio](https://github.com/FORQO/DiscForge-RU/tree/main).
 
 ## Возможности
 

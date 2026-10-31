@@ -1,6 +1,6 @@
 # Сборка и выпуск Studio
 
-`main` содержит общий интерфейс и платформенные реализации Windows и macOS. Опубликованы [Windows Studio 1.5.0](https://github.com/FORQO/DiscForge-RU/releases/tag/windows-v1.5.0-studio) и [macOS Studio 1.5.0](https://github.com/FORQO/DiscForge-RU/releases/tag/macos-v1.5.0-studio).
+`main` содержит общий интерфейс и платформенные реализации Windows и macOS. Опубликованы [Windows Studio 1.5.0](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio) и [macOS Studio 1.5.0](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.0-studio).
 
 ## Проверки основной ветки
 
@@ -30,4 +30,6 @@ bash build_app_macos.sh
 
 Обновите версии, описание выпуска и контрольные суммы зависимостей при их изменении. Дождитесь тестов и самопроверок обеих сборок; публикуйте новый тег и проверенные ZIP с SHA-256. Уже опубликованные теги и файлы не заменяйте.
 
-Workflow windows-studio-release.yml описывает выпуск windows-v1.5.0-studio из release/windows-studio-1.5.0; повторная публикация существующего тега завершится ошибкой. Для следующего выпуска задайте новый тег и ветку. GITHUB_TOKEN имеет contents:write только в задаче публикации.
+Единый выпуск запускается вручную через Actions → Studio unified release → Run workflow, ветка main. Workflow закрепляет один commit SHA для обеих сборок, проверяет Windows, macOS и Linux/Python 3.11–3.13, а затем создаёт релиз v1.5.0-studio с двумя ZIP, инструкциями, отчётами и общим SHA256SUMS.txt. release-manifest.json фиксирует исходный коммит, размеры и SHA-256 архивов. Сначала создаётся черновик со всеми файлами; он становится публичным только после успешной загрузки.
+
+Для следующего выпуска обновите версию и тег в workflow, сборщиках и описании. Повторный запуск не заменяет существующий релиз. GITHUB_TOKEN имеет contents:write только в задаче публикации. Старые платформенные релизы сохранены как история.
