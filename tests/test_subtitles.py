@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from core import parse_probe, write_meta
 from subtitles import (embedded_tracks, select_subtitles, external_track, validate_selection,
-                       normalize_srt, prepare_subtitles, menu_subtitles)
+                       normalize_srt, prepare_subtitles, menu_subtitles, meta_lines)
 from disc_audio import playlist_tracks, playlist_subtitles, bind_subtitles
 from disc_menu import (MenuDesign, pages, resolve_action, install_menu, page_elements,
                        validate_menu_navigation, subtitle_page_start)
@@ -101,6 +101,27 @@ class SubtitleTests(unittest.TestCase):
         self.assertIn('S_HDMV/PGS', text)
         self.assertIn('lang=rus, fps=59.94, video-width=1280, video-height=720', text)
         self.assertNotIn('default=', text)
+
+    def test_macos_text_subtitles_use_existing_bundled_font(self):
+        with patch('subtitles.sys.platform', 'darwin'):
+            text = meta_lines([(self.root/'captions.srt', {'language': 'rus'})], '50', 1280, 720)
+        font = text.split('font-name="', 1)[1].split('"', 1)[0]
+        self.assertTrue(Path(font).is_file())
+        self.assertTrue(font.endswith('/assets/fonts/NotoSans-Regular.ttf'))
+
+    def test_frozen_macos_font_path_and_missing_resource(self):
+        bundle = self.root / 'Studio пакет'
+        font = bundle / 'assets/fonts/NotoSans-Regular.ttf'
+        font.parent.mkdir(parents=True)
+        font.write_bytes(b'font-fixture')
+        with patch('subtitles.sys.platform', 'darwin'), patch('subtitles.sys._MEIPASS', str(bundle), create=True):
+            text = meta_lines([(self.root/'captions.srt', {'language': 'rus'})], '50', 1280, 720)
+            self.assertIn('font-name="' + font.resolve().as_posix() + '"', text)
+            font.unlink()
+            with self.assertRaisesRegex(ValueError, 'шрифт'):
+                meta_lines([(self.root/'captions.srt', {'language': 'rus'})], '50', 1280, 720)
+            # PGS already contains pixels and must not require a font.
+            self.assertNotIn('font-name', meta_lines([(self.root/'captions.sup', {'language': 'rus'})], '50', 1280, 720))
 
     def test_pgs_header_checked(self):
         path = self.root/'fake.sup'

@@ -101,7 +101,7 @@ class MenuEditor(QWidget):
         remote.addStretch()
         canvas_layout.addWidget(self.remote_panel)
         toolbar = QHBoxLayout(); toolbar.addStretch()
-        self.preview_mode = QPushButton('▶  Предпросмотр')
+        self.preview_mode = QPushButton('Предпросмотр')
         self.preview_mode.setCheckable(True)
         self.preview_mode.setObjectName('ghost')
         self.preview_mode.toggled.connect(self.set_preview_mode)
@@ -324,7 +324,7 @@ class MenuEditor(QWidget):
         self.preview.view_only = enabled
         self.remote_panel.setVisible(enabled)
         self.inspector.setVisible(not enabled)
-        self.preview_mode.setText('■  Редактировать' if enabled else '▶  Предпросмотр')
+        self.preview_mode.setText('Редактировать' if enabled else 'Предпросмотр')
         self.select_button('')
         self.caption.setText('Стрелки — выбор · Enter — открыть · Backspace — назад' if enabled else 'Выберите объект · Двойной клик — изменить текст')
         self.preview.update()
