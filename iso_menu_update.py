@@ -72,8 +72,13 @@ try {
 
 @contextmanager
 def mounted_iso(iso):
+    if sys.platform == 'darwin':
+        from macos_iso import mounted_iso as mounted_macos_iso
+        with mounted_macos_iso(iso) as root:
+            yield root
+        return
     if sys.platform != 'win32':
-        raise RuntimeError('Обновление ISO пока доступно только в Windows.')
+        raise RuntimeError('Обновление ISO доступно в Windows и macOS.')
     data = json.loads(powershell(mount_script(), iso))
     try:
         yield Path(data['root'])
@@ -275,6 +280,9 @@ def update_iso(source, destination, design, cancel, log=lambda _: None, progress
         # Windows rename does not replace an existing destination, including a race.
         if destination.exists():
             raise FileExistsError(destination)
-        pending.rename(destination)
+        if sys.platform == 'darwin':
+            os.link(pending, destination)
+        else:
+            pending.rename(destination)
     log('Готово: '+str(destination))
     return destination

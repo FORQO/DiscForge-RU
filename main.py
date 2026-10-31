@@ -13,14 +13,14 @@ from pathlib import Path
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QPixmap, QColor, QFont, QDesktopServices
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPixmap, QColor, QFont, QDesktopServices, QKeySequence
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
     QPushButton, QSpinBox, QSplitter, QStatusBar, QTabWidget, QVBoxLayout,
-    QWidget, QScrollArea, QSizePolicy, QStyle, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QWidget, QScrollArea, QSizePolicy, QStyle, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QStackedWidget, QDialog,
 )
 
 from core import (CAPACITIES, SUPPORTED, DiscForgeError, MediaInfo,
@@ -178,7 +178,9 @@ class BuildThread(QThread):
                 prepared.append((media,chapters))
                 selected_modes.append(mode)
             self.jobs = prepared
-            if self.auto and 'encode' in selected_modes:
+            if sys.platform == 'darwin':
+                self.nvenc = False
+            if self.auto and 'encode' in selected_modes and sys.platform != 'darwin':
                 self.timing_changed.emit('Проверка видеокарты', -1)
                 self.nvenc = nvenc_available(self.config['ffmpeg'], self.cancel_event, self.message.emit)
             if self.config.get('collection'):
@@ -259,12 +261,12 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         initialize_fonts()
-        self.setFont(QFont('Noto Sans', 10))
+        self.setFont(QApplication.font())
         self.setWindowIcon(QIcon(str(ICON)))
         self.ui_theme = 'graphite'
-        self.setWindowTitle('DiskForge — мастер Blu-ray | ' + VERSION)
-        self.resize(1360, 920)
-        self.setMinimumSize(920, 620)
+        self.setWindowTitle('DiskForge Studio · ' + VERSION)
+        self.resize(1380, 850)
+        self.setMinimumSize(1040, 680)
         self.setAcceptDrops(True)
         self.media: dict[str, MediaInfo] = {}
         self.chapters: dict[str, list[float]] = {}
@@ -309,44 +311,44 @@ class Window(QMainWindow):
         host = QWidget()
         self.setCentralWidget(host)
         root = QVBoxLayout(host)
-        root.setSpacing(8)
-        root.setContentsMargins(18, 8, 18, 12)
-
-        header = QHBoxLayout()
-        header.setSpacing(14)
-        heading = QLabel()
-        heading.setPixmap(QPixmap(str(LOGO)).scaled(88, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        heading.setAccessibleName('DiskForge')
-        heading.setObjectName('brand')
-        heading.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        header.addWidget(heading, 0, Qt.AlignVCenter)
-        header_hint = QLabel('Добавьте фильм, выберите дорожки, настройте главы и меню.\n'
-                             'Перед записью проверьте ISO в VLC и совместимость с вашим Blu-ray-плеером.')
-        header_hint.setObjectName('headerHint')
-        header_hint.setTextFormat(Qt.PlainText)
-        header_hint.setWordWrap(True)
-        header_hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        header.addWidget(header_hint, 1, Qt.AlignVCenter)
-        tag = QLabel(f'Бесплатно · Open source\nВерсия {VERSION}')
-        tag.setObjectName('tag')
-        tag.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        header.addWidget(tag, 0, Qt.AlignVCenter)
-        root.addLayout(header)
+        root.setSpacing(0)
+        root.setContentsMargins(0, 0, 0, 0)
+        header_widget = QWidget(); header_widget.setObjectName('studioHeader')
+        header = QHBoxLayout(header_widget)
+        header.setContentsMargins(20, 12, 20, 12)
+        brand = QLabel('DiskForge'); brand.setObjectName('studioBrand')
+        header.addWidget(brand)
+        self.project_heading = QLabel('Новый проект'); self.project_heading.setObjectName('studioStatus')
+        header.addSpacing(14); header.addWidget(self.project_heading); header.addStretch()
+        save_project = QPushButton('Сохранить проект'); save_project.setObjectName('ghost')
+        save_project.clicked.connect(self.save_project); header.addWidget(save_project)
+        root.addWidget(header_widget)
 
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(1)
+        self.workspace_splitter = splitter
         root.addWidget(splitter, 1)
-        left = QWidget()
+        left = QWidget(); left.setObjectName('studioLibrary')
+        left.setMinimumWidth(210); left.setMaximumWidth(290)
         left_box = QVBoxLayout(left)
-        left_box.setContentsMargins(0, 0, 4, 0)
-        left_box.addWidget(QLabel('ФИЛЬМЫ НА ДИСКЕ'))
+        left_box.setContentsMargins(14, 18, 14, 14)
+        left_box.setSpacing(10)
+        self.library_heading = QLabel('ФИЛЬМЫ'); self.library_heading.setObjectName('studioSection')
+        left_box.addWidget(self.library_heading)
         self.movies = MovieList()
+        self.movies.setObjectName('studioMovies')
+        from studio_ui import MovieDelegate
+        self.movies.setItemDelegate(MovieDelegate(self))
+        self.movies.setSpacing(3)
+        self.movies.setTextElideMode(Qt.ElideMiddle)
         self.movies.setDragDropMode(QListWidget.InternalMove)
         self.movies.setDefaultDropAction(Qt.MoveAction)
         self.movies.setToolTip('Порядок в списке — порядок фильмов в меню диска. Перетаскивайте строки или используйте стрелки.')
         self.movies.currentItemChanged.connect(lambda *_: self._select_media())
         self.movies.model().rowsMoved.connect(lambda *_: self._refresh_buttons())
         left_box.addWidget(self.movies, 1)
-        left_box.addWidget(QLabel('Название в меню общего диска'))
+        left_box.addWidget(QLabel('Название фильма в меню'))
         self.movie_title_edit = QLineEdit()
         self.movie_title_edit.setMaxLength(80)
         self.movie_title_edit.setClearButtonEnabled(True)
@@ -355,11 +357,9 @@ class Window(QMainWindow):
         self.movies.itemDoubleClicked.connect(lambda *_: self._focus_movie_title())
         left_box.addWidget(self.movie_title_edit)
         order_row = QHBoxLayout()
-        order_row.addWidget(QLabel('Порядок в меню'), 1)
-        self.movie_up = QPushButton()
-        self.movie_up.setIcon(self.style().standardIcon(QStyle.SP_ArrowUp))
-        self.movie_down = QPushButton()
-        self.movie_down.setIcon(self.style().standardIcon(QStyle.SP_ArrowDown))
+        order_row.addWidget(QLabel('Порядок'), 1)
+        self.movie_up = QPushButton('↑')
+        self.movie_down = QPushButton('↓')
         for button, direction, caption in ((self.movie_up, -1, 'Переместить фильм вверх'), (self.movie_down, 1, 'Переместить фильм вниз')):
             button.setFixedWidth(36)
             button.setToolTip(caption)
@@ -368,7 +368,7 @@ class Window(QMainWindow):
             order_row.addWidget(button)
         left_box.addLayout(order_row)
         line = QHBoxLayout()
-        self.add_button = QPushButton('+ Добавить видео')
+        self.add_button = QPushButton('+ Добавить')
         self.add_button.clicked.connect(self.add_media)
         self.remove_button = QPushButton('Удалить')
         self.remove_button.clicked.connect(self.remove_media)
@@ -376,27 +376,62 @@ class Window(QMainWindow):
         line.addWidget(self.remove_button)
         left_box.addLayout(line)
         self.disc_mode = QComboBox()
-        self.disc_mode.addItems(['Все фильмы на одном диске', 'Каждый фильм на отдельном диске'])
+        self.disc_mode.addItems(['Общий диск', 'Отдельные диски'])
         left_box.addWidget(self.disc_mode)
         self.capacity_bar = QProgressBar()
         self.capacity_bar.setRange(0, 25000)
+        self.capacity_bar.setObjectName('capacityMeter')
+        self.capacity_bar.setTextVisible(False)
+        self.capacity_summary = QLabel('BD25 · 0 / 25 ГБ')
+        self.capacity_summary.setObjectName('studioStatus')
+        left_box.addWidget(self.capacity_summary)
         left_box.addWidget(self.capacity_bar)
         self.capacity_label = QLabel()
         self.capacity_label.setWordWrap(True)
         self.capacity_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        left_box.addWidget(self.capacity_label)
+        self.capacity_label.hide()
+        capacity_details = QPushButton('Расчёт места'); capacity_details.setObjectName('ghost')
+        capacity_details.clicked.connect(lambda: QMessageBox.information(self, 'Заполнение диска', self.capacity_label.text()))
+        left_box.addWidget(capacity_details)
         self.details = QLabel('Перетащите видео в окно или нажмите «Добавить видео».')
         self.details.setObjectName('details')
         self.details.setWordWrap(True)
-        self.details.setMinimumHeight(90)
-        left_box.addWidget(self.details)
+        self.details.setMinimumHeight(0)
+        self.details.setMaximumHeight(85)
+        self.details.hide()
+        file_details = QPushButton('Сведения о файле'); file_details.setObjectName('ghost')
+        file_details.clicked.connect(lambda: QMessageBox.information(self, 'Выбранный фильм', self.details.text()))
+        left_box.addWidget(file_details)
         splitter.addWidget(left)
 
         self.tabs = QTabWidget()
-        splitter.addWidget(self.tabs)
+        self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setDrawBase(False)
+        self.studio_stack = QStackedWidget()
+        self.studio_stack.addWidget(self.tabs)
+        welcome = QWidget(); welcome_layout = QVBoxLayout(welcome)
+        welcome_layout.setContentsMargins(50, 40, 50, 40)
+        welcome_layout.addStretch()
+        welcome_title = QLabel('Ваша коллекция начинается здесь'); welcome_title.setObjectName('studioHeading'); welcome_title.setWordWrap(True)
+        welcome_layout.addWidget(welcome_title)
+        welcome_hint = QLabel('Добавьте фильмы, выберите дорожки и оформите меню Blu-ray.\nВидео можно перетащить прямо в окно.'); welcome_hint.setObjectName('hint'); welcome_hint.setWordWrap(True)
+        welcome_layout.addWidget(welcome_hint)
+        welcome_actions = QHBoxLayout()
+        self.welcome_add = QPushButton('Добавить видео…'); self.welcome_add.setObjectName('primary'); self.welcome_add.clicked.connect(self.add_media)
+        welcome_actions.addWidget(self.welcome_add); welcome_actions.addStretch(); welcome_layout.addLayout(welcome_actions)
+        existing = QPushButton('Открыть готовый ISO'); existing.setObjectName('ghost')
+        existing.clicked.connect(lambda: (self.tabs.setCurrentIndex(5), self._studio_update(), self.image_tools.choose()))
+        welcome_layout.addWidget(existing, 0, Qt.AlignLeft)
+        early_menu = QPushButton('Оформить меню заранее'); early_menu.setObjectName('ghost')
+        early_menu.clicked.connect(self._open_empty_menu)
+        welcome_layout.addWidget(early_menu, 0, Qt.AlignLeft)
+        welcome_layout.addStretch()
+        self.studio_stack.addWidget(welcome)
+        splitter.addWidget(self.studio_stack)
+        self.tabs.currentChanged.connect(lambda *_: self._studio_update())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([260, 1060])
+        splitter.setSizes([230, 1150])
 
         build_tab = QWidget()
         build_box = QVBoxLayout(build_tab)
@@ -454,6 +489,11 @@ class Window(QMainWindow):
         self.gpu_frames = QCheckBox('NVDEC + обработка кадров на GPU, если поддерживается')
         self.gpu_frames.setChecked(True)
         self.gpu_frames.setToolTip('Перед сборкой проверяется реальный файл. При несовместимости фильтры работают на CPU, кодер — NVENC.')
+        if sys.platform == 'darwin':
+            self.encoder.model().item(1).setEnabled(False)
+            self.encoder.setItemText(2, 'Авто — CPU x264 на Mac')
+            self.gpu_frames.setEnabled(False)
+            self.gpu_frames.setToolTip('NVIDIA CUDA недоступна на Mac. Используется CPU x264.')
         form.addRow('', self.gpu_frames)
         self.enhance_video = QCheckBox('Бережное улучшение выбранного фильма · без AI')
         self.enhance_video.setToolTip('Только для фильма, выбранного слева. Требует его перекодирования. '
@@ -480,7 +520,7 @@ class Window(QMainWindow):
         self.quality_trial_button.setToolTip('Закодировать короткую сцену с разными битрейтами, сравнить кадры и применить выбранный битрейт к этому фильму.')
         self.quality_trial_button.clicked.connect(self._quality_trial)
         form.addRow('', self.quality_trial_button)
-        resume_note = QLabel('Завершённые этапы сохраняются автоматически. После ошибки откройте последнюю сборку и нажмите «Создать Blu-ray».')
+        resume_note = QLabel('Завершённые этапы сохраняются автоматически. После ошибки откройте последнюю сборку и нажмите «Создать ISO…».')
         resume_note.setWordWrap(True)
         form.addRow('', resume_note)
         build_box.addWidget(profile_box)
@@ -520,6 +560,10 @@ class Window(QMainWindow):
             browse.clicked.connect(lambda _=False, k=key: self._choose_path(k))
             row.addWidget(browse)
             paths.addRow(label, row)
+        path_box.setVisible(False)
+        tools_toggle = QPushButton('Пути инструментов и папка результата'); tools_toggle.setObjectName('ghost'); tools_toggle.setCheckable(True)
+        tools_toggle.toggled.connect(path_box.setVisible)
+        build_box.addWidget(tools_toggle)
         build_box.addWidget(path_box)
         info = QLabel('Совместимое видео можно сохранить. При перекодировании: H.264 1080p 23,976 кадр/с. Обработка каждой аудиодорожки выбирается в разделе «Аудио». '
                       'Выберите аудио и субтитры в соответствующих разделах. '
@@ -531,15 +575,15 @@ class Window(QMainWindow):
         build_scroll = QScrollArea()
         build_scroll.setWidgetResizable(True)
         build_scroll.setWidget(build_tab)
-        self.tabs.addTab(build_scroll, '1 · Подготовка')
+        self.tabs.addTab(build_scroll, 'Подготовка')
         self.audio_panel = AudioPanel()
         self.audio_panel.selection_changed.connect(self._audio_changed)
         self.audio_panel.policy_changed.connect(self._audio_policy_changed)
-        self.tabs.addTab(self.audio_panel, '2 · Аудио')
+        self.tabs.addTab(self.audio_panel, 'Аудио')
 
         self.subtitle_panel = SubtitlePanel()
         self.subtitle_panel.selection_changed.connect(self._subtitles_changed)
-        self.tabs.addTab(self.subtitle_panel, '3 · Субтитры')
+        self.tabs.addTab(self.subtitle_panel, 'Субтитры')
 
         chapter_tab = QWidget()
         chapter_box = QVBoxLayout(chapter_tab)
@@ -596,82 +640,72 @@ class Window(QMainWindow):
         note.setObjectName('hint')
         note.setWordWrap(True)
         chapter_box.addWidget(note)
-        self.tabs.addTab(chapter_tab, '4 · Главы')
+        self.tabs.addTab(chapter_tab, 'Главы')
 
         self.menu_editor = MenuEditor()
         self.menu_editor.movie_requested.connect(self._request_movie)
         self.menu_editor.movie_renamed.connect(self._rename_movie_path)
         self.menu_title = self.menu_editor.title
-        self.tabs.addTab(self.menu_editor, '5 · Меню')
+        self.menu_title.textChanged.connect(self.project_heading.setText)
+        self.tabs.addTab(self.menu_editor, 'Меню')
         self.image_tools = ImageTools(self.menu_editor)
         self.image_tools.menu_panel.loading_design.connect(self._detach_chapter_names)
         self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(self.menu_editor))
-        self.tabs.addTab(self.image_tools, '6 · Запись ISO')
+        self.tabs.addTab(self.image_tools, 'Проверка ISO')
 
-        logbar = QHBoxLayout()
-        logbar.addWidget(QLabel('ЖУРНАЛ РАБОТЫ'))
-        logbar.addStretch()
-        clear = QPushButton('Очистить')
-        clear.clicked.connect(lambda: self.log.clear())
-        logbar.addWidget(clear)
-        preview_iso = QPushButton('Проверить ISO в VLC')
-        preview_iso.clicked.connect(self.image_tools.open_vlc)
-        logbar.addWidget(preview_iso)
-        open_output = QPushButton('Открыть результаты')
-        open_output.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path_fields['output'].text())))
-        logbar.addWidget(open_output)
-        root.addLayout(logbar)
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(85)
-        self.log.setPlaceholderText('Ожидание действий…')
-        root.addWidget(self.log)
-        destination_row = QHBoxLayout()
-        destination_row.addWidget(QLabel('Сохранить ISO / BDMV в:'))
-        self.output_folder = QLineEdit()
+        self.log_panel = QWidget()
+        log_box = QVBoxLayout(self.log_panel); log_box.setContentsMargins(16, 8, 16, 8)
+        logbar = QHBoxLayout(); logbar.addWidget(QLabel('Журнал')); logbar.addStretch()
+        clear = QPushButton('Очистить'); clear.setObjectName('ghost'); clear.clicked.connect(lambda: self.log.clear()); logbar.addWidget(clear)
+        log_box.addLayout(logbar)
+        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120); self.log.setPlaceholderText('События сборки появятся здесь.')
+        log_box.addWidget(self.log); self.log_panel.hide(); root.addWidget(self.log_panel)
+        # Keep the shared folder field for project compatibility; export edits it.
+        self.output_folder = QLineEdit(self); self.output_folder.hide()
         self.output_folder.setAccessibleName('Папка готового ISO')
         self.output_folder.textChanged.connect(self.path_fields['output'].setText)
         self.path_fields['output'].textChanged.connect(self.output_folder.setText)
-        destination_row.addWidget(self.output_folder, 1)
-        self.output_browse = QPushButton('Выбрать папку…')
+        self.output_browse = QPushButton('Выбрать папку…', self); self.output_browse.hide()
         self.output_browse.clicked.connect(lambda: self._choose_path('output'))
-        destination_row.addWidget(self.output_browse)
-        root.addLayout(destination_row)
-        timing_row = QHBoxLayout()
+        self.timing_panel = QWidget(); timing_row = QHBoxLayout(self.timing_panel)
+        timing_row.setContentsMargins(18, 4, 18, 4)
         self.elapsed_label = QLabel('Прошло: 00:00:00')
         self.remaining_label = QLabel('Осталось ≈ —')
         self.stage_label = QLabel('Ожидание')
-        timing_row.addWidget(self.elapsed_label)
-        timing_row.addWidget(self.remaining_label)
-        timing_row.addStretch()
-        timing_row.addWidget(self.stage_label)
-        root.addLayout(timing_row)
+        timing_row.addWidget(self.elapsed_label); timing_row.addWidget(self.remaining_label); timing_row.addStretch(); timing_row.addWidget(self.stage_label)
+        self.timing_panel.hide(); root.addWidget(self.timing_panel)
         from verification_panel import VerificationPanel
         self.verification_panel = VerificationPanel(self)
         root.addWidget(self.verification_panel)
         self.gpu_monitor = GpuMonitor(self)
         self.gpu_monitor.temperature_warning.connect(self._message)
         root.addWidget(self.gpu_monitor)
-        footer = QHBoxLayout()
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        footer.addWidget(self.progress, 1)
-        self.cancel_button = QPushButton('Отмена')
-        self.cancel_button.clicked.connect(self.cancel_build)
-        footer.addWidget(self.cancel_button)
-        self.build_button = QPushButton('СОЗДАТЬ BLU-RAY')
-        self.build_button.setObjectName('primary')
-        self.build_button.clicked.connect(self.start_build)
-        footer.addWidget(self.build_button)
-        root.addLayout(footer)
-        self.setStatusBar(QStatusBar())
+        if sys.platform == 'darwin':
+            self.gpu_monitor.hide()
+        footer_widget = QWidget(); footer_widget.setObjectName('studioFooter')
+        footer = QHBoxLayout(footer_widget); footer.setContentsMargins(16, 10, 16, 10)
+        self.studio_status = QLabel('Добавьте фильмы'); self.studio_status.setObjectName('studioStatus')
+        footer.addWidget(self.studio_status)
+        self.log_toggle = QPushButton('Журнал'); self.log_toggle.setObjectName('ghost'); self.log_toggle.setCheckable(True)
+        self.log_toggle.toggled.connect(self.log_panel.setVisible); footer.addWidget(self.log_toggle)
+        self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setValue(0); self.progress.setMaximumWidth(260); self.progress.hide()
+        footer.addWidget(self.progress, 1); footer.addStretch()
+        open_output = QPushButton('Результаты'); open_output.setObjectName('ghost')
+        open_output.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path_fields['output'].text())))
+        footer.addWidget(open_output)
+        self.cancel_button = QPushButton('Отмена'); self.cancel_button.clicked.connect(self.cancel_build); self.cancel_button.hide(); footer.addWidget(self.cancel_button)
+        self.build_button = QPushButton('Создать ISO…'); self.build_button.setObjectName('primary'); self.build_button.clicked.connect(self.show_export_dialog); footer.addWidget(self.build_button)
+        root.addWidget(footer_widget)
+        self.setStatusBar(QStatusBar()); self.statusBar().hide()
+        self.output_mode.currentIndexChanged.connect(lambda *_: self._studio_update())
 
         project = self.menuBar().addMenu('Проект')
         for text, callback in [('Новый', self.new_project), ('Открыть проект…', self.open_project),
                                ('Сохранить проект…', self.save_project)]:
             action = QAction(text, self)
             action.triggered.connect(callback)
+            action.setShortcut({'Новый': QKeySequence.New, 'Открыть проект…': QKeySequence.Open,
+                                'Сохранить проект…': QKeySequence.Save}[text])
             project.addAction(action)
         theme_menu = self.menuBar().addMenu('Темы')
         project.addAction('Открыть последнюю сборку', self.open_last_build)
@@ -679,7 +713,7 @@ class Window(QMainWindow):
         self.theme_actions = {}
         self.theme_group = QActionGroup(self)
         self.theme_group.setExclusive(True)
-        for label, key in [('Графит · DiskForge', 'graphite'), ('Синяя · классическая', 'blue')]:
+        for label, key in [('Студия · светлая', 'graphite'), ('Студия · тёмная', 'blue')]:
             action = QAction(label, self, checkable=True)
             self.theme_group.addAction(action)
             self.theme_actions[key] = action
@@ -693,6 +727,38 @@ class Window(QMainWindow):
             explorer = self.menuBar().addMenu('Проводник')
             explorer.addAction('Добавить «Открыть Blu-ray в VLC»', lambda: self.configure_explorer(True))
             explorer.addAction('Удалить пункт из Проводника', lambda: self.configure_explorer(False))
+
+    def _open_empty_menu(self):
+        self._allow_empty_editor = True
+        self.tabs.setCurrentWidget(self.menu_editor)
+        self._studio_update()
+
+    def _studio_update(self):
+        if not hasattr(self, 'studio_status'):
+            return
+        scanning = bool(self.scan_thread and self.scan_thread.isRunning())
+        busy = bool(self.build_thread and self.build_thread.isRunning())
+        count = self.movies.count()
+        show_editor = count > 0 or self.tabs.currentIndex() == 5 or getattr(self, '_allow_empty_editor', False)
+        self.studio_stack.setCurrentIndex(0 if show_editor else 1)
+        self.library_heading.setText(f'ФИЛЬМЫ  ·  {count}')
+        self.studio_status.setText('Создание диска…' if busy else 'Анализ файлов…' if scanning else getattr(self, '_studio_result', '') or (f'Фильмов: {len(self.media)}' if count else 'Добавьте фильмы'))
+        self.welcome_add.setEnabled(not scanning and not busy)
+        self.timing_panel.setVisible(busy or self.build_started is not None)
+        self.progress.setVisible(busy or self.build_started is not None)
+        self.cancel_button.setVisible(busy or scanning)
+        self.build_button.setText('Создать ISO…' if self.output_mode.currentIndex() == 0 else 'Создать BDMV…')
+
+    def show_export_dialog(self):
+        if not self.media or not self.build_button.isEnabled():
+            return
+        from studio_ui import ExportDialog
+        dialog = ExportDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            self.profile.setCurrentText(dialog.profile.currentText())
+            self.output_mode.setCurrentIndex(dialog.mode.currentIndex())
+            self.output_folder.setText(dialog.folder.text().strip())
+            self.start_build(confirmed=True)
 
     def configure_explorer(self, enabled):
         from explorer_integration import install, uninstall
@@ -716,7 +782,10 @@ class Window(QMainWindow):
 
     def set_theme(self, key, save=False):
         self.ui_theme = key if key in self.theme_actions else 'graphite'
-        QApplication.instance().setStyleSheet(interface_style(self.ui_theme))
+        app = QApplication.instance()
+        stylesheet = interface_style(self.ui_theme)
+        if app.styleSheet() != stylesheet:
+            app.setStyleSheet(stylesheet)
         self.theme_actions[self.ui_theme].setChecked(True)
         if save:
             self._save_config()
@@ -1290,9 +1359,12 @@ class Window(QMainWindow):
             f'Сборка: {"идёт" if busy else "нет"}')
         self._sync_collection()
         self._sync_bitrate_controls()
+        self._studio_update()
 
     def _message(self, value: str) -> None:
         self.log.appendPlainText(value)
+        if value.startswith('ОШИБКА'):
+            self.log_toggle.setChecked(True)
 
     def _capacity_budgets(self):
         from disc_capacity import estimate
@@ -1323,7 +1395,9 @@ class Window(QMainWindow):
             if self.scan_thread and self.scan_thread.isRunning():
                 text += '\nАнализ идёт: ещё не проверенные файлы пока не учтены.'
             self.capacity_label.setText(text)
-            color = '#e66b60' if worst and worst.remaining < 0 else '#e7aa53' if worst and worst.warning else '#bfc5cb'
+            self.capacity_summary.setText(self.profile.currentText() + ' · ' + self.capacity_bar.format())
+            self.capacity_summary.setToolTip(text)
+            color = '#e66b60' if worst and worst.remaining < 0 else '#e7aa53' if worst and worst.warning else ('#a5a8b2' if self.ui_theme == 'blue' else '#666d7a')
             self.capacity_label.setStyleSheet('color: '+color)
             fill = '#993f37' if worst and worst.remaining < 0 else '#965b21' if worst and worst.warning else '#805a36'
             self.capacity_bar.setStyleSheet('QProgressBar::chunk { background: '+fill+'; }')
@@ -1342,7 +1416,7 @@ class Window(QMainWindow):
         prefix = 'бережное улучшение + ' if enhancement_for(config, info.path) else ''
         return prefix + (f'перекодирование видео {rate/1e6:g} Мбит/с; возможны потери качества' if rate else 'перекодирование видео с расчётом под ёмкость диска')
 
-    def start_build(self) -> None:
+    def start_build(self, *, confirmed=False) -> None:
         if not self.media:
             return
         try:
@@ -1380,15 +1454,16 @@ class Window(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, 'Название меню', str(exc))
             return
-        response = QMessageBox.question(self, 'Создание Blu-ray',
-            f'Дисков: {1 if config["collection"] else len(jobs)} · Фильмов: {len(jobs)} · {self.profile.currentText()} · {self.output_mode.currentText()}\n'
-            + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
-            + 'Режим: ' + self.processing_mode.currentText() + '\n'
-            + '\n'.join(movie_title(info.path, self.movie_names) + ': ' + self._build_video_description(info, config) for info, _ in jobs) + '\n'
-            + 'Выбранные субтитры войдут в ISO отдельными дорожками. Исходники сохраняются.\n\nНачать сборку?',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if response != QMessageBox.Yes:
-            return
+        if not confirmed:
+            response = QMessageBox.question(self, 'Создание Blu-ray',
+                f'Дисков: {1 if config["collection"] else len(jobs)} · Фильмов: {len(jobs)} · {self.profile.currentText()} · {self.output_mode.currentText()}\n'
+                + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
+                + 'Режим: ' + self.processing_mode.currentText() + '\n'
+                + '\n'.join(movie_title(info.path, self.movie_names) + ': ' + self._build_video_description(info, config) for info, _ in jobs) + '\n'
+                + 'Выбранные субтитры войдут в ISO отдельными дорожками. Исходники сохраняются.\n\nНачать сборку?',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if response != QMessageBox.Yes:
+                return
         try:
             write_json(Path(config['output']) / '.diskforge-cache/last-project.dfr.json', self._project_data())
         except (OSError, ValueError) as exc:
@@ -1398,6 +1473,7 @@ class Window(QMainWindow):
         self.build_thread = BuildThread(jobs, config, self.profile.currentText(),
                                         self.output_mode.currentIndex() == 0,
                                         self.encoder.currentIndex() == 1, menu, auto=self.encoder.currentIndex() == 2, fast=self.encode_speed.currentIndex() == 0, processing_mode=MODES[self.processing_mode.currentIndex()], chapter_names=self.chapter_names)
+        self._studio_result = ''
         self.build_started = time.monotonic()
         self._verification_update(None)
         self.eta_remaining = -1
@@ -1466,6 +1542,10 @@ class Window(QMainWindow):
         self.stage_label.setText('Готово' if success else 'Остановлено / ошибка')
         self.remaining_label.setText('Осталось: 00:00:00' if success else 'Осталось: —')
         self._message('Очередь завершена.' if success else 'Очередь завершилась с ошибками или была отменена.')
+        self._studio_result = 'Готово' if success else 'Сборка остановлена · смотрите журнал'
+        self.studio_status.setText(self._studio_result)
+        if not success:
+            self.log_toggle.setChecked(True)
 
     def _item_done(self, path: str, destination: str) -> None:
         self._message('ГОТОВО: ' + destination)
@@ -1637,6 +1717,10 @@ class Window(QMainWindow):
         self._chapter_owner = None
         self.movies.clear()
         self.media.clear()
+        self._allow_empty_editor = False
+        self._studio_result = ''
+        self.build_started = None
+        self.menu_editor.preview_mode.setChecked(False)
         self.chapters.clear()
         self.chapter_names.clear()
         self.movie_names.clear()
@@ -1707,46 +1791,13 @@ class Window(QMainWindow):
         super().closeEvent(event)
 
 
-STYLE = '''
-QWidget { background: #101724; color: #e3eaf6; font-size: 12px; }
-QMainWindow, QTabWidget::pane { background: #101724; }
-QLabel#brand { font-size: 26px; font-weight: 800; }
-QLabel#tag { color: #95a3bb; font-size: 11px; }
-QLabel#headerHint { color: #b9c9e0; font-size: 12px; background: transparent; }
-QLabel#section { font-size: 16px; font-weight: 700; }
-QLabel#details { background: #192234; border-radius: 7px; padding: 10px; color: #b9c9e0; }
-QLabel#hint { color: #9bacc3; padding: 7px; }
-QLineEdit, QListWidget, QPlainTextEdit, QComboBox, QSpinBox { background: #182337; border: 1px solid #34445e; border-radius: 6px; padding: 7px; selection-background-color: #3268b4; }
-QGroupBox { border: 1px solid #33435a; border-radius: 9px; margin-top: 13px; padding: 15px 9px 9px 9px; font-weight: bold; }
-QGroupBox::title { subcontrol-origin: margin; left: 13px; padding: 0 7px; }
-QPushButton { background: #273952; border: 1px solid #3b5573; padding: 8px 13px; border-radius: 6px; }
-QPushButton:hover { background: #355170; }
-QPushButton:disabled { background: #1b2636; color: #62718a; border-color: #28354a; }
-QPushButton#primary { background: #2478db; border-color: #2478db; font-weight: 700; color: #fff; }
-QPushButton#primary:hover { background: #3491ff; }
-QTabBar::tab { background: #1d2a3d; padding: 10px 16px; border: 1px solid #304259; }
-QTabBar::tab:selected { background: #2b527f; }
-QProgressBar { background: #1d293b; border: 1px solid #30435a; border-radius: 5px; text-align: center; }
-QProgressBar::chunk { background: #3287e5; border-radius: 5px; }
-QStatusBar { color: #9fb1c9; }
-'''
+from studio_ui import studio_style
+
+STYLE = studio_style('blue')
 
 
 def interface_style(theme):
-    if theme == 'blue':
-        return STYLE
-    palette = {'#101724':'#303236', '#e3eaf6':'#eeeef0', '#95a3bb':'#abaeb3',
-        '#192234':'#383b40', '#b9c9e0':'#c8c9cc', '#9bacc3':'#b5b6bb',
-        '#182337':'#35383d', '#34445e':'#62666d', '#3268b4':'#825329',
-        '#33435a':'#585d64', '#273952':'#454950', '#3b5573':'#6c7179',
-        '#355170':'#555b63', '#1b2636':'#383b40', '#62718a':'#9298a1',
-        '#28354a':'#3b3e43', '#2478db':'#e58a35', '#3491ff':'#f3a24f',
-        '#1d2a3d':'#393d43', '#304259':'#585d64', '#2b527f':'#745339',
-        '#1d293b':'#393d43', '#30435a':'#62666d', '#3287e5':'#ba6d2a', '#9fb1c9':'#b8bbc0'}
-    value = STYLE
-    for old, new in palette.items():
-        value = value.replace(old, new)
-    return value + '\nQPushButton#primary { color: #1c1c1c; }\nQMenu::item:selected { background: #825329; }'
+    return studio_style(theme)
 
 
 def main() -> int:
@@ -1758,7 +1809,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
-    app.setFont(QFont('Segoe UI', 10))
+    if sys.platform != 'darwin':
+        app.setFont(QFont('Segoe UI', 10))
     if len(sys.argv) > 1 and sys.argv[1] in ('--open-bluray', '--install-explorer', '--remove-explorer'):
         try:
             if sys.argv[1] == '--open-bluray':
@@ -1775,7 +1827,7 @@ def main() -> int:
             return 1
     w = Window()
     if smoke_report is not None:
-        w.resize(1280, 880)
+        w.resize(1380, 850)
         w.show()
         app.processEvents()
         resources = Path(__file__).parent
@@ -1783,12 +1835,19 @@ def main() -> int:
                   'menu_image': not w.menu_editor.preview.image.isNull(),
                   'xlet': (resources / 'assets/bdj/menu.jar').is_file(),
                   'windows_iso': sys.platform != 'win32' or (resources / 'tools/windows_iso.ps1').is_file()}
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, 'frozen', False) and sys.platform == 'win32':
             from vlc_preview import app_root, pe_machine
             java = app_root() / 'runtime/java'
             checks['private_java'] = ((java / 'lib/rt.jar').is_file() and
                                       (java / 'bin/server/jvm.dll').is_file() and
                                       pe_machine(java / 'bin/server/jvm.dll') == 0x8664)
+        if sys.platform == 'darwin' and getattr(sys, 'frozen', False):
+            from settings import find_binary
+            from vlc_preview import macos_java
+            java, jvm = macos_java()
+            checks['private_java'] = jvm.is_file() and (java / 'lib/rt.jar').is_file()
+            for tool in ('ffmpeg', 'ffprobe', 'tsmuxer', 'discforge-udf'):
+                checks[tool] = Path(find_binary(tool)).is_file()
         checks['vlc_button'] = w.image_tools.vlc.text() == 'Проверить ISO в VLC'
         checks['verification_progress'] = w.verification_panel.isHidden() and not w.verification_panel.timer.isActive()
         checks['iso_menu_update'] = w.image_tools.menu_panel.repair.isEnabled()
@@ -1830,6 +1889,13 @@ def main() -> int:
         checks['transparent_logo'] = logo.hasAlphaChannel() and logo.pixelColor(0, 0).alpha() == 0
         checks['disc_icon'] = not QIcon(str(ICON)).isNull()
         checks['menu_sidebar'] = w.menu_editor.splitter.widget(1) is w.menu_editor.inspector
+        checks['studio_empty_state'] = w.studio_stack.currentIndex() == 1 and w.log_panel.isHidden()
+        checks['studio_inspector'] = w.menu_editor.inspector_tabs.count() == 3
+        checks['studio_icons'] = all((resources / 'assets/icons' / name).is_file() for name in ('check.svg', 'chevron.svg'))
+        from studio_ui import ExportDialog
+        export = ExportDialog(w)
+        checks['studio_export'] = export.folder.text() == w.output_folder.text() and export.mode.count() == 2
+        export.deleteLater()
         checks['source_chapters'] = probe_media is not None and hasattr(MediaInfo, 'source_chapters')
         checks['gpu_monitor'] = hasattr(w, 'gpu_monitor') and not w.gpu_monitor.timer.isActive()
         checks['gpu_heat_warning'] = w.gpu_monitor.heat_warning.isHidden()

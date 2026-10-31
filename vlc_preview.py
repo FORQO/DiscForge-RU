@@ -30,6 +30,13 @@ def pe_machine(path):
 
 
 def find_vlc():
+    if sys.platform == 'darwin':
+        for candidate in (Path('/Applications/VLC.app/Contents/MacOS/VLC'),
+                          Path.home() / 'Applications/VLC.app/Contents/MacOS/VLC'):
+            if candidate.is_file():
+                return candidate
+        found = shutil.which('vlc')
+        return Path(found) if found else None
     candidates = []
     if sys.platform == 'win32':
         import winreg
@@ -70,6 +77,8 @@ def launch_bluray(filename, vlc=None, root=None):
             raise ValueError('На выбранном диске не найдена структура Blu-ray (BDMV/index.bdmv).')
     elif not source.is_file() or source.suffix.lower() != '.iso' or source.stat().st_size == 0:
         raise ValueError('Выберите непустой ISO-образ или диск Blu-ray.')
+    if sys.platform == 'darwin':
+        return launch_macos(source, vlc, root)
     executable = Path(vlc) if vlc else find_vlc()
     if executable is None:
         raise FileNotFoundError('Не найден VLC 64-bit. Выберите установленный vlc.exe.')
@@ -99,3 +108,41 @@ def launch_bluray(filename, vlc=None, root=None):
     finally:
         if frozen:
             ctypes.windll.kernel32.SetDllDirectoryW(sys._MEIPASS)
+
+
+def macos_java(root=None):
+    """Find a JVM for BD-J without changing the user's global Java configuration."""
+    resources = Path(root) if root else Path(getattr(sys, '_MEIPASS', app_root()))
+    candidates = [resources / 'runtime/java', resources / 'runtime/java/Contents/Home']
+    if os.environ.get('JAVA_HOME'):
+        candidates.append(Path(os.environ['JAVA_HOME']))
+    try:
+        found = subprocess.run(['/usr/libexec/java_home'], capture_output=True, text=True, timeout=5)
+        if found.returncode == 0 and found.stdout.strip():
+            candidates.append(Path(found.stdout.strip()))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    for base in ('/Library/Java/JavaVirtualMachines', str(Path.home() / 'Library/Java/JavaVirtualMachines')):
+        candidates.extend(sorted(Path(base).glob('*/Contents/Home'), reverse=True))
+    for java in candidates:
+        for name in ('lib/server/libjvm.dylib', 'jre/lib/server/libjvm.dylib'):
+            jvm = java / name
+            if jvm.is_file():
+                return java, jvm
+    raise FileNotFoundError('Для меню Blu-ray в VLC установите Java JDK той же архитектуры, что и VLC, '
+                            'либо задайте JAVA_HOME. Само создание ISO не требует Java.')
+
+
+def launch_macos(source, vlc=None, root=None):
+    executable = Path(vlc) if vlc else find_vlc()
+    if executable and executable.suffix.lower() == '.app':
+        executable = executable / 'Contents/MacOS/VLC'
+    if executable is None or not executable.is_file():
+        raise FileNotFoundError('Не найден VLC. Установите VLC.app в папку «Программы».')
+    java, jvm = macos_java(root)
+    env = os.environ.copy()
+    env.update(JAVA_HOME=str(java), JRE_HOME=str(java), BDJ_JVM_PATH=str(jvm))
+    for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH'):
+        env.pop(name, None)
+    return subprocess.Popen([str(executable), '--bluray-menu',
+                             'bluray:///' + source.as_posix()], env=env, cwd=str(executable.parent))

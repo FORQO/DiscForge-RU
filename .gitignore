@@ -13,3 +13,6 @@ dist/
 *.log
 .DS_Store
 runtime/
+
+# Native tools are recreated by tools/build_macos_tools.py
+bin/

@@ -15,7 +15,8 @@ class MenuPreview(QWidget):
     def __init__(self):
         super().__init__()
         self.image = None
-        self.setMinimumSize(420, 236)
+        self.setMinimumSize(300, 169)
+        self.view_only = False
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.elements = []
@@ -73,6 +74,12 @@ class MenuPreview(QWidget):
             return
         self.selection = element['id']
         self.selected.emit(self.selection)
+        if self.view_only:
+            if element.get('button'):
+                self.navigate.emit('enter')
+            self.selection = ''
+            self.update()
+            return
         self.drag = None if element.get('locked_geometry') else dict(element=element, start=point, rect=QRect(element['rect']), edge=edge, moved=False)
         self.update()
 
@@ -124,6 +131,8 @@ class MenuPreview(QWidget):
         self.update()
 
     def mouseDoubleClickEvent(self, event):
+        if self.view_only:
+            return
         if event.button() != Qt.LeftButton:
             return
         self.commit_edit()
@@ -172,7 +181,7 @@ class MenuPreview(QWidget):
         return super().eventFilter(source, event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete and self.selection:
+        if event.key() == Qt.Key_Delete and self.selection and not self.view_only:
             self.delete_requested.emit()
             return
         action = {Qt.Key_Up: 'up', Qt.Key_Down: 'down', Qt.Key_Left: 'left', Qt.Key_Right: 'right',

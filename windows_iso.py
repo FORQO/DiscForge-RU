@@ -22,6 +22,9 @@ def pending_image(destination):
 
 def create_iso(source: Path, destination: Path, capacity: int, cancel: threading.Event,
                log=lambda _: None, progress=None, overlay: Path | None = None) -> None:
+    if sys.platform == 'darwin':
+        from macos_iso import create_iso as create_macos_iso
+        return create_macos_iso(source, destination, capacity, cancel, log, progress, overlay)
     if sys.platform != 'win32':
         raise RuntimeError('ISO с меню пока собирается только на Windows. Выберите папку BDMV.')
     if cancel.is_set():
@@ -66,3 +69,10 @@ def create_iso(source: Path, destination: Path, capacity: int, cancel: threading
 
     if progress:
         progress(1.0)
+
+
+def iso_backend_file():
+    if sys.platform == 'darwin':
+        from settings import find_binary
+        return Path(find_binary('discforge-udf'))
+    return Path(__file__).parent / 'tools/windows_iso.ps1'

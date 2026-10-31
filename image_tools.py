@@ -58,7 +58,7 @@ class ImageTools(QWidget):
         self.vlc = QPushButton('Проверить ISO в VLC')
         self.vlc.clicked.connect(self.open_vlc)
         row.addWidget(self.vlc)
-        self.burn = QPushButton('Записать средствами Windows…')
+        self.burn = QPushButton('Запись ISO: macOS' if sys.platform == 'darwin' else 'Записать средствами Windows…')
         self.burn.setEnabled(False)
         self.burn.clicked.connect(self.open_burner)
         row.addWidget(self.burn)
@@ -75,6 +75,9 @@ class ImageTools(QWidget):
         box.addWidget(self.report, 1)
         note = QLabel('Откроется стандартное окно записи Windows: выберите привод и включите проверку диска после записи. '
                       'DiscForge не стирает носители и не начинает запись автоматически.')
+        if sys.platform == 'darwin':
+            note.setText('Запись готового образа на Mac доступна через macos_burn.py с проверкой записи. '
+                         'Для просмотра меню установите VLC для Apple Silicon; Java входит в комплект.')
         note.setWordWrap(True)
         note.setObjectName('hint')
         box.addWidget(note)
@@ -145,12 +148,13 @@ class ImageTools(QWidget):
             return
         vlc = find_vlc()
         if vlc is None:
-            vlc, _ = QFileDialog.getOpenFileName(self, 'Выберите VLC 64-bit (vlc.exe)', '', 'VLC (vlc.exe)')
+            vlc, _ = QFileDialog.getOpenFileName(self, 'Выберите VLC.app' if sys.platform == 'darwin' else 'Выберите VLC 64-bit (vlc.exe)', '',
+                                                'Приложения (*.app);;Все файлы (*)' if sys.platform == 'darwin' else 'VLC (vlc.exe)')
             if not vlc:
                 return
         try:
             launch_iso(self.path.text(), vlc)
-            self.report.appendPlainText('ISO открыт в отдельном VLC с меню Blu-ray и Java из комплекта DiscForge. '
+            self.report.appendPlainText('ISO открыт в отдельном VLC с меню Blu-ray. '
                                         'Проверьте запуск фильма, главы и возврат в меню.')
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, 'Проверить ISO в VLC', str(exc))
