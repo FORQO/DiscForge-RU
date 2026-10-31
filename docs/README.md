@@ -1,4 +1,7 @@
-# Документация DiskForge 1.5.0
+# Документация DiskForge Studio 1.5.0
+
+- [Интерфейс Studio и актуальные скриншоты](STUDIO.md).
+- [Запуск Windows Studio](WINDOWS_STUDIO.md) · [Запуск macOS Studio](MACOS.md).
 
 ## Пользователю
 

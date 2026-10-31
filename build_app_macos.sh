@@ -26,5 +26,5 @@ iconutil -c icns build/DiskForge.iconset -o build/DiskForge.icns
     --add-binary "$ffmpeg_bin:bin" --add-binary "$ffprobe_bin:bin" main.py
 # PyInstaller signs locally; no Developer ID or notarization is implied.
 dist/DiskForge.app/Contents/MacOS/DiskForge --self-test build/macos-self-test.json
-ditto -c -k --sequesterRsrc --keepParent dist/DiskForge.app "dist/DiskForge-1.5.0-macOS-$(uname -m).zip"
+ditto -c -k --sequesterRsrc --keepParent dist/DiskForge.app "dist/DiskForge-Studio-1.5.0-macOS-$(uname -m).zip"
 echo "Готово: dist/DiskForge.app и ZIP для $(uname -m). Локальная подпись, без нотарификации Apple."
