@@ -109,6 +109,20 @@ class SubtitleTests(unittest.TestCase):
         self.assertTrue(Path(font).is_file())
         self.assertTrue(font.endswith('/assets/fonts/NotoSans-Regular.ttf'))
 
+    def test_frozen_macos_font_path_and_missing_resource(self):
+        bundle = self.root / 'Studio пакет'
+        font = bundle / 'assets/fonts/NotoSans-Regular.ttf'
+        font.parent.mkdir(parents=True)
+        font.write_bytes(b'font-fixture')
+        with patch('subtitles.sys.platform', 'darwin'), patch('subtitles.sys._MEIPASS', str(bundle), create=True):
+            text = meta_lines([(self.root/'captions.srt', {'language': 'rus'})], '50', 1280, 720)
+            self.assertIn('font-name="' + font.resolve().as_posix() + '"', text)
+            font.unlink()
+            with self.assertRaisesRegex(ValueError, 'шрифт'):
+                meta_lines([(self.root/'captions.srt', {'language': 'rus'})], '50', 1280, 720)
+            # PGS already contains pixels and must not require a font.
+            self.assertNotIn('font-name', meta_lines([(self.root/'captions.sup', {'language': 'rus'})], '50', 1280, 720))
+
     def test_pgs_header_checked(self):
         path = self.root/'fake.sup'
         path.write_bytes(b'notPGS')

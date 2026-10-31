@@ -358,8 +358,10 @@ class Window(QMainWindow):
         left_box.addWidget(self.movie_title_edit)
         order_row = QHBoxLayout()
         order_row.addWidget(QLabel('Порядок'), 1)
-        self.movie_up = QPushButton('↑')
-        self.movie_down = QPushButton('↓')
+        self.movie_up = QPushButton()
+        self.movie_up.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/arrow-up.svg')))
+        self.movie_down = QPushButton()
+        self.movie_down.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/arrow-down.svg')))
         for button, direction, caption in ((self.movie_up, -1, 'Переместить фильм вверх'), (self.movie_down, 1, 'Переместить фильм вниз')):
             button.setFixedWidth(36)
             button.setToolTip(caption)
