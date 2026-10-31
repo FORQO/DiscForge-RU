@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -42,7 +43,7 @@ class FilmEnhancementTests(unittest.TestCase):
     def test_selection_trial_and_reorder_keep_independent_choices(self):
         self.w.enhance_video.setChecked(True)
         self.assertEqual(MODES[self.w.processing_mode.currentIndex()], 'auto')
-        self.assertTrue(self.w.gpu_frames.isEnabled())
+        self.assertEqual(self.w.gpu_frames.isEnabled(), sys.platform != 'darwin')
         first, second = (self.w.media[p] for p in self.paths)
         snapshot = self.w._config()
         self.assertTrue(self.w._trial_config(first)['enhance'])

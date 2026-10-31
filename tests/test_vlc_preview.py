@@ -14,6 +14,9 @@ def fake_pe(path, machine=0x8664):
 
 class VlcPreviewTests(unittest.TestCase):
     def setUp(self):
+        platform_patch = patch.object(vlc_preview.sys, 'platform', 'win32')
+        platform_patch.start()
+        self.addCleanup(platform_patch.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QIcon
 from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox, QSlider, QColorDialog, QSpinBox, QLayout, QFontComboBox, QSplitter, QScrollArea, QGroupBox, QFormLayout, QGridLayout, QFrame)
+    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox, QSlider, QColorDialog, QSpinBox, QLayout, QFontComboBox, QSplitter, QScrollArea, QGroupBox, QFormLayout, QGridLayout, QFrame, QTabWidget, QSizePolicy, QStyle)
 from disc_menu import (MenuDesign, render_page, pages, import_background, TEXT, BUTTONS,
                        button_id, button_label_key, button_style, page_elements, resolve_action)
 from menu_layout import text_style
@@ -48,15 +48,16 @@ class MenuEditor(QWidget):
         self.movie_path = None
         self.movie_name = ''
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(18, 16, 12, 10)
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setChildrenCollapsible(False)
-        self.splitter.setHandleWidth(8)
+        self.splitter.setHandleWidth(1)
         layout.addWidget(self.splitter)
         canvas = QWidget()
         canvas_layout = QVBoxLayout(canvas)
         canvas_layout.setContentsMargins(0, 0, 0, 0)
-        canvas_layout.setSpacing(6)
+        canvas_layout.setSpacing(12)
+        canvas_layout.setContentsMargins(0, 0, 16, 0)
         self.context_selector = QComboBox()
         self.context_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.context_selector.setMinimumContentsLength(20)
@@ -76,11 +77,19 @@ class MenuEditor(QWidget):
         for caption, key in [('Вверх', 'up'), ('Вниз', 'down'), ('Влево', 'left'), ('Вправо', 'right'),
                              ('OK', 'enter'), ('Главное меню', 'home')]:
             button = QPushButton(caption)
-            button.setAccessibleName({'up': 'Вверх', 'down': 'Вниз'}.get(key, caption))
+            button.setAccessibleName(caption)
+            button.setToolTip(caption)
+            button.setText({'up': '↑', 'down': '↓', 'left': '←', 'right': '→', 'home': 'Меню'}.get(key, caption))
+            if key in ('up', 'down', 'left', 'right'):
+                button.setFixedWidth(32)
             button.clicked.connect(lambda _=False, k=key: self.press(k))
             remote.addWidget(button)
             self.remote_buttons[key] = button
-        canvas_layout.addLayout(remote)
+        self.remote_panel = QWidget()
+        self.remote_panel.setLayout(remote)
+        remote.setContentsMargins(0, 0, 0, 0)
+        remote.setSpacing(5)
+        self.remote_panel.hide()
         self.fullscreen_button = QPushButton()
         self.fullscreen_button.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/fullscreen.svg')))
         self.fullscreen_button.setIconSize(QSize(21, 21))
@@ -89,11 +98,23 @@ class MenuEditor(QWidget):
         self.fullscreen_button.setToolTip('На весь экран · F11')
         self.fullscreen_button.setAccessibleName('На весь экран')
         self.fullscreen_button.clicked.connect(self.show_fullscreen)
-        remote.addWidget(self.fullscreen_button)
         remote.addStretch()
-        self.caption = QLabel('Клик — выбрать · Двойной клик — изменить текст · Del — удалить. Перетаскивайте элементы и маркеры размера; Alt отключает прилипание.')
+        canvas_layout.addWidget(self.remote_panel)
+        toolbar = QHBoxLayout(); toolbar.addStretch()
+        self.preview_mode = QPushButton('▶  Предпросмотр')
+        self.preview_mode.setCheckable(True)
+        self.preview_mode.setObjectName('ghost')
+        self.preview_mode.toggled.connect(self.set_preview_mode)
+        toolbar.addWidget(self.preview_mode)
+        toolbar.addWidget(self.fullscreen_button)
+        toolbar.addStretch()
+        canvas_layout.addLayout(toolbar)
+        self.caption = QLabel('Выберите объект · Двойной клик — изменить текст')
         self.caption.setWordWrap(True)
         self.caption.setObjectName('hint')
+        self.caption.setAlignment(Qt.AlignCenter)
+        self.caption.setMinimumWidth(0)
+        self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         canvas_layout.addWidget(self.caption)
         self.splitter.addWidget(canvas)
 
@@ -103,18 +124,34 @@ class MenuEditor(QWidget):
         self.inspector.setWidgetResizable(True)
         self.inspector.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.inspector.setFrameShape(QFrame.NoFrame)
-        self.inspector.setMinimumWidth(300)
-        self.inspector.setMaximumWidth(440)
+        self.inspector.setMinimumWidth(270)
+        self.inspector.setMaximumWidth(320)
         panel = QWidget()
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(0, 0, 8, 0)
+        panel_layout.setContentsMargins(10, 0, 0, 0)
         panel_layout.setSpacing(10)
+
+        self.inspector_tabs = QTabWidget()
+        self.inspector_tabs.setObjectName('inspectorTabs')
+        self.inspector_tabs.setDocumentMode(True)
+        self.inspector_tabs.tabBar().setDrawBase(False)
+        panel_layout.addWidget(self.inspector_tabs)
+        self.inspector_layouts = []
+        for caption in ('Оформление', 'Объект', 'Расстановка'):
+            page = QWidget(); page_box = QVBoxLayout(page)
+            page_box.setContentsMargins(4, 10, 8, 6); page_box.setSpacing(10)
+            scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidget(page)
+            self.inspector_tabs.addTab(scroll, caption)
+            self.inspector_layouts.append(page_box)
 
         def section(title):
             group = QGroupBox(title)
-            box = QVBoxLayout(group)
-            box.setSpacing(8)
-            panel_layout.addWidget(group)
+            group.setMinimumWidth(0)
+            box = QVBoxLayout(group); box.setSpacing(8)
+            index = 1 if title == 'Выбранный элемент' else 2 if title == 'Кнопки и выравнивание' else 0
+            self.inspector_layouts[index].addWidget(group)
             return box
 
         general = section('Меню диска')
@@ -193,6 +230,8 @@ class MenuEditor(QWidget):
         self.font_family.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.font_family.setMinimumContentsLength(9)
         form = QFormLayout()
+        self.style_form = form
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         form.addRow('Гарнитура', self.font_family)
         form.addRow('Размер', self.font_size)
         self.bold = QCheckBox('Жирный')
@@ -219,7 +258,8 @@ class MenuEditor(QWidget):
         self.action_selector = QComboBox()
         self.action_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.action_selector.setMinimumContentsLength(15)
-        style_layout.addWidget(QLabel('Действие кнопки'))
+        self.action_label = QLabel('Действие кнопки')
+        style_layout.addWidget(self.action_label)
         style_layout.addWidget(self.action_selector)
         element.addWidget(self.style_panel)
         self.style_panel.setEnabled(False)
@@ -250,12 +290,13 @@ class MenuEditor(QWidget):
         restore = QPushButton('Вернуть удалённый элемент')
         restore.clicked.connect(self.restore_button)
         tools.addWidget(restore)
-        panel_layout.addStretch()
+        for page_box in self.inspector_layouts:
+            page_box.addStretch()
         self.inspector.setWidget(panel)
         self.splitter.addWidget(self.inspector)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
-        self.splitter.setSizes([1000, 330])
+        self.splitter.setSizes([800, 280])
         self.preview.selected.connect(self.preview_selection)
         self.preview.text_committed.connect(self.inline_text)
         self.preview.delete_requested.connect(self.delete_button)
@@ -277,6 +318,16 @@ class MenuEditor(QWidget):
         self.enabled.toggled.connect(self.changed)
         self.populate_labels()
         self.refresh()
+
+    def set_preview_mode(self, enabled):
+        self.preview.commit_edit()
+        self.preview.view_only = enabled
+        self.remote_panel.setVisible(enabled)
+        self.inspector.setVisible(not enabled)
+        self.preview_mode.setText('■  Редактировать' if enabled else '▶  Предпросмотр')
+        self.select_button('')
+        self.caption.setText('Стрелки — выбор · Enter — открыть · Backspace — назад' if enabled else 'Выберите объект · Двойной клик — изменить текст')
+        self.preview.update()
 
     def show_fullscreen(self):
         from fullscreen_preview import FullscreenPreview
@@ -658,6 +709,12 @@ class MenuEditor(QWidget):
         if not key:
             return
         is_text = key.startswith('text:')
+        self.action_label.setVisible(not is_text)
+        self.action_selector.setVisible(not is_text)
+        for field in (self.shape, self.border_width, self.opacity):
+            self.style_form.setRowVisible(field, not is_text)
+        for name, button in self.color_buttons.items():
+            button.setVisible(not is_text or name == 'text')
         style = text_style(self.current_design(preview=True), key[5:]) if is_text else button_style(self.current_design(preview=True), key)
         for widget in (self.shape, self.border_width, self.opacity):
             widget.setEnabled(not is_text)
@@ -686,7 +743,8 @@ class MenuEditor(QWidget):
         previous = self.selected_button
         self.select_button(key)
         if key and key != previous:
-            self.inspector.verticalScrollBar().setValue(self.label_key.parentWidget().y())
+            self.inspector_tabs.setCurrentIndex(1)
+            self.inspector_tabs.widget(1).verticalScrollBar().setValue(0)
         if self.is_catalog():
             _, entries = catalog_page(self.current_design(preview=True), [name for _, name in self.collection_items], self.catalog_page)
             for i, (_, action) in enumerate(entries):

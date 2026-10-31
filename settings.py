@@ -19,18 +19,18 @@ CFG = config_dir(sys.platform, Path.home(), os.getenv('APPDATA')) / 'settings.js
 
 def find_binary(name: str) -> str:
     app_root = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-    executable = name + '.exe' if sys.platform == 'win32' else name
-    for folder in (app_root / 'tools', app_root / 'bin'):
-        candidate = folder / executable
-        if candidate.is_file():
-            return str(candidate)
-    # Finder-launched .app bundles often omit Homebrew from PATH.
+    resources = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
+    names = ('tsMuxeR', 'tsmuxer') if name.lower() == 'tsmuxer' else (name,)
+    folders = [app_root / 'tools', app_root / 'bin', resources / 'bin', resources / 'tools']
     if sys.platform == 'darwin':
-        for root in ('/opt/homebrew/bin', '/usr/local/bin'):
-            candidate = Path(root) / name
+        folders += [Path('/opt/homebrew/bin'), Path('/usr/local/bin'),
+                    Path('/Applications/tsMuxerGUI.app/Contents/MacOS')]
+    for folder in folders:
+        for alias in names:
+            candidate = folder / (alias + '.exe' if sys.platform == 'win32' else alias)
             if candidate.is_file():
                 return str(candidate)
-    return shutil.which(name) or name
+    return next((found for alias in names if (found := shutil.which(alias))), name)
 
 
 def defaults():

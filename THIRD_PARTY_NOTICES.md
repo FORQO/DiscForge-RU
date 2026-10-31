@@ -73,3 +73,21 @@ VLC is separately installed and is not redistributed with DiscForge.
 
 Pinned archive URLs and SHA-256 are recorded in tools/package_windows.py.
 The application is MIT licensed; that does not relicense these separate components.
+
+## macOS native UDF packer
+
+`discforge-udf` statically incorporates the IsoWriter and supporting code from
+[justdan96/tsMuxer](https://github.com/justdan96/tsMuxer), revision
+`c6b1186209e42c877052e762c9185f3226ef8ea2`, under Apache-2.0.
+The build applies local fixes for multi-sector directory data and 32-bit object
+identifiers (see `tools/patch_macos_udf.py`). The complete pinned source is fetched
+by `tools/build_macos_tools.py`; a copy of the license is in
+`licenses/tsMuxer-Apache-2.0.txt`. The bundled tsMuxer CLI is version 2.7.0 arm64.
+FFmpeg/ffprobe and their dependent libraries are copied from the build host;
+FFmpeg build configuration is available by running the bundled `ffmpeg -version`.
+VLC is an external dependency and is not bundled. The macOS arm64 package includes
+Azul Zulu OpenJDK JRE 8u512 (Zulu 8.98.0.107), distributed under GPLv2 with the
+Classpath Exception. Original LICENSE, DISCLAIMER, release metadata and
+THIRD_PARTY_README remain inside runtime/java. Downloads and source information:
+https://www.azul.com/downloads/?package=jre#zulu and https://github.com/zulu-openjdk/zulu-openjdk.
+No global Java installation or shell profile is modified.

@@ -11,6 +11,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -21,7 +22,7 @@ from typing import Callable, Sequence
 from bdmv_preflight import inspect as inspect_bdmv
 from tools.iso_udf_preflight import inspect as inspect_iso
 from disc_menu import MenuDesign, install_menu
-from windows_iso import create_iso, pending_image
+from windows_iso import create_iso, pending_image, iso_backend_file
 from audio_selection import selected_tracks, select_tracks, audio_outputs, stream_map, language
 
 SUPPORTED = {'.mkv', '.mp4', '.mov', '.m2ts', '.mts', '.ts', '.avi'}
@@ -517,7 +518,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         if menu.background:
             from disc_menu import background_image
             background_image(menu.background)
-        if iso and os.name != 'nt':
+        if iso and os.name != 'nt' and sys.platform != 'darwin':
             raise DiscForgeError('ISO с меню пока доступен на Windows. Выберите папку BDMV.')
         chapters = list(chapters) if chapters is not None else [0.0] + list(range(600, int(info.duration), 600))
         if len(chapters) > 999:
@@ -742,7 +743,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         if (menu is not None or resilient) and iso:
             image = work / 'image.iso' if resilient else pending_iso
             report('iso', 0)
-            image_key = [authored_key, profile, tools_key, digest(Path(__file__).parent/'tools/windows_iso.ps1', cancel)]
+            image_key = [authored_key, profile, tools_key, digest(iso_backend_file(), cancel)]
             if not cache.reusable('ISO', image_key, [image]):
                 cache.begin('ISO')
                 if resilient and image.exists():
