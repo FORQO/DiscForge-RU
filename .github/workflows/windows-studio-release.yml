@@ -1,0 +1,52 @@
+name: Windows Studio release
+on:
+  push:
+    branches: [release/windows-studio-1.5.0]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Windows regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONUTF8: '1'
+        run: python -m unittest discover -s tests -v
+      - name: Build Studio
+        run: python -m PyInstaller --noconfirm --clean --windowed --icon assets/brand/diskforge.ico --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
+      - uses: actions/cache@v6
+        with:
+          path: build/dependencies
+          key: windows-tools-ffmpeg902-tsmuxer270-java8u504
+      - name: Bundle dependencies and verify packaged app
+        env:
+          PYTHONUTF8: '1'
+        run: python tools/package_windows.py --app dist/DiscForge_RU --output release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DiskForge-Studio-Windows-x64
+          path: release/
+  publish:
+    needs: [build, tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v8
+        with:
+          name: DiskForge-Studio-Windows-x64
+          path: release
+      - name: Publish Windows Studio
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create windows-v1.5.0-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.0 — Windows x64" --notes-file docs/WINDOWS_STUDIO.md --latest

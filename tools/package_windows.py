@@ -82,12 +82,14 @@ def main():
     shutil.copytree(repo/'docs', app/'docs', dirs_exist_ok=True)
     (app/'USER_GUIDE.md').write_text((repo/'docs/USER_GUIDE.md').read_text('utf-8').replace('(README.md)', '(docs/README.md)').replace('(AUDIO.md)', '(docs/AUDIO.md)').replace('(SUBTITLES.md)', '(docs/SUBTITLES.md)').replace('(LOCAL_ENGINE.md)', '(docs/LOCAL_ENGINE.md)').replace('(TRUEHD.md)', '(docs/TRUEHD.md)').replace('(COLLECTIONS.md)', '(docs/COLLECTIONS.md)').replace('(BITRATE.md)', '(docs/BITRATE.md)'), encoding='utf-8')
     shutil.copy2(repo/'assets/brand/diskforge-logo.png', app/'DiskForge.png')
+    shutil.copy2(repo/'docs/WINDOWS_STUDIO.md', app/'START-HERE.md')
+    shutil.copy2(repo/'docs/WINDOWS_STUDIO.md', output/'README-Windows.md')
     report = output/'verification.json'
     subprocess.run([str(app/'DiscForge_RU.exe'), '--self-test', str(report)], timeout=60, check=True,
                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if not json.loads(report.read_text(encoding='utf-8'))['passed']:
         raise RuntimeError('Packaged application self-test failed')
-    filename = f'DiscForge-RU-{VERSION}-Windows-x64.zip'
+    filename = f'DiskForge-Studio-{VERSION}-Windows-x64.zip'
     with zipfile.ZipFile(output/filename, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(app.rglob('*')):
             if path.is_file():
