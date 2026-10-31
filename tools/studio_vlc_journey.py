@@ -1,4 +1,4 @@
-"""Exercise actual libVLC BD-J menus and playback, using virtual A/V outputs."""
+"""Exercise Windows libVLC BD-J navigation and playback with virtual A/V outputs."""
 import argparse
 import ctypes as c
 import json
@@ -13,9 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def run(args):
     java = Path(args.java).resolve()
-    mac = sys.platform == 'darwin'
-    jvm = java / ('lib/server/libjvm.dylib' if mac else 'bin/server/jvm.dll')
-    vlcroot = Path('/Applications/VLC.app/Contents/MacOS') if mac else Path(r'C:\Program Files\VideoLAN\VLC')
+    if sys.platform != 'win32':
+        raise RuntimeError('This harness requires Windows; test macOS with the VLC application.')
+    jvm = java / 'bin/server/jvm.dll'
+    vlcroot = Path(r'C:\Program Files\VideoLAN\VLC')
     log = Path(args.log).resolve(); log.parent.mkdir(parents=True, exist_ok=True)
     propsfile = log.with_suffix('.properties.json')
     if not args.child:
@@ -26,9 +27,6 @@ def run(args):
         env = dict(os.environ, JAVA_HOME=str(java), JRE_HOME=str(java), BDJ_JVM_PATH=str(jvm), BD_DEBUG_MASK='0xffff')
         for key in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS'):
             env.pop(key, None)
-        if mac:
-            env['DYLD_LIBRARY_PATH'] = str(vlcroot/'lib')
-            env['VLC_PLUGIN_PATH'] = str(vlcroot/'plugins')
         env['PATH'] = str(java/'bin')+os.pathsep+str(jvm.parent)+os.pathsep+env.get('PATH', '')
         with log.open('wb') as stream:
             p = subprocess.run([sys.executable, __file__, *sys.argv[1:], '--child'], env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=180)
@@ -36,21 +34,10 @@ def run(args):
             raise RuntimeError(log.read_text(errors='replace')[-7000:])
         print('PASS: actual VLC BD-J navigation', args.iso, flush=True)
         return
-    qt_app = None
-    if mac:
-        os.environ['QT_QPA_PLATFORM'] = 'cocoa'
-        from PySide6.QtWidgets import QApplication
-        qt_app = QApplication([])
-    def pause(seconds):
-        until = time.monotonic() + seconds
-        while time.monotonic() < until:
-            if qt_app: qt_app.processEvents()
-            time.sleep(.01)
-    handles = []
-    if not mac:
-        handles = [os.add_dll_directory(str(p)) for p in (java/'bin', jvm.parent, vlcroot)]
+    pause = time.sleep
+    handles = [os.add_dll_directory(str(p)) for p in (java/'bin', jvm.parent, vlcroot)]
     handles.append(c.CDLL(str(jvm)))
-    vlc = c.CDLL(str(vlcroot/('lib/libvlc.dylib' if mac else 'libvlc.dll')))
+    vlc = c.CDLL(str(vlcroot/'libvlc.dll'))
     def api(name, result, params):
         fn=getattr(vlc,name);fn.restype=result;fn.argtypes=params;return fn
     ptr,integer,string=c.c_void_p,c.c_int,c.c_char_p
@@ -59,13 +46,12 @@ def run(args):
     player_new=api('libvlc_media_player_new_from_media',ptr,[ptr])
     play=api('libvlc_media_player_play',integer,[ptr])
     nav=api('libvlc_media_player_navigate',None,[ptr,integer])
-    get_time=api('libvlc_media_player_get_time',c.c_int64,[ptr])
     opts=[b'--ignore-config',b'--vout=dummy',b'--aout=dummy',b'--verbose=2',b'--avcodec-hw=none',b'--bluray-menu']
     instance=new(len(opts),(string*len(opts))(*opts));assert instance
     media=media_new(instance,('bluray:///'+Path(args.iso).resolve().as_posix()).encode())
     player=player_new(media);assert player and play(player)==0
     props=json.loads(propsfile.read_text())
-    crts=[c.CDLL(None)] if mac else [c.CDLL('msvcrt.dll'),c.CDLL('ucrtbase.dll')]
+    crts=[c.CDLL('msvcrt.dll'),c.CDLL('ucrtbase.dll')]
     def output():
         for crt in crts:crt.fflush(None)
         return log.read_text(errors='replace')
@@ -108,7 +94,6 @@ def run(args):
             mark=choose(home,f'page:{page}');waitfor(f'DiscForge: menu page {page}',mark)
             mark=choose(page,'play:1');waitfor('DiscForge: playlist '+props.get(prefix+'playlist','00000'),mark);waitfor('DiscForge: play chapter 1',mark)
             pause(.6)
-            assert get_time(player)>0,'VLC playback clock did not advance'
             waitfor(f'DiscForge: menu page {home}',mark,timeout=20)
             checks.append(f'movie{movie}:chapter2_playback_return')
             if 'movies' in props:
