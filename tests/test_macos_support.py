@@ -6,7 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import macos_iso
 import settings
@@ -80,7 +80,11 @@ class MacSupportTests(unittest.TestCase):
             root = Path(temp)
             source = root/'source'; (source/'BDMV').mkdir(parents=True)
             target = root/'out.iso'
-            with patch.object(macos_iso, 'find_binary', return_value='/usr/bin/false'):
+            def fail_writer(command, **kwargs):
+                Path(command[2]).write_bytes(b'partial ISO')
+                return Mock(returncode=1, poll=Mock(return_value=1), wait=Mock(return_value=1))
+            with patch.object(macos_iso, 'find_binary', return_value=sys.executable), \
+                    patch.object(macos_iso.subprocess, 'Popen', side_effect=fail_writer):
                 with self.assertRaisesRegex(RuntimeError, 'создать ISO'):
                     macos_iso.create_iso(source, target, 25000000000, threading.Event())
             self.assertFalse(target.exists())
