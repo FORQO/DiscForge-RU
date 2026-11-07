@@ -1,8 +1,10 @@
 """Interactive canvas; pointer coordinates are mapped through the letterboxed image."""
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent, QPointF
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent, QPointF, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import QWidget, QLineEdit, QApplication
 from menu_layout import snap_rect
+import copy
+import time
 
 
 class MenuPreview(QWidget):
@@ -11,6 +13,9 @@ class MenuPreview(QWidget):
     delete_requested = Signal()
     geometry_changed = Signal(str, list, int)
     navigate = Signal(str)
+    gesture_finished = Signal()
+    reorder_requested = Signal(str, int)
+    focus_requested = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -21,10 +26,24 @@ class MenuPreview(QWidget):
         self.setMouseTracking(True)
         self.elements = []
         self.selection = ''
+        self.selected_keys = set()
         self.edit_key = None
         self.drag = None
         self.guides = []
         self.snapping = True
+        self.scene_background = None
+        self.layout_config = {'mode': 'free', 'snap': 16}
+        self.animation_mode = 'restrained'
+        self.scene_scope = None
+        self.focus_index = -1
+        self._focus_levels = {}
+        self._positions = {}
+        self._from_positions = {}
+        self._motion_start = self._entrance_start = self._pressed_start = 0
+        self._pressed_id = ''
+        self._last_tick = time.monotonic()
+        self._pending_click = None
+        self.timer = QTimer(self); self.timer.setInterval(16); self.timer.timeout.connect(self._tick)
         self.inline = QLineEdit(self)
         self.inline.hide()
         self.inline.setMaxLength(120)
@@ -69,22 +88,36 @@ class MenuPreview(QWidget):
             element = next((e for e in reversed(self.elements) if e['rect'].contains(pos.toPoint())), None)
         if element is None:
             self.selection = ''
+            self.selected_keys.clear()
             self.selected.emit('')
             self.update()
             return
         self.selection = element['id']
+        if event.modifiers() & Qt.ControlModifier and not self.view_only:
+            if self.selection in self.selected_keys:
+                self.selected_keys.remove(self.selection)
+            else:
+                self.selected_keys.add(self.selection)
+        else:
+            self.selected_keys = {self.selection}
         self.selected.emit(self.selection)
         if self.view_only:
             if element.get('button'):
-                self.navigate.emit('enter')
+                if not element['style'].get('disabled'):
+                    self._pending_click = element['id']
             self.selection = ''
             self.update()
             return
-        self.drag = None if element.get('locked_geometry') else dict(element=element, start=point, rect=QRect(element['rect']), edge=edge, moved=False)
+        self.drag = None if element.get('locked_geometry') else dict(element=copy.deepcopy(element), start=point, rect=QRect(element['rect']), edge=edge, moved=False, ghost=None)
         self.update()
 
     def mouseMoveEvent(self, event):
         if self.drag is None:
+            if self.view_only:
+                pos = self.canvas_point(event.position()).toPoint()
+                hover = next((e for e in self.elements if e['button'] and e['rect'].contains(pos) and not e['style'].get('disabled')), None)
+                if hover and hover['index'] != self.focus_index:
+                    self.focus_requested.emit(hover['index'])
             selected = next((e for e in self.elements if e['id'] == self.selection), None)
             edge = next((k for k, r in self.handles(selected).items() if r.contains(event.position().toPoint())), '') if selected else ''
             cursor = Qt.SizeFDiagCursor if edge in ('nw', 'se') else Qt.SizeBDiagCursor if edge in ('ne', 'sw') else Qt.SizeHorCursor if edge in ('w', 'e') else Qt.SizeVerCursor if edge else Qt.ArrowCursor
@@ -94,6 +127,7 @@ class MenuPreview(QWidget):
         if not self.drag['moved'] and abs(delta.x())+abs(delta.y()) < QApplication.startDragDistance():
             return
         self.drag['moved'] = True
+        self.setCursor(Qt.ClosedHandCursor)
         factor = 1920/self.target_rect().width()
         dx, dy = round(delta.x()*factor), round(delta.y()*factor)
         r = self.drag['rect']
@@ -115,7 +149,19 @@ class MenuPreview(QWidget):
         others = [[e['rect'].x(), e['rect'].y(), e['rect'].width(), e['rect'].height()]
                   for e in self.elements if e['id'] != self.selection]
         rect = [x, y, w, h]
+        self.drag['ghost'] = rect
+        if self.drag['element'].get('button') and not edge and self.layout_config['mode'] != 'free':
+            pos = self.canvas_point(event.position())
+            buttons = [e for e in self.elements if e['button']]
+            target = min(buttons, key=lambda e: (e['rect'].center().x()-pos.x())**2 + (e['rect'].center().y()-pos.y())**2)
+            if target['id'] != self.selection:
+                self.reorder_requested.emit(self.selection, target['index'])
+            self.update()
+            return
         if self.snapping and not event.modifiers() & Qt.AltModifier:
+            if self.scene_scope in getattr(self, 'explicit_scopes', set()) and not edge:
+                step = self.layout_config['snap']
+                rect[0], rect[1] = round(rect[0]/step)*step, round(rect[1]/step)*step
             rect, self.guides = snap_rect(rect, others, threshold=6*factor, resize_edges=edge)
         else:
             self.guides = []
@@ -126,8 +172,21 @@ class MenuPreview(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return
+        if self.view_only and self._pending_click:
+            point = self.canvas_point(event.position()).toPoint()
+            element = next((e for e in self.elements if e['id'] == self._pending_click), None)
+            if element and element['rect'].contains(point):
+                self.flash_pressed()
+                self.navigate.emit('enter')
+        self._pending_click = None
+        moved = self.drag and self.drag['moved']
         self.drag = None
         self.guides = []
+        self.setCursor(Qt.ArrowCursor)
+        if moved:
+            self.gesture_finished.emit()
         self.update()
 
     def mouseDoubleClickEvent(self, event):
@@ -201,9 +260,46 @@ class MenuPreview(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.drawImage(self.target_rect(), self.image)
+        target = self.target_rect()
+        painter.drawImage(target, self.scene_background if self.scene_background is not None else self.image)
+        if self.scene_background is not None:
+            from disc_menu import paint_button, paint_focus
+            from episode_buttons import ANIMATIONS
+            duration, stagger = ANIMATIONS[self.animation_mode]
+            painter.save(); painter.translate(target.x(), target.y()); painter.scale(target.width()/1920, target.height()/1080)
+            painter.setRenderHint(QPainter.Antialiasing)
+            now = time.monotonic()
+            progress = 1 if not duration else min(1, (now-self._motion_start)*1000/duration)
+            eased = 1-(1-progress)**3
+            for e in self.elements:
+                if not e['button']:
+                    continue
+                element = dict(e)
+                rect = e['rect']; end = [rect.x(), rect.y(), rect.width(), rect.height()]
+                start = self._from_positions.get(e['id'], end)
+                live = [round(a+(b-a)*eased) for a, b in zip(start, end)]
+                self._positions[e['id']] = live
+                element['rect'] = live
+                reveal = 1 if not duration or not self.view_only else max(0, min(1, ((now-self._entrance_start)*1000-e['index']*stagger)/duration))
+                painter.save(); painter.setOpacity(reveal)
+                if self.drag and self.drag['moved'] and self.drag['element']['id'] == e['id']:
+                    painter.setOpacity(reveal*0.25)
+                paint_button(painter, element)
+                level = self._focus_levels.get(e['id'], 0)
+                if self._pressed_id == e['id'] and now-self._pressed_start < 0.12:
+                    level *= 0.35
+                paint_focus(painter, element, level)
+                painter.restore()
+            if self.drag and self.drag['moved'] and self.drag['ghost']:
+                ghost = dict(self.drag['element'], rect=self.drag['ghost'])
+                painter.save(); painter.setOpacity(0.72); paint_button(painter, ghost); paint_focus(painter, ghost); painter.restore()
+                if self.layout_config['mode'] != 'free':
+                    slot = next((e['rect'] for e in self.elements if e['id'] == self.selection), None)
+                    if slot:
+                        painter.setPen(QPen(QColor('#ff9f38'), 4)); painter.drawLine(slot.topLeft(), slot.bottomLeft())
+            painter.restore()
         for element in self.elements:
-            if element['id'] == self.selection:
+            if not self.view_only and (element['id'] == self.selection or element['id'] in self.selected_keys):
                 painter.setPen(QPen(QColor('#ffce70'), 1, Qt.DashLine))
                 painter.drawRect(self.display_rect(element['rect']))
                 painter.setBrush(QColor('#ffce70'))
@@ -219,3 +315,54 @@ class MenuPreview(QWidget):
                 y = target.y()+round(value*target.height()/1080)
                 painter.drawLine(target.left(), y, target.right(), y)
         painter.end()
+
+    def set_scene(self, background, focus, scope, animation, config):
+        self.scene_background = background
+        self.focus_index = focus
+        self.animation_mode = animation
+        self.layout_config = config
+        now = time.monotonic()
+        if not self.timer.isActive():
+            self._last_tick = now
+        targets = {e['id']: [e['rect'].x(), e['rect'].y(), e['rect'].width(), e['rect'].height()] for e in self.elements if e['button']}
+        if targets != getattr(self, '_targets', {}):
+            self._from_positions = copy.deepcopy(self._positions)
+            self._motion_start = now
+            self._targets = targets
+        if self.scene_scope != scope:
+            self.scene_scope = scope
+            self.start_entrance()
+        if animation == 'none':
+            self._focus_levels = {e['id']: float(e['index'] == focus) for e in self.elements if e['button']}
+        self.timer.start()
+
+    def start_entrance(self):
+        self._entrance_start = time.monotonic()
+        self.timer.start()
+
+    def flash_pressed(self):
+        self._pressed_id = next((e['id'] for e in self.elements if e['button'] and e['index'] == self.focus_index), '')
+        self._pressed_start = time.monotonic()
+        self.timer.start()
+
+    def _tick(self):
+        from episode_buttons import ANIMATIONS
+        now = time.monotonic()
+        duration, stagger = ANIMATIONS[self.animation_mode]
+        step = 1 if not duration else min(1, (now-self._last_tick)*1000/duration)
+        self._last_tick = now
+        active = False
+        for e in self.elements:
+            if not e['button']:
+                continue
+            target = float(e['index'] == self.focus_index and not e['style'].get('disabled'))
+            level = self._focus_levels.get(e['id'], 0)
+            level = min(target, level+step) if target > level else max(target, level-step)
+            self._focus_levels[e['id']] = level
+            active |= level != target
+        active |= bool(duration and (now-self._motion_start)*1000 < duration)
+        active |= bool(duration and self.view_only and (now-self._entrance_start)*1000 < duration+len(self.elements)*stagger)
+        active |= now-self._pressed_start < 0.12
+        self.update()
+        if not active:
+            self.timer.stop()

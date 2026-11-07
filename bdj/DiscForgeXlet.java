@@ -6,6 +6,9 @@ import java.awt.Image;
 import java.awt.image.ImageObserver;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.Properties;
@@ -28,12 +31,14 @@ import org.dvb.event.UserEventRepository;
 import org.havi.ui.HScene;
 import org.havi.ui.HSceneFactory;
 
-public final class DiscForgeXlet extends Container implements Xlet, UserEventListener, ControllerListener, Runnable {
+public final class DiscForgeXlet extends Container implements Xlet, UserEventListener, ControllerListener, Runnable, MouseListener, MouseMotionListener {
     private static final long serialVersionUID = 1L;
     private HScene scene;
     private final Properties config = new Properties();
     private Image background;
     private Image highlight;
+    private Image pressedHighlight;
+    private volatile boolean pressing;
     private int highlightX, highlightY;
     private Player player;
     private int page, focus;
@@ -55,6 +60,8 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
             setBounds(0, 0, 1920, 1080);
             scene.setLayout(null);
             scene.add(this);
+            addMouseListener(this);
+            addMouseMotionListener(this);
             UserEventRepository keys = new UserEventRepository("DiscForge menu");
             keys.addAllArrowKeys();
             keys.addKey(KeyEvent.VK_ENTER);
@@ -83,12 +90,54 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         closePlayer();
         if (background != null) background.flush();
         if (highlight != null) highlight.flush();
+        if (pressedHighlight != null) pressedHighlight.flush();
+        removeMouseListener(this); removeMouseMotionListener(this);
         if (scene != null) { scene.remove(this); HSceneFactory.getInstance().dispose(scene); }
     }
 
     private synchronized void queue(String action) {
-        if (!stopped && (pending == null || action.equals("home"))) { pending = action; notifyAll(); }
+        if (!stopped && (pending == null || action.equals("home") ||
+                (action.startsWith("click:") && pending.startsWith("pointer:")))) { pending = action; notifyAll(); }
     }
+
+    // Pointer coordinates are already in the 1920x1080 graphics plane. Only
+    // enabled buttons have exported hit boxes; there is no editor drag handler.
+    public static int hitButton(int[][] rects, int x, int y) {
+        for (int i = rects.length - 1; i >= 0; i--) {
+            int[] r = rects[i];
+            if (x >= r[0] && x < r[0]+r[2] && y >= r[1] && y < r[1]+r[3]) return i;
+        }
+        return -1;
+    }
+
+    private int pointerButton(MouseEvent event) {
+        int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+        int[][] rects = new int[count][4];
+        String[] fields = {"x", "y", "w", "h"};
+        for (int i = 0; i < count; i++) {
+            String key = "page." + page + "." + i + ".";
+            for (int j = 0; j < 4; j++) rects[i][j] = Integer.parseInt(config.getProperty(key + fields[j]));
+        }
+        return hitButton(rects, event.getX(), event.getY());
+    }
+
+    public synchronized void mouseMoved(MouseEvent event) {
+        if (playing || busy || stopped || pending != null) return;
+        int target = pointerButton(event);
+        if (target >= 0 && target != focus) queue("pointer:" + page + ":" + target);
+    }
+
+    public synchronized void mouseClicked(MouseEvent event) {
+        if (playing || busy || stopped || (event.getModifiers() & MouseEvent.BUTTON1_MASK) == 0) return;
+        int target = pointerButton(event);
+        if (target >= 0) queue("click:" + page + ":" + target);
+    }
+
+    public void mouseDragged(MouseEvent event) { }
+    public void mousePressed(MouseEvent event) { }
+    public void mouseReleased(MouseEvent event) { }
+    public void mouseEntered(MouseEvent event) { }
+    public void mouseExited(MouseEvent event) { }
 
     private Image loadImage(String name) throws Exception {
         // Read inside the Xlet context. AWT's asynchronous URL fetcher may lack
@@ -144,6 +193,8 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     }
 
     private void loadFocus() throws Exception {
+        pressing = false;
+        if (pressedHighlight != null) { pressedHighlight.flush(); pressedHighlight = null; }
         if (highlight != null) { highlight.flush(); highlight = null; }
         if (Integer.parseInt(config.getProperty("page." + page + ".count")) == 0) return;
         String key = "page." + page + "." + focus;
@@ -151,6 +202,8 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         highlightX = Integer.parseInt(config.getProperty(key + ".focusX"));
         highlightY = Integer.parseInt(config.getProperty(key + ".focusY"));
         highlight = image;
+        String pressedName = config.getProperty(key + ".pressed");
+        if (pressedName != null) pressedHighlight = loadImage(pressedName);
     }
 
     public synchronized void userEventReceived(UserEvent event) {
@@ -170,7 +223,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
         if (key == KeyEvent.VK_UP) queue("focus:up");
         if (key == KeyEvent.VK_RIGHT) queue("focus:right");
         if (key == KeyEvent.VK_LEFT) queue("focus:left");
-        if (key == KeyEvent.VK_ENTER) queue(config.getProperty("page." + page + "." + focus));
+        if (key == KeyEvent.VK_ENTER) queue("activate:" + page + ":" + focus);
     }
 
     private synchronized void closePlayer() {
@@ -303,7 +356,24 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
             }
             try {
                 error = null;
-                if (action.startsWith("focus:")) {
+                if (action.startsWith("click:") || action.startsWith("pointer:") || action.startsWith("activate:")) {
+                    boolean activate = !action.startsWith("pointer:");
+                    int split = action.indexOf(':');
+                    int end = action.indexOf(':', split + 1);
+                    int pointerPage = Integer.parseInt(action.substring(split + 1, end));
+                    int target = Integer.parseInt(action.substring(end + 1));
+                    int count = Integer.parseInt(config.getProperty("page." + page + ".count"));
+                    if (pointerPage != page || target < 0 || target >= count) action = "pointer-done";
+                    else {
+                        focus = target; loadFocus(); repaint();
+                        if (activate && pressedHighlight != null) {
+                            pressing = true; repaint(); Thread.sleep(90); pressing = false; repaint();
+                        }
+                        action = activate ? config.getProperty("page." + page + "." + focus) : "pointer-done";
+                    }
+                }
+                if (action.equals("pointer-done")) { }
+                else if (action.startsWith("focus:")) {
                     moveFocus(action.substring(6));
                 }
                 else if (action.equals("home")) {
@@ -387,7 +457,7 @@ public final class DiscForgeXlet extends Container implements Xlet, UserEventLis
     public synchronized void paint(Graphics g) {
         if (playing) { g.clearRect(0, 0, 1920, 1080); return; }
         if (background != null) g.drawImage(background, 0, 0, this);
-        if (highlight != null) g.drawImage(highlight, highlightX, highlightY, this);
+        if (highlight != null) g.drawImage(pressing && pressedHighlight != null ? pressedHighlight : highlight, highlightX, highlightY, this);
         if (error != null) {
             g.setColor(Color.black); g.fillRect(100, 1000, 1720, 70);
             g.setColor(Color.white); g.drawString("Playback error. Back to retry: " + error, 120, 1040);

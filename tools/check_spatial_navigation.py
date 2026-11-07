@@ -25,7 +25,9 @@ public class SpatialCheck {
             int[][] rects = new int[count][4];
             for (int i = 0; i < count; i++)
                 for (int j = 0; j < 4; j++) rects[i][j] = input.nextInt();
-            System.out.println(DiscForgeXlet.nearestButton(rects, current, direction));
+            if (direction.startsWith("hit:"))
+                System.out.println(DiscForgeXlet.hitButton(rects, current, Integer.parseInt(direction.substring(4))));
+            else System.out.println(DiscForgeXlet.nearestButton(rects, current, direction));
         }
     }
 }
@@ -53,9 +55,19 @@ def main():
         for current in range(max(1, len(rects))):
             for key in ('up', 'down', 'left', 'right'):
                 cases.append((rects, current, key))
+    expected = [nearest_button(rs, i, key) for rs, i, key in cases]
+    direction_count = len(cases)
+    for rects in layouts:
+        points = [(-1, -1), (1920, 1080)]
+        for x, y, w, h in rects:
+            points.extend(((x, y), (x+w-1, y+h-1), (x+w, y+h), (x+w//2, y+h//2)))
+        for x, y in points:
+            cases.append((rects, x, 'hit:'+str(y)))
+            expected.append(next((i for i in reversed(range(len(rects))) if
+                                 rects[i][0] <= x < rects[i][0]+rects[i][2] and
+                                 rects[i][1] <= y < rects[i][1]+rects[i][3]), -1))
     data = '\n'.join(f'{len(rs)} {i} {key} '+ ' '.join(str(v) for r in rs for v in r)
                      for rs, i, key in cases)
-    expected = [nearest_button(rs, i, key) for rs, i, key in cases]
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp)/'SpatialCheck.java'
         source.write_text(HARNESS, encoding='utf-8')
@@ -66,7 +78,7 @@ def main():
         actual = [int(line) for line in result.stdout.splitlines()]
         if actual != expected:
             raise AssertionError('Compiled BD-J and preview navigation disagree')
-    print(f'PASS: {len(cases)} direction choices match the compiled BD-J engine.')
+    print(f'PASS: {direction_count} direction choices and {len(cases)-direction_count} pointer hits match the compiled BD-J engine.')
 
 
 if __name__ == '__main__':

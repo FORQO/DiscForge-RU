@@ -105,6 +105,11 @@ class ExportDialog(QDialog):
         choose = QPushButton('Выбрать…'); choose.clicked.connect(self.choose_folder); row.addWidget(choose)
         form.addRow('Сохранить в', row); layout.addLayout(form)
         notice = QLabel('Готовые этапы сохраняются для возобновления. Исходные видео остаются на месте.'); notice.setWordWrap(True); notice.setObjectName('hint'); layout.addWidget(notice)
+        if window.menu_editor.enabled.isChecked():
+            animation_note = QLabel('Оформление, расположение и выделение кнопок сохраняются. '
+                                   'Плавные переходы и появление кнопок в этой версии экспортируются как статичные состояния.')
+            animation_note.setWordWrap(True); animation_note.setObjectName('hint')
+            layout.addWidget(animation_note)
         buttons = QHBoxLayout(); buttons.addStretch()
         cancel = QPushButton('Отмена'); cancel.clicked.connect(self.reject); buttons.addWidget(cancel)
         self.create = QPushButton('Начать сборку'); self.create.setObjectName('primary'); self.create.clicked.connect(self.accept); self.create.setDefault(True); buttons.addWidget(self.create)

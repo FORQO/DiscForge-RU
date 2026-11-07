@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 import copy
 from menu_layout import TEXT_RECTS, element_rect, text_style, default_button_rect
+from episode_buttons import validate_style, validate_editor, ordered_entries, resolved_rects
 
 THEMES = {'midnight': ('#101721', '#202d3c', '#bacde1'),
           'amber': ('#171a1e', '#33373c', '#ff9f38'),
@@ -126,8 +127,11 @@ class MenuDesign:
     subtitle_tracks: list[dict] = field(default_factory=list)
     chapter_titles: list[str] = field(default_factory=list)
     logo_visible: bool = True
+    button_editor: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        validate_editor(self.button_editor)
+        object.__setattr__(self, 'button_editor', copy.deepcopy(self.button_editor))
         if type(self.logo_visible) is not bool:
             raise ValueError('Некорректная видимость логотипа.')
         if (not isinstance(self.chapter_titles, list) or len(self.chapter_titles) > 999 or
@@ -170,7 +174,8 @@ class MenuDesign:
                 raise ValueError('Подпись должна содержать от 1 до 80 символов без переносов строк.')
         object.__setattr__(self, 'labels', dict(self.labels))
         def valid_id(key):
-            return isinstance(key, str) and re.fullmatch(r'(play|chapters|subtitles|sub:\d{1,2}|sub_previous|sub_next|sub_back|audio|audio:\d{1,2}|chapter:\d{1,3}|(previous|next|home):\d{1,3}|custom:[a-f0-9]{12})', key)
+            from episode_buttons import valid_button_key
+            return valid_button_key(key) or isinstance(key, str) and key in ('sub_previous', 'sub_next', 'sub_back')
         if (not isinstance(self.hidden_buttons, list) or len(self.hidden_buttons) > 2000
                 or any(not valid_id(key) for key in self.hidden_buttons)):
             raise ValueError('Некорректный список удалённых кнопок.')
@@ -179,22 +184,7 @@ class MenuDesign:
         for key, style in self.button_styles.items():
             if not valid_id(key) or not isinstance(style, dict):
                 raise ValueError('Некорректное оформление кнопки.')
-            for name, value in style.items():
-                if name in ('fill', 'border', 'text', 'highlight'):
-                    valid = isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value)
-                elif name == 'shape':
-                    valid = value in ('rounded', 'rectangle', 'pill')
-                elif name in ('width', 'font_size', 'opacity'):
-                    low, high = {'width': (0, 10), 'font_size': (12, 160), 'opacity': (0, 100)}[name]
-                    valid = type(value) is int and low <= value <= high
-                elif name == 'font_family':
-                    valid = isinstance(value, str) and 1 <= len(value) <= 100 and not any(ord(c) < 32 for c in value)
-                elif name in ('bold', 'italic'):
-                    valid = type(value) is bool
-                else:
-                    valid = False
-                if not valid:
-                    raise ValueError('Некорректный параметр оформления кнопки: ' + name)
+            validate_style(style)
         object.__setattr__(self, 'hidden_buttons', list(dict.fromkeys(self.hidden_buttons)))
         object.__setattr__(self, 'button_styles', {k: dict(v) for k, v in self.button_styles.items()})
         if not isinstance(self.layout, dict) or len(self.layout) > 2500:
@@ -250,7 +240,7 @@ class MenuDesign:
         data.setdefault('logo_visible', 'brand' not in data.get('hidden_text', []))
         return cls(title, **{key: data[key] for key in
                    ('theme', 'language', 'background', 'background_fit', 'dim', 'labels',
-                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks', 'chapter_titles', 'logo_visible') if key in data})
+                    'hidden_buttons', 'button_styles', 'layout', 'text_styles', 'custom_buttons', 'hidden_text', 'audio_tracks', 'subtitle_tracks', 'chapter_titles', 'logo_visible', 'button_editor') if key in data})
 
 
 def button_id(page, action):
@@ -290,15 +280,22 @@ def button_style(design, key):
         style.update(shape='pill' if design.theme == 'amber' else 'rounded', border='#59616b',
                      width=2, font_size=32, opacity=55, chevron=True, glow=True)
     style.update(design.button_styles.get(key, {}))
+    style.setdefault('padding_x', 28)
+    style.setdefault('padding_y', 0)
+    style.setdefault('glow_strength', 45 if style.get('glow') else 0)
     return style
 
 
 def button_radius(style, height=82):
+    if 'radius' in style:
+        return min(style['radius'], height//2)
     return {'rectangle': 0, 'rounded': min(12, height//2), 'pill': height//2}[style['shape']]
 
 
 def validate_menu_navigation(chapters, design):
     graph = pages(chapters, design)
+    graph = [[entry for entry in entries if not button_style(design, button_id(p, entry[1])).get('disabled')]
+             for p, entries in enumerate(graph)]
     for button in design.custom_buttons:
         if button['page'] >= len(graph) and button['id'] not in design.hidden_buttons:
             raise ValueError('Страница дополнительной кнопки больше не существует.')
@@ -407,6 +404,7 @@ def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[
         entries.extend((design.text(button['id']) or ('Новая кнопка' if design.language == 'ru' else 'New button'), button['id'])
                        for button in design.custom_buttons if button['page'] == p)
         result[p] = [entry for entry in entries if button_id(p, entry[1]) not in design.hidden_buttons]
+        result[p], _ = ordered_entries(design, p, result[p], [button_id(p, a) for _, a in result[p]])
         if len(result[p]) > 16:
             raise ValueError('На странице поддерживается до 16 кнопок. Удалите лишние кнопки.')
     return result
@@ -485,15 +483,18 @@ def page_elements(design, chapters, page, entries_override=None):
             shown = design.text('audio_hint')
         result.append(dict(id='text:'+key, key=edit_key, rect=element_rect(design, 'text:'+key, TEXT_RECTS[key]),
                            text=text, shown=shown, style=text_style(design, key), button='', index=-1))
+    keys = ([button_id(page, a) for _, a in graph[page]] if entries_override is None else
+            getattr(entries_override, 'keys', [f'custom:collection_{i}' for i in range(len(graph[page]))]))
+    rects = resolved_rects(design, getattr(entries_override, 'scope', str(page)), keys)
     for i, (shown, action) in enumerate(graph[page]):
-        bid = button_id(page, action) if entries_override is None else f'custom:collection_{i}'
+        bid = keys[i]
         key = button_label_key(bid)
         if (sub_page or audio_page) and key in ('home', 'previous', 'next'):
             key = ('sub_' if sub_page else 'audio_') + ('back' if key == 'home' else key)
         text = design.text(key)
         if not text:
             text = f'{TEXT[design.language]["chapter"]} {int(action.split(":")[1])+1}' if key.startswith('chapter:') else shown
-        result.append(dict(id=bid, key=key, rect=element_rect(design, bid, default_button_rect(i)),
+        result.append(dict(id=bid, key=key, rect=tuple(rects[bid]),
                            text=text, shown=shown, style=button_style(design, bid), button=bid, index=i))
     if design.logo_visible:
         result.append(dict(id='logo', key=None, rect=element_rect(design, 'logo', (1640, 64, 160, 120)),
@@ -501,7 +502,7 @@ def page_elements(design, chapters, page, entries_override=None):
     return result
 
 
-def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1, entries_override=None):
+def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus: int = -1, entries_override=None, draw_buttons=True):
     """Return a QImage; caller owns a QGuiApplication (also for CLI authoring)."""
     from PySide6.QtCore import Qt, QRect
     from PySide6.QtGui import QImage, QPainter, QColor, QFont, QLinearGradient, QPen, QPainterPath
@@ -555,21 +556,13 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
         if not element['button']:
             label(rect, element['shown'], style)
             continue
-        painter.setPen(QPen(QColor(style['border']), style['width']) if style['width'] else Qt.NoPen)
-        fill = QColor(style['fill'])
-        fill.setAlpha(round(style['opacity'] * 255 / 100))
-        painter.setBrush(fill)
-        radius = button_radius(style, rect.height())
-        painter.drawRoundedRect(rect, radius, radius)
-        inset = min(28, rect.width()//10)
-        label(rect.adjusted(inset, 0, -inset-(34 if style.get('chevron') else 0), 0), element['shown'], style)
-        if style.get('chevron'):
-            paint_chevron(painter, rect, style['border'])
+        if draw_buttons:
+            paint_button(painter, element)
     painter.end()
     # Composite the exact exported patch, avoiding raster rounding differences
     # between a translated patch painter and a full-frame painter.
     for element in page_elements(design, chapters, page, entries_override):
-        if element['button'] and element['index'] == focus:
+        if draw_buttons and element['button'] and element['index'] == focus:
             patch, x, y = focus_patch(image, element)
             painter = QPainter(image)
             painter.drawImage(x, y, patch)
@@ -577,21 +570,72 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
     return image
 
 
-def paint_focus(painter, element):
+def paint_button(painter, element):
+    """Bounded, vertically centred labels, even for extremely small buttons."""
+    from PySide6.QtCore import Qt, QRectF
+    from PySide6.QtGui import QColor, QPen, QFont, QPainterPath
+    rect = QRectF(*element['rect'])
+    style = element['style']
+    painter.save()
+    painter.setClipRect(rect)
+    disabled = style.get('disabled', False)
+    painter.setOpacity(painter.opacity()*(0.48 if disabled else 1))
+    radius = button_radius(style, rect.height())
+    minimal = style.get('variant') == 'minimal'
+    fill = QColor(style['fill'])
+    fill.setAlpha(round(style['opacity'] * 255 / 100))
+    painter.setBrush(fill)
+    painter.setPen(Qt.NoPen if minimal or not style['width'] else QPen(QColor(style['border']), style['width']))
+    painter.drawRoundedRect(rect, radius, radius)
+    if minimal:
+        painter.fillRect(QRectF(rect.x(), rect.y()+6, max(2, style['width']), max(0, rect.height()-12)), QColor(style['border']))
+    px = min(style.get('padding_x', 28), max(0, (rect.width()-20)/2))
+    py = min(style.get('padding_y', 0), max(0, (rect.height()-12)/2))
+    arrow = style.get('chevron') and rect.width() >= 120
+    available = rect.adjusted(px, py, -px-(34 if arrow else 0), -py)
+    font = QFont(style['font_family'])
+    font.setPixelSize(max(1, min(style['font_size'], int(available.height()*0.72))))
+    font.setBold(style['bold']); font.setItalic(style['italic'])
+    painter.setFont(font)
+    metrics = painter.fontMetrics()
+    text = metrics.elidedText(element['shown'], Qt.ElideRight, max(0, int(available.width())))
+    path = QPainterPath()
+    path.addText(available.x(), available.y()+(available.height()-metrics.height())/2+metrics.ascent(), font, text)
+    painter.setClipRect(available)
+    painter.fillPath(path, QColor(style['text']))
+    painter.setClipRect(rect)
+    if arrow:
+        paint_chevron(painter, rect, style['border'])
+    painter.restore()
+
+
+def paint_focus(painter, element, strength=1.0):
     """One antialiased stroke; concentric AWT arcs leave gaps at the corners."""
     from PySide6.QtCore import Qt, QRectF
     from PySide6.QtGui import QColor, QPen, QPainter
     rect = QRectF(*element['rect']).adjusted(-1, -1, 1, 1)
+    if element['style'].get('disabled') or strength <= 0:
+        return
     radius = button_radius(element['style'], element['rect'][3])
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
+    painter.setOpacity(painter.opacity()*strength)
+    # A dark keyline and pale inner edge remain legible over any background.
     painter.setBrush(Qt.NoBrush)
-    if element['style'].get('glow'):
+    painter.setPen(QPen(QColor(0, 0, 0, 230), 7))
+    painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
+    glow = element['style'].get('glow_strength', 45 if element['style'].get('glow') else 0)/100
+    if glow:
         for width, alpha in ((14, 15), (8, 35)):
             color = QColor(element['style']['highlight'])
-            color.setAlpha(alpha)
+            color.setAlpha(round(alpha*glow*2))
             painter.setPen(QPen(color, width))
             painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
+    tint = QColor(element['style']['highlight']); tint.setAlpha(28)
+    painter.setBrush(tint)
+    painter.setPen(QPen(QColor('#fff0d9'), 4))
+    painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
+    painter.setBrush(Qt.NoBrush)
     painter.setPen(QPen(QColor(element['style']['highlight']), 2))
     painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
     if element['style'].get('chevron'):
@@ -612,16 +656,16 @@ def paint_chevron(painter, rect, color):
     painter.restore()
 
 
-def focus_patch(base, element):
+def focus_patch(base, element, strength=1.0):
     """Opaque, bounded patch preserves identical Qt rendering on BD-J players."""
     from PySide6.QtCore import QRect
     from PySide6.QtGui import QPainter
-    margin = 12 if element['style'].get('glow') else 6
+    margin = 12 if element['style'].get('glow') or element['style'].get('glow_strength') else 6
     bounds = QRect(*element['rect']).adjusted(-margin, -margin, margin, margin).intersected(base.rect())
     patch = base.copy(bounds)
     painter = QPainter(patch)
     painter.translate(-bounds.x(), -bounds.y())
-    paint_focus(painter, element)
+    paint_focus(painter, element, strength)
     painter.end()
     return patch, bounds.x(), bounds.y()
 
@@ -689,13 +733,16 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     props = ['subtitle.count='+str(len(design.subtitle_tracks)),
              'subtitle.page='+str(subtitle_page_start(chapters, design) if design.subtitle_tracks else 0), 'pages=' + str(len(all_pages)), 'playlist=00000', 'audio.count='+str(len(design.audio_tracks)),
              'audio.page='+str(audio_page_start(chapters) if design.audio_tracks else 0)]
+    props.extend(('animation.mode=static', 'animation.requested='+design.button_editor.get('animation', 'restrained')))
     for p, entries in enumerate(all_pages):
-        props.append(f'page.{p}.count={len(entries)}')
-        for i, (_, action) in enumerate(entries):
+        enabled = [e for e in page_elements(design, chapters, p) if e['button'] and not e['style'].get('disabled')]
+        props.append(f'page.{p}.count={len(enabled)}')
+        for i, element in enumerate(enabled):
+            action = entries[element['index']][1]
             props.append(f'page.{p}.{i}={resolve_action(design, action)}')
             bid = button_id(p, action)
             style = button_style(design, bid)
-            rect = element_rect(design, bid, default_button_rect(i))
+            rect = element['rect']
             for name, value in zip(('x', 'y', 'w', 'h'), rect):
                 props.append(f'page.{p}.{i}.{name}={value}')
             props.append(f'page.{p}.{i}.radius={button_radius(style, rect[3])}')
@@ -710,18 +757,24 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
             if not base.save(buffer, 'PNG'):
                 raise RuntimeError('Не удалось отрисовать меню.')
             jar.writestr(f'page{p}.png', bytes(buffer.data()))
-            for element in page_elements(design, chapters, p):
-                if not element['button']:
-                    continue
+            enabled = [e for e in page_elements(design, chapters, p) if e['button'] and not e['style'].get('disabled')]
+            for export_index, element in enumerate(enabled):
                 patch, x, y = focus_patch(base, element)
-                name = f'focus{p}_{element["index"]}.png'
+                name = f'focus{p}_{export_index}.png'
                 buffer = QBuffer()
                 buffer.open(QIODevice.WriteOnly)
                 if not patch.save(buffer, 'PNG'):
                     raise RuntimeError('Не удалось отрисовать выделение кнопки.')
                 jar.writestr(name, bytes(buffer.data()))
-                key = f'page.{p}.{element["index"]}'
+                key = f'page.{p}.{export_index}'
                 props.extend((f'{key}.focus={name}', f'{key}.focusX={x}', f'{key}.focusY={y}'))
+                pressed, _, _ = focus_patch(base, element, 0.35)
+                buffer = QBuffer(); buffer.open(QIODevice.WriteOnly)
+                if not pressed.save(buffer, 'PNG'):
+                    raise RuntimeError('Не удалось отрисовать нажатие кнопки.')
+                name = f'pressed{p}_{export_index}.png'
+                jar.writestr(name, bytes(buffer.data()))
+                props.append(f'{key}.pressed={name}')
         jar.writestr('menu.properties', '\n'.join(props).encode('ascii'))
         import json
         jar.writestr('discforge-design.json', json.dumps(
