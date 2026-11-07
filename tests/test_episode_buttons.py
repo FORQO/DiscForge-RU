@@ -205,6 +205,8 @@ class EpisodeButtonTests(unittest.TestCase):
         self.panel.animation.setCurrentIndex(self.panel.animation.findData('restrained'))
         self.editor.press('left')
         QTest.qWait(400)
+        # Qt 6.8 can leave Python timer callbacks queued when qWait returns.
+        self.app.processEvents()
         self.assertFalse(self.editor.preview.timer.isActive())
 
     def test_size_reset_keeps_free_coordinates_and_appearance(self):
