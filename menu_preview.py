@@ -16,6 +16,8 @@ class MenuPreview(QWidget):
     gesture_finished = Signal()
     reorder_requested = Signal(str, int)
     focus_requested = Signal(int)
+    tool_requested = Signal(str)
+    zoom_requested = Signal(float)
 
     def __init__(self):
         super().__init__()
@@ -31,6 +33,13 @@ class MenuPreview(QWidget):
         self.drag = None
         self.guides = []
         self.snapping = True
+        self.resize_mode = False
+        self.show_grid = False
+        self.show_guides = True
+        self.zoom = None
+        self.pan = QPointF()
+        self.pan_drag = None
+        self.hover_id = ''
         self.scene_background = None
         self.layout_config = {'mode': 'free', 'snap': 16}
         self.animation_mode = 'restrained'
@@ -51,8 +60,20 @@ class MenuPreview(QWidget):
         self.inline.editingFinished.connect(self.commit_edit)
 
     def target_rect(self):
-        size = QSize(1920, 1080).scaled(self.size(), Qt.KeepAspectRatio)
-        return QRect((self.width()-size.width())//2, (self.height()-size.height())//2, size.width(), size.height())
+        size = QSize(1920, 1080).scaled(self.size(), Qt.KeepAspectRatio) if self.zoom is None else QSize(round(1920*self.zoom), round(1080*self.zoom))
+        return QRect((self.width()-size.width())//2+round(self.pan.x()), (self.height()-size.height())//2+round(self.pan.y()), size.width(), size.height())
+
+    def set_zoom(self, zoom):
+        self.commit_edit()
+        self.zoom = None if zoom is None else max(.25, min(2, zoom))
+        self.pan = QPointF()
+        self.update()
+
+    def _limit_pan(self):
+        if self.zoom is None:
+            self.pan = QPointF(); return
+        limit_x, limit_y = max(0, (1920*self.zoom-self.width())/2), max(0, (1080*self.zoom-self.height())/2)
+        self.pan = QPointF(max(-limit_x, min(limit_x, self.pan.x())), max(-limit_y, min(limit_y, self.pan.y())))
 
     def display_rect(self, rect):
         target = self.target_rect()
@@ -65,7 +86,7 @@ class MenuPreview(QWidget):
         return QPointF((point.x()-rect.x())*1920/rect.width(), (point.y()-rect.y())*1080/rect.height())
 
     def handles(self, element):
-        if element.get('locked_geometry'):
+        if element.get('locked_geometry') or not self.resize_mode or self.view_only:
             return {}
         r = self.display_rect(element['rect'])
         return {key: QRect(x-5, y-5, 10, 10) for key, x, y in (
@@ -74,6 +95,8 @@ class MenuPreview(QWidget):
             ('sw', r.left(), r.bottom()), ('s', r.center().x(), r.bottom()), ('se', r.right(), r.bottom()))}
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton and self.zoom is not None:
+            self.pan_drag = (event.position(), QPointF(self.pan)); self.setCursor(Qt.ClosedHandCursor); return
         if event.button() != Qt.LeftButton:
             return
         self.commit_edit()
@@ -112,7 +135,14 @@ class MenuPreview(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event):
+        if self.pan_drag is not None:
+            start, original = self.pan_drag
+            self.pan = original + event.position()-start
+            self._limit_pan()
+            self.update(); return
         if self.drag is None:
+            pos = self.canvas_point(event.position()).toPoint()
+            self.hover_id = next((e['id'] for e in self.elements if e['button'] and e['rect'].contains(pos)), '')
             if self.view_only:
                 pos = self.canvas_point(event.position()).toPoint()
                 hover = next((e for e in self.elements if e['button'] and e['rect'].contains(pos) and not e['style'].get('disabled')), None)
@@ -120,8 +150,9 @@ class MenuPreview(QWidget):
                     self.focus_requested.emit(hover['index'])
             selected = next((e for e in self.elements if e['id'] == self.selection), None)
             edge = next((k for k, r in self.handles(selected).items() if r.contains(event.position().toPoint())), '') if selected else ''
-            cursor = Qt.SizeFDiagCursor if edge in ('nw', 'se') else Qt.SizeBDiagCursor if edge in ('ne', 'sw') else Qt.SizeHorCursor if edge in ('w', 'e') else Qt.SizeVerCursor if edge else Qt.ArrowCursor
+            cursor = Qt.SizeFDiagCursor if edge in ('nw', 'se') else Qt.SizeBDiagCursor if edge in ('ne', 'sw') else Qt.SizeHorCursor if edge in ('w', 'e') else Qt.SizeVerCursor if edge else Qt.OpenHandCursor if self.hover_id and not self.view_only else Qt.ArrowCursor
             self.setCursor(cursor)
+            self.update()
             return
         delta = event.position()-self.drag['start']
         if not self.drag['moved'] and abs(delta.x())+abs(delta.y()) < QApplication.startDragDistance():
@@ -172,6 +203,8 @@ class MenuPreview(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self.pan_drag = None; self.setCursor(Qt.ArrowCursor); return
         if event.button() != Qt.LeftButton:
             return
         if self.view_only and self._pending_click:
@@ -240,6 +273,8 @@ class MenuPreview(QWidget):
         return super().eventFilter(source, event)
 
     def keyPressEvent(self, event):
+        if not self.view_only and event.key() in (Qt.Key_V, Qt.Key_R):
+            self.tool_requested.emit('resize' if event.key() == Qt.Key_R else 'select'); event.accept(); return
         if event.key() == Qt.Key_Delete and self.selection and not self.view_only:
             self.delete_requested.emit()
             return
@@ -253,12 +288,14 @@ class MenuPreview(QWidget):
 
     def resizeEvent(self, event):
         self.commit_edit()
+        self._limit_pan()
         super().resizeEvent(event)
 
     def paintEvent(self, event):
         if self.image is None:
             return
         painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor('#101318'))
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
         target = self.target_rect()
         painter.drawImage(target, self.scene_background if self.scene_background is not None else self.image)
@@ -298,16 +335,39 @@ class MenuPreview(QWidget):
                     if slot:
                         painter.setPen(QPen(QColor('#ff9f38'), 4)); painter.drawLine(slot.topLeft(), slot.bottomLeft())
             painter.restore()
+        if not self.view_only:
+            painter.save(); painter.setClipRect(target)
+            if self.show_grid:
+                step = max(64, self.layout_config.get('snap', 16)*4)
+                painter.setPen(QPen(QColor(145, 161, 182, 80), 1))
+                for x in range(step, 1920, step):
+                    for y in range(step, 1080, step):
+                        r = self.display_rect(QRect(x, y, 1, 1)); painter.drawPoint(r.topLeft())
+            if self.show_guides:
+                painter.setPen(QPen(QColor(176, 184, 197, 65), 1, Qt.DashLine))
+                painter.setBrush(Qt.NoBrush); painter.drawRect(self.display_rect(QRect(150, 120, 1620, 840)))
+            painter.restore()
         for element in self.elements:
             if not self.view_only and (element['id'] == self.selection or element['id'] in self.selected_keys):
-                painter.setPen(QPen(QColor('#ffce70'), 1, Qt.DashLine))
-                painter.drawRect(self.display_rect(element['rect']))
+                painter.setPen(QPen(QColor('#dd9e56'), 1, Qt.SolidLine))
+                painter.setBrush(Qt.NoBrush)
+                radius = 0
+                if element['button']:
+                    from disc_menu import button_radius
+                    radius = round(button_radius(element['style'], element['rect'].height())*target.width()/1920)
+                painter.drawRoundedRect(self.display_rect(element['rect']), radius, radius)
                 painter.setBrush(QColor('#ffce70'))
                 for rect in self.handles(element).values():
-                    painter.drawRect(rect)
+                    painter.drawRect(rect.adjusted(2, 2, -2, -2))
+            if not self.view_only and not self.resize_mode and element['button'] and element['id'] == self.hover_id:
+                r = self.display_rect(element['rect'])
+                painter.setPen(QPen(QColor('#aeb7c5'), 1.6))
+                for x in (r.left()+5, r.left()+8):
+                    for dy in (-4, 0, 4):
+                        painter.drawPoint(x, r.center().y()+dy)
         target = self.target_rect()
         painter.setPen(QPen(QColor('#65e6f5'), 1, Qt.DashLine))
-        for axis, value in self.guides:
+        for axis, value in self.guides if self.show_guides else []:
             if axis == 0:
                 x = target.x()+round(value*target.width()/1920)
                 painter.drawLine(x, target.top(), x, target.bottom())
@@ -315,6 +375,14 @@ class MenuPreview(QWidget):
                 y = target.y()+round(value*target.height()/1080)
                 painter.drawLine(target.left(), y, target.right(), y)
         painter.end()
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            scale = self.zoom if self.zoom is not None else self.target_rect().width()/1920
+            self.zoom_requested.emit(max(.25, min(2, scale*(1.25 if event.angleDelta().y() > 0 else .8))))
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
     def set_scene(self, background, focus, scope, animation, config):
         self.scene_background = background

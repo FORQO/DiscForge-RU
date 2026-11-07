@@ -52,9 +52,12 @@ def main():
         if not window.grab().save(str(args.output), 'JPG', 90):
             raise RuntimeError('Could not save screenshot')
         if args.enhanced:
-            scroll = editor.inspector_tabs.widget(2)
-            group = next(g for g in panel.findChildren(QGroupBox) if g.title() == 'Оформление кнопок')
-            scroll.verticalScrollBar().setValue(group.mapTo(scroll.widget(), QPoint()).y()-8)
+            if hasattr(panel, 'tabs'):
+                panel.tabs.setCurrentIndex(1)
+            else:
+                scroll = editor.inspector_tabs.widget(2)
+                group = next(g for g in panel.findChildren(QGroupBox) if g.title() == 'Оформление кнопок')
+                scroll.verticalScrollBar().setValue(group.mapTo(scroll.widget(), QPoint()).y()-8)
             app.processEvents()
             window.grab().save(str(args.output.with_stem(args.output.stem+'-styles')), 'JPG', 90)
             editor.preview_mode.setChecked(True); QTest.qWait(550)

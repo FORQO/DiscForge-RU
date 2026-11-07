@@ -283,6 +283,7 @@ def button_style(design, key):
     style.setdefault('padding_x', 28)
     style.setdefault('padding_y', 0)
     style.setdefault('glow_strength', 45 if style.get('glow') else 0)
+    style.setdefault('numbered', True)
     return style
 
 
@@ -494,8 +495,9 @@ def page_elements(design, chapters, page, entries_override=None):
         text = design.text(key)
         if not text:
             text = f'{TEXT[design.language]["chapter"]} {int(action.split(":")[1])+1}' if key.startswith('chapter:') else shown
+        ordinal = int(bid.split(':')[-1])+1 if bid.startswith(('chapter:', 'catalog:movie:')) else None
         result.append(dict(id=bid, key=key, rect=tuple(rects[bid]),
-                           text=text, shown=shown, style=button_style(design, bid), button=bid, index=i))
+                           text=text, shown=shown, style=button_style(design, bid), button=bid, index=i, ordinal=ordinal))
     if design.logo_visible:
         result.append(dict(id='logo', key=None, rect=element_rect(design, 'logo', (1640, 64, 160, 120)),
                            text='', shown='', style={}, button='', index=-1, image=True))
@@ -570,6 +572,25 @@ def render_page(design: MenuDesign, chapters: list[float], page: int = 0, focus:
     return image
 
 
+def button_content(element):
+    """One bounded layout for number badge, editable label and fixed chevron."""
+    from PySide6.QtCore import QRectF
+    rect = QRectF(*element['rect']); style = element['style']
+    px = min(style.get('padding_x', 28), max(0, (rect.width()-20)/2))
+    py = min(style.get('padding_y', 0), max(0, (rect.height()-12)/2))
+    arrow = style.get('chevron') and rect.width() >= 120
+    available = rect.adjusted(px, py, -px-(34 if arrow else 0), -py)
+    ordinal, text, badge = element.get('ordinal'), element['shown'], None
+    if ordinal and style.get('numbered', True) and available.width() >= 150 and available.height() >= 32:
+        match = re.fullmatch(r'(Эпизод|Серия|Глава|Episode|Chapter)\s*№?\s*(\d{1,3})(?:\s*[·:—–-]\s*|\s+)?(.*)', text, re.IGNORECASE)
+        if match:
+            ordinal = int(match[2]); text = match[3].strip() or match[1]
+        size = min(42, max(24, available.height()-20))
+        badge = QRectF(available.x(), available.center().y()-size/2, size, size)
+        available.adjust(size+20, 0, 0, 0)
+    return available, text, badge, ordinal
+
+
 def paint_button(painter, element):
     """Bounded, vertically centred labels, even for extremely small buttons."""
     from PySide6.QtCore import Qt, QRectF
@@ -586,19 +607,28 @@ def paint_button(painter, element):
     fill.setAlpha(round(style['opacity'] * 255 / 100))
     painter.setBrush(fill)
     painter.setPen(Qt.NoPen if minimal or not style['width'] else QPen(QColor(style['border']), style['width']))
-    painter.drawRoundedRect(rect, radius, radius)
+    inset = style['width']/2 if not minimal else 0
+    painter.drawRoundedRect(rect.adjusted(inset, inset, -inset, -inset), radius, radius)
     if minimal:
         painter.fillRect(QRectF(rect.x(), rect.y()+6, max(2, style['width']), max(0, rect.height()-12)), QColor(style['border']))
-    px = min(style.get('padding_x', 28), max(0, (rect.width()-20)/2))
-    py = min(style.get('padding_y', 0), max(0, (rect.height()-12)/2))
     arrow = style.get('chevron') and rect.width() >= 120
-    available = rect.adjusted(px, py, -px-(34 if arrow else 0), -py)
+    available, label, badge, ordinal = button_content(element)
+    if badge is not None:
+        painter.setPen(Qt.NoPen); painter.setBrush(QColor(8, 13, 20, 120))
+        painter.drawRoundedRect(badge, 8, 8)
+        font = QFont(style['font_family']); font.setPixelSize(min(19, round(badge.height()*.45)))
+        painter.setFont(font)
+        metrics = painter.fontMetrics(); number = f'{ordinal:02d}'
+        number_path = QPainterPath()
+        number_path.addText(badge.center().x()-metrics.horizontalAdvance(number)/2,
+                            badge.y()+(badge.height()-metrics.height())/2+metrics.ascent(), font, number)
+        painter.fillPath(number_path, QColor(style['text']))
     font = QFont(style['font_family'])
     font.setPixelSize(max(1, min(style['font_size'], int(available.height()*0.72))))
     font.setBold(style['bold']); font.setItalic(style['italic'])
     painter.setFont(font)
     metrics = painter.fontMetrics()
-    text = metrics.elidedText(element['shown'], Qt.ElideRight, max(0, int(available.width())))
+    text = metrics.elidedText(label, Qt.ElideRight, max(0, int(available.width())))
     path = QPainterPath()
     path.addText(available.x(), available.y()+(available.height()-metrics.height())/2+metrics.ascent(), font, text)
     painter.setClipRect(available)
@@ -622,18 +652,18 @@ def paint_focus(painter, element, strength=1.0):
     painter.setOpacity(painter.opacity()*strength)
     # A dark keyline and pale inner edge remain legible over any background.
     painter.setBrush(Qt.NoBrush)
-    painter.setPen(QPen(QColor(0, 0, 0, 230), 7))
+    painter.setPen(QPen(QColor(0, 0, 0, 230), 5))
     painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
     glow = element['style'].get('glow_strength', 45 if element['style'].get('glow') else 0)/100
     if glow:
-        for width, alpha in ((14, 15), (8, 35)):
+        for width, alpha in ((10, 10), (6, 25)):
             color = QColor(element['style']['highlight'])
             color.setAlpha(round(alpha*glow*2))
             painter.setPen(QPen(color, width))
             painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
-    tint = QColor(element['style']['highlight']); tint.setAlpha(28)
+    tint = QColor(element['style']['highlight']); tint.setAlpha(20)
     painter.setBrush(tint)
-    painter.setPen(QPen(QColor('#fff0d9'), 4))
+    painter.setPen(QPen(QColor('#f4d9b5'), 3))
     painter.drawRoundedRect(rect, radius + 1 if radius else 0, radius + 1 if radius else 0)
     painter.setBrush(Qt.NoBrush)
     painter.setPen(QPen(QColor(element['style']['highlight']), 2))

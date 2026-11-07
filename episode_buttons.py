@@ -42,7 +42,7 @@ def validate_style(style):
             valid = type(value) is int and low <= value <= high
         elif name == 'font_family':
             valid = isinstance(value, str) and 1 <= len(value) <= 100 and not any(ord(c) < 32 for c in value)
-        elif name in ('bold', 'italic', 'disabled'):
+        elif name in ('bold', 'italic', 'disabled', 'numbered'):
             valid = type(value) is bool
         else:
             valid = False

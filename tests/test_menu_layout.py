@@ -71,6 +71,7 @@ class LayoutGuiTests(unittest.TestCase):
         self.assertAlmostEqual(rect[1], 600, delta=4)
         self.assertFalse(self.editor.preview.inline.isVisible())
         element = next(e for e in self.editor.preview.elements if e['id'] == 'play')
+        self.editor.set_canvas_tool('resize')
         handle = self.editor.preview.handles(element)['se'].center()
         self.gesture(handle, handle+QPoint(45, 30))
         bigger = self.editor.design().layout['play']
@@ -83,6 +84,7 @@ class LayoutGuiTests(unittest.TestCase):
         self.gesture(self.point(350, 255), self.point(400, 600))
         self.assertIn('text:title', self.editor.design().layout)
         element = next(e for e in self.editor.preview.elements if e['id'] == 'text:title')
+        self.editor.set_canvas_tool('resize')
         handle = self.editor.preview.handles(element)['s'].center()
         self.gesture(handle, handle+QPoint(0, 25))
         self.assertGreater(self.editor.design().text_styles['title']['font_size'], 66)

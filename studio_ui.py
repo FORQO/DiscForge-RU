@@ -1,7 +1,7 @@
 """Studio shell styling and the export sheet; authoring remains in core.py."""
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize, QRect
-from PySide6.QtGui import QColor, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QFont, QPainterPath, QLinearGradient
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
                               QLineEdit, QPushButton, QComboBox, QFileDialog, QMessageBox,
                               QStyledItemDelegate, QStyle)
@@ -9,10 +9,10 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, Q
 
 def studio_style(theme='graphite'):
     dark = theme == 'blue'
-    bg, panel, side = ('#1b1c20', '#232429', '#202126') if dark else ('#f5f6f8', '#ffffff', '#eceef2')
-    fg, muted, line = ('#f0f1f4', '#a5a8b2', '#383a43') if dark else ('#222631', '#666d7a', '#dce0e7')
-    selected = '#3a3028' if dark else '#faeadd'
-    hover = '#30323a' if dark else '#e9ecf2'
+    bg, panel, side = ('#171a1f', '#1f242c', '#191d23') if dark else ('#f5f6f8', '#ffffff', '#eceef2')
+    fg, muted, line = ('#e8edf4', '#929eae', '#303844') if dark else ('#222631', '#666d7a', '#dce0e7')
+    selected = '#332a22' if dark else '#faeadd'
+    hover = '#29313c' if dark else '#e9ecf2'
     check_icon = (Path(__file__).parent / 'assets/icons/check.svg').as_posix()
     chevron_icon = (Path(__file__).parent / 'assets/icons/chevron.svg').as_posix()
     return f'''
@@ -26,6 +26,7 @@ QWidget#studioLibrary {{ background: {side}; border-right: 1px solid {line}; }}
 QLabel#studioBrand {{ font-size: 17px; font-weight: 600; }}
 QLabel#studioHeading {{ font-size: 26px; font-weight: 600; }}
 QLabel#studioSection {{ color: {muted}; font-size: 11px; font-weight: 600; }}
+QLabel#inspectorHeading {{ font-size: 16px; font-weight: 600; color: {fg}; padding-top: 6px; }}
 QLabel#hint, QLabel#tag, QLabel#details, QLabel#studioStatus {{ color: {muted}; font-size: 12px; }}
 QLabel#details {{ padding: 6px 0; }}
 QLabel#hint {{ padding: 4px 0; }}
@@ -61,6 +62,19 @@ QTabBar::tab {{ background: transparent; color: {muted}; border: 0; border-botto
 QTabBar::tab:selected {{ color: {fg}; border-bottom: 2px solid #d8792b; }}
 QTabBar::tab:hover {{ background: {hover}; }}
 QTabWidget#inspectorTabs QTabBar::tab {{ padding: 8px 6px; font-size: 11px; margin: 0; }}
+QTabWidget#buttonInspectorTabs QTabBar::tab {{ padding: 9px 4px; font-size: 11px; margin: 0; border-radius: 5px; }}
+QTabWidget#buttonInspectorTabs QTabBar::tab:selected {{ background: {selected}; border-bottom: 2px solid #d58a3e; }}
+QWidget#canvasToolbar {{ background: {panel}; border: 1px solid {line}; border-radius: 9px; }}
+QPushButton#canvasTool {{ background: transparent; border: 1px solid transparent; padding: 0; border-radius: 6px; }}
+QPushButton#canvasTool:hover {{ background: {hover}; border-color: {line}; }}
+QPushButton#canvasTool:checked {{ background: {selected}; border-color: #c98b47; }}
+QPushButton#canvasTool:disabled {{ background: transparent; border-color: transparent; }}
+QWidget#canvasToolbar QComboBox {{ padding: 4px 6px; padding-right: 20px; font-size: 11px; }}
+QSlider::groove:horizontal {{ height: 3px; background: {line}; border-radius: 1px; }}
+QSlider::sub-page:horizontal {{ background: #c98b47; border-radius: 1px; }}
+QSlider::handle:horizontal {{ width: 11px; height: 11px; margin: -4px 0; background: {muted}; border: 1px solid {panel}; border-radius: 5px; }}
+QSlider::handle:horizontal:hover {{ background: #e5ab68; }}
+QSlider::sub-page:horizontal:disabled {{ background: {line}; }}
 QScrollArea {{ border: 0; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {line}; border-radius: 3px; min-height: 30px; }}
@@ -135,7 +149,7 @@ class MovieDelegate(QStyledItemDelegate):
         self.window = window
 
     def sizeHint(self, option, index):
-        return QSize(180, 62)
+        return QSize(180, 80)
 
     def paint(self, painter, option, index):
         painter.save()
@@ -145,23 +159,47 @@ class MovieDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         if selected or option.state & QStyle.State_MouseOver:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor('#3a3028' if dark else '#faeadd') if selected else QColor('#30323a' if dark else '#e1e5ec'))
+            painter.setBrush(QColor('#30271f' if dark else '#faeadd') if selected else QColor('#252d38' if dark else '#e1e5ec'))
             painter.drawRoundedRect(rect, 7, 7)
-        badge = QRect(rect.x()+8, rect.y()+9, 30, 38)
-        painter.setPen(Qt.NoPen); painter.setBrush(QColor('#3a3d45' if dark else '#d6dce5')); painter.drawRoundedRect(badge, 5, 5)
-        painter.setPen(QColor('#e1e4e9' if dark else '#596574'))
-        painter.drawText(badge, Qt.AlignCenter, f'{index.row()+1:02d}')
+        if selected:
+            painter.fillRect(QRect(rect.left(), rect.top()+12, 3, rect.height()-24), QColor('#db984c'))
+        badge = QRect(rect.x()+9, rect.y()+18, 57, 40)
+        frame = getattr(self.window, 'library_thumbnails', {}).get(index.data(Qt.UserRole))
+        path = QPainterPath(); path.addRoundedRect(badge, 5, 5)
+        painter.save(); painter.setClipPath(path)
+        if frame is not None:
+            image = frame.scaled(badge.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            painter.drawImage(badge.x()+(badge.width()-image.width())//2, badge.y()+(badge.height()-image.height())//2, image)
+        else:
+            gradient = QLinearGradient(badge.topLeft(), badge.bottomRight())
+            gradient.setColorAt(0, QColor('#384454' if dark else '#c7d0dc')); gradient.setColorAt(1, QColor('#242a34' if dark else '#aebbc9'))
+            painter.fillRect(badge, gradient)
+            painter.setPen(QColor('#7e8c9e')); painter.drawLine(badge.topLeft(), badge.bottomRight())
+        painter.fillRect(badge.adjusted(31, 23, 0, 0), QColor(8, 13, 20, 185))
+        font = QFont(option.font); font.setPixelSize(10); painter.setFont(font); painter.setPen(QColor('#e6ebf2'))
+        painter.drawText(badge.adjusted(30, 22, -2, -1), Qt.AlignCenter, f'{index.row()+1:02d}')
+        painter.restore()
         title = str(index.data() or '').lstrip('✅⏳❌ ')
-        text_rect = QRect(rect.x()+47, rect.y()+8, max(20, rect.width()-53), 22)
+        text_rect = QRect(rect.x()+77, rect.y()+11, max(20, rect.width()-84), 35)
+        font = QFont(option.font); font.setPixelSize(12); painter.setFont(font)
         painter.setPen(QColor('#f0f1f4' if dark else '#222631'))
-        painter.drawText(text_rect, Qt.AlignVCenter, QFontMetrics(option.font).elidedText(title, Qt.ElideRight, text_rect.width()))
+        metrics = QFontMetrics(font)
+        first = metrics.elidedText(title, Qt.ElideRight, text_rect.width())
+        if first != title and len(title) > 1:
+            cut = max(1, len(first)-1)
+            if ' ' in title[:cut]:
+                cut = title.rfind(' ', 0, cut)+1
+            first, second = title[:cut].strip(), title[cut:].strip()
+            painter.drawText(text_rect, Qt.AlignTop, first+'\n'+metrics.elidedText(second, Qt.ElideRight, text_rect.width()))
+        else:
+            painter.drawText(text_rect, Qt.AlignVCenter, first)
         info = self.window.media.get(index.data(Qt.UserRole))
         if info:
             duration = int(info.duration)
             detail = f'{duration//3600}:{duration//60%60:02d}:{duration%60:02d} · {info.height}p'
         else:
             detail = 'Не удалось прочитать' if str(index.data()).startswith('❌') else 'Анализ файла…'
-        font = option.font; font.setPointSizeF(max(9, font.pointSizeF()-1)); painter.setFont(font)
+        font = QFont(option.font); font.setPixelSize(10); painter.setFont(font)
         painter.setPen(QColor('#a5a8b2' if dark else '#666d7a'))
-        painter.drawText(text_rect.translated(0, 22), Qt.AlignVCenter, QFontMetrics(font).elidedText(detail, Qt.ElideRight, text_rect.width()))
+        painter.drawText(QRect(text_rect.x(), rect.y()+53, text_rect.width(), 16), Qt.AlignVCenter, QFontMetrics(font).elidedText(detail, Qt.ElideRight, text_rect.width()))
         painter.restore()

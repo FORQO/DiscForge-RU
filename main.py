@@ -272,6 +272,10 @@ class Window(QMainWindow):
         self.chapters: dict[str, list[float]] = {}
         self.chapter_names = {}
         self.movie_names = {}
+        self.library_thumbnails = {}
+        from library_thumbnails import LibraryThumbnails
+        self.thumbnail_loader = LibraryThumbnails(self)
+        self.thumbnail_loader.ready.connect(self._thumbnail_ready)
         self.bitrate_overrides = {}
         self.quality_records = {}
         self.video_enhancements = {}
@@ -892,6 +896,8 @@ class Window(QMainWindow):
                 break
         if info:
             self.media[path] = info
+            from settings import find_binary
+            self.thumbnail_loader.request(path, info.duration, self.path_fields['ffmpeg'].text().strip() or find_binary('ffmpeg'))
             if path not in self.chapters:
                 self.chapters[path] = list(info.source_chapters) or [0.0]
                 if info.source_chapters:
@@ -905,6 +911,17 @@ class Window(QMainWindow):
             self._message(f'ОШИБКА {Path(path).name}: {error}')
         self._select_media()
         self._refresh_buttons()
+
+    def _thumbnail_ready(self, path, payload):
+        if path not in self.media:
+            return
+        from PySide6.QtGui import QImage
+        image = QImage.fromData(payload)
+        if not image.isNull():
+            self.library_thumbnails[path] = image
+            while len(self.library_thumbnails) > 128:
+                self.library_thumbnails.pop(next(iter(self.library_thumbnails)))
+            self.movies.viewport().update()
 
     def _selected_path(self) -> str | None:
         item = self.movies.currentItem()
@@ -1719,6 +1736,8 @@ class Window(QMainWindow):
         self._chapter_owner = None
         self.movies.clear()
         self.media.clear()
+        self.library_thumbnails.clear()
+        self.thumbnail_loader.requested.clear()
         self._allow_empty_editor = False
         self._studio_result = ''
         self.build_started = None
@@ -1789,6 +1808,7 @@ class Window(QMainWindow):
             return
         self._save_config()
         self.gpu_monitor.shutdown()
+        self.thumbnail_loader.shutdown()
         self.capacity_clock.stop()
         super().closeEvent(event)
 
@@ -1893,6 +1913,11 @@ def main() -> int:
         checks['menu_sidebar'] = w.menu_editor.splitter.widget(1) is w.menu_editor.inspector
         checks['studio_empty_state'] = w.studio_stack.currentIndex() == 1 and w.log_panel.isHidden()
         checks['studio_inspector'] = w.menu_editor.inspector_tabs.count() == 3
+        checks['studio_button_sections'] = w.menu_editor.button_inspector.tabs.count() == 4
+        checks['studio_style_cards'] = len(w.menu_editor.button_inspector.style_cards) == 4
+        checks['studio_canvas_tools'] = w.menu_editor.canvas_toolbar is not None and w.menu_editor.zoom_combo.count() >= 5
+        checks['studio_resize_mode'] = not w.menu_editor.preview.resize_mode
+        checks['studio_library_frames'] = hasattr(w, 'thumbnail_loader')
         checks['studio_icons'] = all((resources / 'assets/icons' / name).is_file() for name in ('check.svg', 'chevron.svg'))
         from studio_ui import ExportDialog
         export = ExportDialog(w)
