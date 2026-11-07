@@ -217,6 +217,17 @@ class EpisodeButtonTests(unittest.TestCase):
         self.assertEqual(self.editor.button_styles['play']['variant'], 'glass')
         self.assertNotIn('font_size', self.editor.button_styles['play'])
 
+    def test_entrance_timer_ignores_static_text_and_logo(self):
+        self.grid(); self.editor.set_preview_mode(True)
+        preview = self.editor.preview
+        self.assertGreater(len(preview.elements), len(self.buttons()))
+        preview.start_entrance()
+        # Four buttons finish at 180 + 3*25 = 255ms. Static labels and the logo
+        # must not extend this deadline to 405ms on the faster Qt 6.8 runtime.
+        with patch('menu_preview.time.monotonic', return_value=preview._entrance_start+0.300):
+            preview._tick()
+        self.assertFalse(preview.timer.isActive())
+
 
 if __name__ == '__main__':
     unittest.main()

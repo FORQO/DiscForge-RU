@@ -361,7 +361,9 @@ class MenuPreview(QWidget):
             self._focus_levels[e['id']] = level
             active |= level != target
         active |= bool(duration and (now-self._motion_start)*1000 < duration)
-        active |= bool(duration and self.view_only and (now-self._entrance_start)*1000 < duration+len(self.elements)*stagger)
+        button_indices = [e['index'] for e in self.elements if e['button']]
+        active |= bool(duration and self.view_only and button_indices and
+                       (now-self._entrance_start)*1000 < duration+max(button_indices)*stagger)
         active |= now-self._pressed_start < 0.12
         self.update()
         if not active:
