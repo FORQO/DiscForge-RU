@@ -279,6 +279,7 @@ def button_style(design, key):
     if design.theme in ('amber', 'sapphire'):
         style.update(shape='pill' if design.theme == 'amber' else 'rounded', border='#59616b',
                      width=2, font_size=32, opacity=55, chevron=True, glow=True)
+    style.update(design.button_editor.get('template', {}).get('style', {}))
     style.update(design.button_styles.get(key, {}))
     style.setdefault('padding_x', 28)
     style.setdefault('padding_y', 0)

@@ -3,10 +3,11 @@ import copy
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QComboBox,
-    QSlider, QSpinBox, QPushButton, QCheckBox, QInputDialog, QColorDialog, QLabel, QGroupBox, QSizePolicy,
+    QPushButton, QCheckBox, QInputDialog, QColorDialog, QLabel, QGroupBox, QSizePolicy,
     QTabWidget, QScrollArea, QFrame, QGridLayout)
 from episode_buttons import (STYLE_PRESETS, page_layout, appearance, overlaps)
 from disc_menu import button_style, pages, button_id
+from numeric_slider import IntegerEdit as QSpinBox, SliderValue
 
 
 class ButtonInspector(QWidget):
@@ -23,6 +24,12 @@ class ButtonInspector(QWidget):
         self.selection_detail = QLabel('Выберите кнопку на холсте')
         self.selection_detail.setObjectName('hint'); self.selection_detail.setWordWrap(True)
         box.addWidget(self.selection_detail)
+        self.apply_all_button = QPushButton('Применить ко всем остальным')
+        self.apply_all_button.setObjectName('primary')
+        self.apply_all_button.setMinimumWidth(0)
+        self.apply_all_button.setToolTip('Использовать выбранную кнопку как образец оформления и размеров для всех кнопок проекта, включая главы и навигацию. Расстановка выравнивается автоматически; названия, действия и доступность сохраняются. Ctrl+Z — отменить.')
+        self.apply_all_button.clicked.connect(self.apply_to_project)
+        box.addWidget(self.apply_all_button)
         self.scope = QComboBox()
         for text in ('Выбранные кнопки', 'Все на странице', 'Все в проекте'):
             self.scope.addItem(text)
@@ -130,15 +137,13 @@ class ButtonInspector(QWidget):
             combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
     def add_number(self, form, key, title, low, high):
-        widget = QWidget(); row = QHBoxLayout(widget); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(5)
-        slider = QSlider(Qt.Horizontal); slider.setRange(low, high); slider.setMinimumWidth(35)
-        spin = QSpinBox(); spin.setRange(low, high); spin.setFixedWidth(66)
-        slider.setAccessibleName(title); spin.setAccessibleName(title + ' — значение')
-        slider.valueChanged.connect(spin.setValue); spin.valueChanged.connect(slider.setValue)
+        spin = QSpinBox(); spin.setRange(low, high)
+        widget = SliderValue(spin, title)
+        slider = widget.slider
         spin.valueChanged.connect(lambda value, k=key: self.change_number(k, value))
         slider.sliderPressed.connect(lambda: setattr(self.editor, '_editing_gesture', True))
         slider.sliderReleased.connect(self.finish_slider)
-        row.addWidget(slider, 1); row.addWidget(spin); form.addRow(title, widget)
+        form.addRow(widget)
         self.numbers[key] = (slider, spin)
 
     def finish_slider(self):
@@ -175,6 +180,7 @@ class ButtonInspector(QWidget):
         detail = selected[0]['shown'] if len(selected) == 1 else 'Ctrl + щелчок — выбрать несколько' if selected else 'Выберите кнопку или примените настройки ко всей странице.'
         self.selection_detail.setText(detail)
         self.tabs.setEnabled(bool(self.targets()))
+        self.apply_all_button.setEnabled(len(selected) == 1 and selected[0]['id'] == self.editor.selected_button)
         target = next((e for e in elements if e['id'] == self.editor.selected_button), elements[0] if elements else None)
         if self.scope.currentIndex() > 0 and elements:
             target = elements[0]
@@ -211,6 +217,29 @@ class ButtonInspector(QWidget):
         self.undo.setEnabled(bool(self.editor._undo))
         self.redo.setEnabled(bool(self.editor._redo))
         self.syncing = False
+
+    def apply_to_project(self):
+        from button_template import project_button_template
+        self.editor.preview.commit_edit()
+        if len(self.editor.preview.selected_keys) > 1:
+            return
+        selected = [element for element in self.elements() if element['id'] == self.editor.selected_button]
+        if len(selected) != 1:
+            return
+        source = selected[0]
+        content = [element for element in self.elements() if not element['id'].startswith(
+            ('home:', 'previous:', 'next:', 'catalog:previous:', 'catalog:next:'))]
+        try:
+            updated = project_button_template(self.editor.current_design(preview=True), source['id'],
+                list(source['rect'].getRect()), [list(element['rect'].getRect()) for element in content],
+                self.scope_key(), self.editor.chapters, [name for _, name in self.editor.collection_items])
+        except ValueError as exc:
+            self.editor.caption.setText(str(exc))
+            return
+        self.editor.button_editor = copy.deepcopy(updated.button_editor)
+        self.editor.button_styles = copy.deepcopy(updated.button_styles)
+        self.editor.refresh()
+        self.editor.caption.setText('Образец применён ко всем кнопкам проекта. Ctrl+Z — отменить.')
 
     def change_number(self, key, value):
         if self.syncing:

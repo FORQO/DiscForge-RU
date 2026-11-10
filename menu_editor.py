@@ -3,7 +3,8 @@ from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QIcon
 from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox, QSlider, QColorDialog, QSpinBox, QLayout, QFontComboBox, QSplitter, QScrollArea, QGroupBox, QFormLayout, QGridLayout, QFrame, QTabWidget, QSizePolicy, QStyle, QButtonGroup)
+    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox, QSlider, QColorDialog, QLayout, QFontComboBox, QSplitter, QScrollArea, QGroupBox, QFormLayout, QGridLayout, QFrame, QTabWidget, QSizePolicy, QStyle, QButtonGroup)
+from numeric_slider import IntegerEdit as QSpinBox, SliderValue
 from disc_menu import (MenuDesign, render_page, pages, import_background, TEXT, BUTTONS,
                        button_id, button_label_key, button_style, page_elements, resolve_action)
 from menu_layout import text_style
@@ -271,7 +272,8 @@ class MenuEditor(QWidget):
         self.style_form = form
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         form.addRow('Гарнитура', self.font_family)
-        form.addRow('Размер', self.font_size)
+        self.font_size_control = SliderValue(self.font_size, 'Размер')
+        form.addRow(self.font_size_control)
         self.bold = QCheckBox('Жирный')
         self.italic = QCheckBox('Курсив')
         font_row = QHBoxLayout()
@@ -279,8 +281,13 @@ class MenuEditor(QWidget):
         font_row.addWidget(self.italic)
         form.addRow(font_row)
         form.addRow('Форма', self.shape)
-        form.addRow('Обводка', self.border_width)
-        form.addRow('Заливка', self.opacity)
+        self.border_width_control = SliderValue(self.border_width, 'Обводка')
+        self.opacity_control = SliderValue(self.opacity, 'Заливка')
+        form.addRow(self.border_width_control)
+        form.addRow(self.opacity_control)
+        for control in (self.font_size_control, self.border_width_control, self.opacity_control):
+            control.slider.sliderPressed.connect(lambda: setattr(self, '_editing_gesture', True))
+            control.slider.sliderReleased.connect(self.finish_numeric_slider)
         style_layout.addLayout(form)
         colors = QGridLayout()
         self.color_buttons = {}
@@ -396,6 +403,10 @@ class MenuEditor(QWidget):
         self.select_button('')
         self.caption.setText('Стрелки — выбор · Enter — открыть · Backspace — назад' if enabled else 'Выберите объект · Двойной клик — изменить текст')
         self.preview.update()
+
+    def finish_numeric_slider(self):
+        self._editing_gesture = False
+        self.refresh()
 
     def set_canvas_tool(self, name):
         self.preview.resize_mode = name == 'resize'
@@ -834,7 +845,7 @@ class MenuEditor(QWidget):
         self.action_label.setVisible(not is_text)
         self.action_selector.setVisible(not is_text)
         for field in (self.shape, self.border_width, self.opacity):
-            self.style_form.setRowVisible(field, not is_text)
+            self.style_form.setRowVisible(getattr(field, 'slider_control', field), not is_text)
         for name, button in self.color_buttons.items():
             button.setVisible(not is_text or name == 'text')
         style = text_style(self.current_design(preview=True), key[5:]) if is_text else button_style(self.current_design(preview=True), key)

@@ -14,6 +14,8 @@ STYLE_PRESETS = {
     'minimal': dict(variant='minimal', opacity=0, width=2, glow_strength=25),
 }
 APPEARANCE_KEYS = {'variant', 'fill', 'text', 'border', 'highlight', 'opacity', 'width', 'glow_strength'}
+TEMPLATE_STYLE_KEYS = APPEARANCE_KEYS | {'shape', 'font_size', 'font_family', 'bold', 'italic',
+                                       'radius', 'padding_x', 'padding_y', 'numbered'}
 LAYOUT_DEFAULTS = dict(mode='free', columns=2, gap_x=40, gap_y=24, align='left',
                        uniform=True, width=760, height=82, x=150, y=400, snap=16)
 ANIMATIONS = {'none': (0, 0), 'restrained': (180, 25), 'cinematic': (220, 45)}
@@ -50,8 +52,28 @@ def validate_style(style):
             raise ValueError('Некорректный параметр оформления кнопки: ' + str(name))
 
 
+def validate_layout(layout):
+    if not isinstance(layout, dict):
+        raise ValueError('Некорректная расстановка кнопок.')
+    for key, value in layout.items():
+        if key == 'mode':
+            valid = value in ('free', 'column', 'grid')
+        elif key == 'align':
+            valid = value in ('left', 'center', 'right')
+        elif key == 'uniform':
+            valid = type(value) is bool
+        elif key in ('columns', 'gap_x', 'gap_y', 'width', 'height', 'x', 'y', 'snap'):
+            low, high = dict(columns=(1, 8), gap_x=(0, 300), gap_y=(0, 300), width=(32, 1920),
+                             height=(32, 1080), x=(0, 1888), y=(0, 1048), snap=(1, 100))[key]
+            valid = type(value) is int and low <= value <= high
+        else:
+            valid = False
+        if not valid:
+            raise ValueError('Некорректный параметр сетки: ' + str(key))
+
+
 def validate_editor(data):
-    if not isinstance(data, dict) or set(data) - {'animation', 'pages', 'order', 'presets'}:
+    if not isinstance(data, dict) or set(data) - {'animation', 'pages', 'order', 'presets', 'template'}:
         raise ValueError('Некорректные настройки редактора кнопок.')
     if not isinstance(data.get('animation', 'restrained'), str) or data.get('animation', 'restrained') not in ANIMATIONS:
         raise ValueError('Неизвестный режим анимации.')
@@ -61,21 +83,17 @@ def validate_editor(data):
     for scope, layout in data.get('pages', {}).items():
         if not isinstance(scope, str) or not re.fullmatch(r'(catalog:)?\d{1,3}', scope) or not isinstance(layout, dict):
             raise ValueError('Некорректная страница расстановки.')
-        for key, value in layout.items():
-            if key == 'mode':
-                valid = value in ('free', 'column', 'grid')
-            elif key == 'align':
-                valid = value in ('left', 'center', 'right')
-            elif key == 'uniform':
-                valid = type(value) is bool
-            elif key in ('columns', 'gap_x', 'gap_y', 'width', 'height', 'x', 'y', 'snap'):
-                low, high = dict(columns=(1, 8), gap_x=(0, 300), gap_y=(0, 300), width=(32, 1920),
-                                 height=(32, 1080), x=(0, 1888), y=(0, 1048), snap=(1, 100))[key]
-                valid = type(value) is int and low <= value <= high
-            else:
-                valid = False
-            if not valid:
-                raise ValueError('Некорректный параметр сетки: ' + str(key))
+        validate_layout(layout)
+    if 'template' in data:
+        template = data['template']
+        if not isinstance(template, dict) or set(template) != {'style', 'layout'}:
+            raise ValueError('Некорректный общий образец кнопок.')
+        validate_style(template['style'])
+        if set(template['style']) - TEMPLATE_STYLE_KEYS:
+            raise ValueError('Образец может изменять только оформление кнопок.')
+        validate_layout(template['layout'])
+        if template['layout'].get('mode') not in ('column', 'grid') or template['layout'].get('uniform') is not True:
+            raise ValueError('Для общего образца требуется равномерная расстановка.')
     for scope, keys in data.get('order', {}).items():
         if (not isinstance(scope, str) or not re.fullmatch(r'(catalog:)?\d{1,3}', scope)
                 or not isinstance(keys, list) or len(keys) > 16 or any(not valid_button_key(k) for k in keys)
@@ -91,7 +109,10 @@ def validate_editor(data):
 
 
 def page_layout(design, scope):
-    return dict(LAYOUT_DEFAULTS, **design.button_editor.get('pages', {}).get(str(scope), {}))
+    config = dict(LAYOUT_DEFAULTS)
+    config.update(design.button_editor.get('template', {}).get('layout', {}))
+    config.update(design.button_editor.get('pages', {}).get(str(scope), {}))
+    return config
 
 
 def ordered_entries(design, scope, entries, keys):

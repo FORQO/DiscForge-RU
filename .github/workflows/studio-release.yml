@@ -2,6 +2,9 @@ name: Studio 1.5.1 qualification
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+    paths: ['docs/RELEASE_STUDIO_1.5.1.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,7 +32,7 @@ jobs:
           PYTHONUTF8: '1'
         run: python -m unittest discover -s tests -v
       - name: Build Studio
-        run: python -m PyInstaller --noconfirm --clean --windowed --icon assets/brand/diskforge.ico --onedir --add-data "assets;assets" --add-data "tools/windows_iso.ps1;tools" --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." --name DiscForge_RU main.py
+        run: python tools/build_windows.py
       - uses: actions/cache@v6
         with:
           path: build/dependencies
@@ -115,7 +118,7 @@ jobs:
           path: release/
           if-no-files-found: error
   publish:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref == 'refs/heads/main'
     needs: [tests, windows, macos]
     runs-on: ubuntu-latest
     permissions:
@@ -131,8 +134,16 @@ jobs:
           path: release
       - name: Verify common source and prepare checksums
         run: python tools/prepare_studio_release.py release
-      - name: Prepare draft with both platforms
+      - name: Publish verified Studio release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.5.1-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — Windows и macOS" --notes-file docs/RELEASE_STUDIO_1.5.1.md --draft
+          set -euo pipefail
+          if gh release view v1.5.1-studio --json isDraft > existing-release.json; then
+            python -c 'import json; assert json.load(open("existing-release.json"))["isDraft"], "Refusing to replace a published release"'
+            gh release edit v1.5.1-studio --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — единый стиль меню и проверка GIEC G2805" --notes-file docs/RELEASE_STUDIO_1.5.1.md
+            gh release upload v1.5.1-studio release/* --clobber
+            gh release edit v1.5.1-studio --draft=false --prerelease=false --latest
+          else
+            gh release create v1.5.1-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — единый стиль меню и проверка GIEC G2805" --notes-file docs/RELEASE_STUDIO_1.5.1.md --latest
+          fi

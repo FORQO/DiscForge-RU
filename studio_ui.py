@@ -15,6 +15,7 @@ def studio_style(theme='graphite'):
     hover = '#29313c' if dark else '#e9ecf2'
     check_icon = (Path(__file__).parent / 'assets/icons/check.svg').as_posix()
     chevron_icon = (Path(__file__).parent / 'assets/icons/chevron.svg').as_posix()
+    clear_icon = (Path(__file__).parent / 'assets/icons/clear.svg').as_posix()
     return f'''
 QWidget {{ background: {bg}; color: {fg}; font-size: 13px; }}
 QMainWindow, QDialog {{ background: {bg}; }}
@@ -30,12 +31,13 @@ QLabel#inspectorHeading {{ font-size: 16px; font-weight: 600; color: {fg}; paddi
 QLabel#hint, QLabel#tag, QLabel#details, QLabel#studioStatus {{ color: {muted}; font-size: 12px; }}
 QLabel#details {{ padding: 6px 0; }}
 QLabel#hint {{ padding: 4px 0; }}
-QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QFontComboBox {{
+QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTimeEdit, QFontComboBox {{
  background: {panel}; border: 1px solid {line}; border-radius: 6px; padding: 6px 8px;
  selection-background-color: #d8792b; selection-color: #ffffff; min-height: 18px;
 }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: #d8792b; }}
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{ color: {muted}; background: {side}; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTimeEdit:focus {{ border-color: #d8792b; }}
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QTimeEdit:disabled {{ color: {muted}; background: {side}; }}
+QLineEdit {{ lineedit-clear-button-icon: url("{clear_icon}"); }}
 QComboBox {{ padding-right: 22px; }}
 QComboBox::down-arrow {{ image: url("{chevron_icon}"); width: 12px; height: 12px; }}
 QComboBox::drop-down {{ width: 20px; border: none; }}
@@ -51,6 +53,9 @@ QPushButton, QToolButton {{ background: {panel}; border: 1px solid {line}; paddi
 QPushButton:hover, QToolButton:hover {{ background: {hover}; }}
 QPushButton:pressed, QPushButton:checked, QToolButton:checked {{ background: {selected}; border-color: #d8792b; }}
 QPushButton:disabled {{ background: {side}; color: {muted}; border-color: {line}; }}
+QLineEdit QToolButton {{ background: transparent; border: 0; padding: 0; margin: 0; min-height: 0; min-width: 0; border-radius: 4px; }}
+QLineEdit QToolButton:hover {{ background: {hover}; }}
+QLineEdit QToolButton:pressed {{ background: {selected}; }}
 QPushButton#primary {{ background: #cf7024; border-color: #cf7024; color: #ffffff; font-weight: 600; padding: 8px 18px; }}
 QPushButton#primary:hover {{ background: #bb6019; }}
 QPushButton#primary:disabled {{ background: {side}; border-color: {line}; color: {muted}; }}
