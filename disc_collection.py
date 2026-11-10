@@ -53,6 +53,7 @@ def merge_menu(root, sources, design, titles):
         configs.append(props)
         cursor += int(props['pages'])
     props = {'pages': str(cursor), 'movies': str(len(sources)), 'playlist': '00000', 'audio.count': '0', 'subtitle.count': '0'}
+    props.update({'animation.mode': 'static', 'animation.requested': design.button_editor.get('animation', 'restrained')})
     bdmv = root/'BDMV'
     for directory in ('JAR', 'BDJO', 'BACKUP/JAR', 'BACKUP/BDJO'):
         (bdmv/directory).mkdir(parents=True, exist_ok=True)
@@ -64,19 +65,20 @@ def merge_menu(root, sources, design, titles):
             root_design, entries = catalog_page(design, titles, page, offsets)
             base = render_page(root_design, [0.0], entries_override=entries)
             out.writestr(f'page{page}.png', _png(base))
-            props[f'page.{page}.count'] = str(len(entries))
-            for element in page_elements(root_design, [0.0], 0, entries):
-                if not element['button']:
-                    continue
-                i = element['index']
+            enabled = [e for e in page_elements(root_design, [0.0], 0, entries) if e['button'] and not e['style'].get('disabled')]
+            props[f'page.{page}.count'] = str(len(enabled))
+            for i, element in enumerate(enabled):
                 prefix = f'page.{page}.{i}'
-                props[prefix] = entries[i][1]
+                props[prefix] = entries[element['index']][1]
                 for field, value in zip(('x', 'y', 'w', 'h'), element['rect']):
                     props[prefix+'.'+field] = str(value)
                 patch, x, y = focus_patch(base, element)
                 name = f'focus{page}_{i}.png'
                 out.writestr(name, _png(patch))
                 props.update({prefix+'.focus': name, prefix+'.focusX': str(x), prefix+'.focusY': str(y)})
+                pressed, _, _ = focus_patch(base, element, 0.35)
+                name = f'pressed{page}_{i}.png'
+                out.writestr(name, _png(pressed)); props[prefix+'.pressed'] = name
         for movie, (source, offset, cfg) in enumerate(zip(sources, offsets, configs)):
             prefix = f'movie.{movie}.'
             props[prefix+'playlist'] = f'{movie:05}'
@@ -97,7 +99,7 @@ def merge_menu(root, sources, design, titles):
                         tail = key[len(old):]
                         if tail.isdigit() and value.startswith('page:'):
                             value = 'page:'+str(offset+int(value[5:]))
-                        if tail.endswith('.focus'):
+                        if tail.endswith(('.focus', '.pressed')):
                             name = f'movie{movie}_{value}'
                             out.writestr(name, jar.read(value))
                             value = name

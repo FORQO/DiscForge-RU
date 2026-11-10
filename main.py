@@ -19,9 +19,10 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
-    QPushButton, QSpinBox, QSplitter, QStatusBar, QTabWidget, QVBoxLayout,
-    QWidget, QScrollArea, QSizePolicy, QStyle, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QStackedWidget, QDialog,
+    QPushButton, QSplitter, QStatusBar, QTabWidget, QVBoxLayout,
+    QWidget, QScrollArea, QSizePolicy, QStyle, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QStackedWidget, QDialog,
 )
+from numeric_slider import IntegerEdit as QSpinBox, DecimalEdit as QDoubleSpinBox, SliderValue
 
 from core import (CAPACITIES, SUPPORTED, DiscForgeError, MediaInfo,
                   create_bluray, probe_media, validate_chapters, nvenc_available, bitrate_plan, prepare_processing)
@@ -35,7 +36,8 @@ from audio_panel import AudioPanel
 from subtitle_panel import SubtitlePanel
 from subtitles import select_subtitles, validate_selection
 from audio_selection import selected_tracks, select_tracks
-from source_chapters import titles_for_chapters, is_chapter_label
+from source_chapters import titles_for_chapters, is_chapter_label, clean_title
+from chapter_list import ChapterList, ChapterNameDelegate, CHAPTER_NAME_ROLE, CHAPTER_OWNER_ROLE
 from gpu_monitor import GpuMonitor
 from collection_titles import movie_title, normalize_names, validate_title
 from bitrate_advisor import recommend as recommend_bitrate, analyze_bitrate, planned_rate, normalize_rates
@@ -272,6 +274,10 @@ class Window(QMainWindow):
         self.chapters: dict[str, list[float]] = {}
         self.chapter_names = {}
         self.movie_names = {}
+        self.library_thumbnails = {}
+        from library_thumbnails import LibraryThumbnails
+        self.thumbnail_loader = LibraryThumbnails(self)
+        self.thumbnail_loader.ready.connect(self._thumbnail_ready)
         self.bitrate_overrides = {}
         self.quality_records = {}
         self.video_enhancements = {}
@@ -459,14 +465,14 @@ class Window(QMainWindow):
         self.collection_bitrate.setValue(12)
         self.collection_bitrate.setSuffix(' Мбит/с')
         self.collection_bitrate.setToolTip('Для общего диска при перекодировании. Копируемые потоки сохраняют исходный размер. Битрейт не уменьшается автоматически при добавлении фильмов.')
-        form.addRow('Общий ручной битрейт:', self.collection_bitrate)
+        form.addRow(SliderValue(self.collection_bitrate, 'Общий ручной битрейт'))
         self.custom_bitrate = QCheckBox('Задать битрейт для выбранного фильма')
         self.movie_bitrate = QDoubleSpinBox()
         self.movie_bitrate.setRange(5, 28)
         self.movie_bitrate.setDecimals(1)
         self.movie_bitrate.setSingleStep(.5)
         self.movie_bitrate.setSuffix(' Мбит/с')
-        form.addRow(self.custom_bitrate, self.movie_bitrate)
+        form.addRow(SliderValue(self.movie_bitrate, self.custom_bitrate))
         self.recommendation = QLabel('Добавьте фильм: программа проверит возможность сборки без потери качества.')
         self.recommendation.setWordWrap(True)
         self.recommendation.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -602,9 +608,14 @@ class Window(QMainWindow):
         chapter_box.addWidget(self.chapter_movie)
         self.chapter_status = QLabel('Сначала добавьте фильм и выберите его слева.')
         chapter_box.addWidget(self.chapter_status)
-        self.chapter_list = QListWidget()
+        self.chapter_list = ChapterList()
         self.chapter_list.currentItemChanged.connect(self.select_chapter_time)
-        self.chapter_list.itemDoubleClicked.connect(lambda *_: self.chapter_time.setFocus())
+        self.chapter_list.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.chapter_name_delegate = ChapterNameDelegate(self.chapter_list)
+        self.chapter_name_delegate.renamed.connect(self.rename_chapter)
+        self.chapter_list.setItemDelegate(self.chapter_name_delegate)
+        self.chapter_list.setToolTip('Двойной щелчок или F2 — переименовать главу. Enter — сохранить, Esc — отменить.')
+        self.chapter_list.setAccessibleName('Главы фильма — двойной щелчок для переименования')
         chapter_box.addWidget(self.chapter_list, 1)
         chapter_edit = QHBoxLayout()
         chapter_edit.addWidget(QLabel('Начало (чч:мм:сс.ммм):'))
@@ -620,19 +631,17 @@ class Window(QMainWindow):
         self.edit_chapter_button.clicked.connect(self.edit_chapter)
         chapter_edit.addWidget(self.edit_chapter_button)
         chapter_box.addLayout(chapter_edit)
-        chapter_actions = QHBoxLayout()
         self.auto_interval = QSpinBox()
         self.auto_interval.setRange(1, 60)
         self.auto_interval.setValue(10)
         self.auto_interval.setSuffix(' мин')
-        chapter_actions.addWidget(self.auto_interval)
         self.auto_chapter_button = QPushButton('Разбить по интервалу')
         self.auto_chapter_button.clicked.connect(self.auto_chapters)
-        chapter_actions.addWidget(self.auto_chapter_button)
         self.delete_chapter_button = QPushButton('Удалить главу')
         self.delete_chapter_button.clicked.connect(self.remove_chapter)
-        chapter_actions.addWidget(self.delete_chapter_button)
-        chapter_box.addLayout(chapter_actions)
+        self.chapter_interval_control = SliderValue(self.auto_interval, 'Интервал глав',
+            actions=(self.auto_chapter_button, self.delete_chapter_button))
+        chapter_box.addWidget(self.chapter_interval_control)
         self.import_chapters_button = QPushButton('Вернуть главы из файла')
         self.import_chapters_button.setToolTip('Заменить текущие тайминги главами, найденными при анализе фильма.')
         self.import_chapters_button.clicked.connect(self.restore_source_chapters)
@@ -680,6 +689,7 @@ class Window(QMainWindow):
         self.verification_panel = VerificationPanel(self)
         root.addWidget(self.verification_panel)
         self.gpu_monitor = GpuMonitor(self)
+        self.gpu_monitor.layout().setContentsMargins(18, 3, 18, 3)
         self.gpu_monitor.temperature_warning.connect(self._message)
         root.addWidget(self.gpu_monitor)
         if sys.platform == 'darwin':
@@ -892,6 +902,8 @@ class Window(QMainWindow):
                 break
         if info:
             self.media[path] = info
+            from settings import find_binary
+            self.thumbnail_loader.request(path, info.duration, self.path_fields['ffmpeg'].text().strip() or find_binary('ffmpeg'))
             if path not in self.chapters:
                 self.chapters[path] = list(info.source_chapters) or [0.0]
                 if info.source_chapters:
@@ -905,6 +917,17 @@ class Window(QMainWindow):
             self._message(f'ОШИБКА {Path(path).name}: {error}')
         self._select_media()
         self._refresh_buttons()
+
+    def _thumbnail_ready(self, path, payload):
+        if path not in self.media:
+            return
+        from PySide6.QtGui import QImage
+        image = QImage.fromData(payload)
+        if not image.isNull():
+            self.library_thumbnails[path] = image
+            while len(self.library_thumbnails) > 128:
+                self.library_thumbnails.pop(next(iter(self.library_thumbnails)))
+            self.movies.viewport().update()
 
     def _selected_path(self) -> str | None:
         item = self.movies.currentItem()
@@ -1138,6 +1161,9 @@ class Window(QMainWindow):
                 name = self.menu_editor.current_design(preview=True).text(f'chapter:{index-1}') or f'Глава {index}'
                 item = QListWidgetItem(f'{name}   ·   {chapter_timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
                 item.setData(Qt.UserRole, t)
+                item.setData(CHAPTER_NAME_ROLE, name)
+                item.setData(CHAPTER_OWNER_ROLE, path)
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
                 item.setToolTip(f'Фильм: {movie_title(path, self.movie_names)}\n{path}\nНачало сцены: {chapter_timecode(t)}')
                 self.chapter_list.addItem(item)
         self._update_recommendation()
@@ -1179,6 +1205,25 @@ class Window(QMainWindow):
             self.chapter_time.setText(chapter_timecode(float(item.data(Qt.UserRole))))
         if hasattr(self, 'build_button'):
             self._refresh_buttons()
+
+    def rename_chapter(self, index, value):
+        item = self.chapter_list.itemFromIndex(index)
+        path = self._selected_path()
+        if (item is None or not self._movies_editable() or path not in self.media
+                or item.data(CHAPTER_OWNER_ROLE) != path or self._chapter_owner != path):
+            return
+        name = clean_title(value)
+        if not name or name == item.data(CHAPTER_NAME_ROLE):
+            return
+        start = item.data(Qt.UserRole)
+        try:
+            chapter = self.chapters[path].index(start)
+        except ValueError:
+            return
+        self.menu_editor.inline_text(f'chapter:{chapter}', name)
+        self._save_chapter_names()
+        item.setData(CHAPTER_NAME_ROLE, name)
+        item.setText(f'{name}   ·   {chapter_timecode(start)}' + ('   ·   Начало фильма' if start == 0 else ''))
 
     def apply_chapters(self, path, new, moved=None):
         try:
@@ -1344,6 +1389,8 @@ class Window(QMainWindow):
         self.apply_recommendation.setEnabled(editable and bool(info and info.copy_report))
         self.import_chapters_button.setEnabled(editable and bool(info and info.source_chapters))
         self.chapter_time.setEnabled(editable)
+        self.chapter_list.setEnabled(editable)
+        self.auto_interval.setEnabled(editable)
         selected = self.chapter_list.currentItem()
         can_change = editable and selected is not None and selected.data(Qt.UserRole) != 0
         self.edit_chapter_button.setEnabled(can_change)
@@ -1719,6 +1766,8 @@ class Window(QMainWindow):
         self._chapter_owner = None
         self.movies.clear()
         self.media.clear()
+        self.library_thumbnails.clear()
+        self.thumbnail_loader.requested.clear()
         self._allow_empty_editor = False
         self._studio_result = ''
         self.build_started = None
@@ -1789,6 +1838,7 @@ class Window(QMainWindow):
             return
         self._save_config()
         self.gpu_monitor.shutdown()
+        self.thumbnail_loader.shutdown()
         self.capacity_clock.stop()
         super().closeEvent(event)
 
@@ -1872,6 +1922,12 @@ def main() -> int:
                                     and not trial.start.isEnabled() and not trial.weak_scene.isEnabled())
         checks['quality_search'] = trial.retry_rates.isChecked() and trial._plan().retry_rates
         checks['quality_project'] = hasattr(trial, 'saved_record') and 'quality_trials' in w._project_data()
+        from numeric_slider import SliderValue, step_buttons_hidden
+        from PySide6.QtWidgets import QAbstractSpinBox
+        numeric_fields = w.findChildren(QAbstractSpinBox)
+        checks['numeric_slider_controls'] = len(numeric_fields) == 25 and all(
+            isinstance(field.parentWidget(), SliderValue)
+            and step_buttons_hidden(field) for field in numeric_fields)
         checks['remote_four_arrows'] = all(key in w.menu_editor.remote_buttons for key in ('up', 'down', 'left', 'right'))
         from video_treatment import frame_filter
         checks['gentle_video'] = hasattr(w, 'enhance_video') and 'hqdn3d=' in frame_filter()
@@ -1893,12 +1949,34 @@ def main() -> int:
         checks['menu_sidebar'] = w.menu_editor.splitter.widget(1) is w.menu_editor.inspector
         checks['studio_empty_state'] = w.studio_stack.currentIndex() == 1 and w.log_panel.isHidden()
         checks['studio_inspector'] = w.menu_editor.inspector_tabs.count() == 3
-        checks['studio_icons'] = all((resources / 'assets/icons' / name).is_file() for name in ('check.svg', 'chevron.svg'))
+        checks['studio_button_sections'] = w.menu_editor.button_inspector.tabs.count() == 4
+        checks['studio_style_cards'] = len(w.menu_editor.button_inspector.style_cards) == 4
+        sample_editor = MenuEditor()
+        before_sample = sample_editor.settings()
+        sample_editor.select_button('play')
+        sample_rect = next(e['rect'] for e in sample_editor.preview.elements if e['id'] == 'play')
+        undo_count = len(sample_editor._undo)
+        sample_editor.button_inspector.apply_all_button.click()
+        shared_sample = sample_editor.current_design().button_editor.get('template', {})
+        checks['apply_buttons_to_project'] = (
+            shared_sample.get('layout', {}).get('width') == sample_rect.width()
+            and shared_sample.get('layout', {}).get('height') == sample_rect.height()
+            and len(sample_editor._undo) == undo_count + 1)
+        sample_editor.undo_edit()
+        checks['apply_buttons_to_project'] &= sample_editor.settings() == before_sample
+        sample_editor.close()
+        sample_editor.deleteLater()
+        checks['studio_canvas_tools'] = w.menu_editor.canvas_toolbar is not None and w.menu_editor.zoom_combo.count() >= 5
+        checks['studio_resize_mode'] = not w.menu_editor.preview.resize_mode
+        checks['studio_library_frames'] = hasattr(w, 'thumbnail_loader')
+        checks['studio_icons'] = all((resources / 'assets/icons' / name).is_file() for name in ('check.svg', 'chevron.svg', 'clear.svg'))
         from studio_ui import ExportDialog
         export = ExportDialog(w)
         checks['studio_export'] = export.folder.text() == w.output_folder.text() and export.mode.count() == 2
         export.deleteLater()
         checks['source_chapters'] = probe_media is not None and hasattr(MediaInfo, 'source_chapters')
+        checks['chapter_name_editing'] = (isinstance(w.chapter_list.itemDelegate(), ChapterNameDelegate)
+            and bool(w.chapter_list.editTriggers() & QAbstractItemView.DoubleClicked))
         checks['gpu_monitor'] = hasattr(w, 'gpu_monitor') and not w.gpu_monitor.timer.isActive()
         checks['gpu_heat_warning'] = w.gpu_monitor.heat_warning.isHidden()
         checks['gpu_frames_option'] = w.gpu_frames.isChecked()

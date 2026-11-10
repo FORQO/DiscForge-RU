@@ -8,14 +8,16 @@ import time
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QTime
 from PySide6.QtGui import QImage, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QDoubleSpinBox, QSpinBox, QTimeEdit, QComboBox, QTableWidget, QTableWidgetItem,
+    QGridLayout, QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QProgressBar, QSlider, QGraphicsView, QGraphicsScene,
-    QPlainTextEdit, QMessageBox, QWidget, QCheckBox)
+    QPlainTextEdit, QMessageBox, QWidget, QCheckBox, QScrollArea, QFrame, QLayout)
 
 from quality_trial import (TrialPlan, FPS, WIDTH, HEIGHT, suggested_rates,
                            comparison_command, ensure_source)
 from quality_scenes import timecode
 from quality_search import run_quality_search
+from numeric_slider import (IntegerEdit as QSpinBox, DecimalEdit as QDoubleSpinBox,
+                            TimeEdit as QTimeEdit, SliderValue)
 
 
 class TrialWorker(QThread):
@@ -187,15 +189,18 @@ class QualityDialog(QDialog):
         self.controls = QWidget()
         controls_layout = QVBoxLayout(self.controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSizeConstraint(QLayout.SetMinimumSize)
         mode_row = QHBoxLayout()
         self.mode = QComboBox()
         self.mode.addItems(['Автоматически · сложные сцены', 'Вручную · один фрагмент'])
-        mode_row.addWidget(self.mode)
-        mode_row.addWidget(QLabel('Количество сцен:'))
+        mode_row.addWidget(self.mode, 1)
         self.scene_count = QSpinBox()
         self.scene_count.setRange(2, 5)
         self.scene_count.setValue(3)
-        mode_row.addWidget(self.scene_count)
+        self.scene_preset = QComboBox()
+        self.scene_preset.addItems(['Выбрать сцену…', 'Начало · 15%', 'Середина · 50%', 'Конец · 85%'])
+        self.scene_preset.activated.connect(self._scene)
+        mode_row.addWidget(self.scene_preset)
         self.retry_rates = QCheckBox('Автоподбор, если пробы не подошли')
         self.retry_rates.setChecked(True)
         self.retry_rates.setToolTip('До 8 дополнительных раундов на тех же сценах. '
@@ -204,29 +209,24 @@ class QualityDialog(QDialog):
         mode_row.addWidget(self.retry_rates)
         mode_row.addStretch()
         controls_layout.addLayout(mode_row)
-        row = QHBoxLayout()
-        controls_layout.addLayout(row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(QLabel('Начало:'))
+        parameters = QGridLayout()
+        parameters.setHorizontalSpacing(20)
+        parameters.setVerticalSpacing(10)
+        controls_layout.addLayout(parameters)
         self.start = QTimeEdit(QTime(0, 0))
         self.start.setDisplayFormat('HH:mm:ss')
         self.start.setMaximumTime(QTime(0, 0).addSecs(min(86399, max(0, int(info.duration)-1))))
         self.start.setTime(QTime(0, 0).addSecs(min(86399, int(info.duration*.5))))
-        row.addWidget(self.start)
-        self.scene_preset = QComboBox()
-        self.scene_preset.addItems(['Выбрать сцену…', 'Начало · 15%', 'Середина · 50%', 'Конец · 85%'])
-        self.scene_preset.activated.connect(self._scene)
-        row.addWidget(self.scene_preset)
-        row.addWidget(QLabel('Длина:'))
         self.duration = QSpinBox()
         self.duration.setRange(1, 30)
         self.duration.setValue(min(10, max(1, int(info.duration))))
         self.duration.setSuffix(' с')
-        row.addWidget(self.duration)
-        row.addStretch()
-        row.addWidget(QLabel('Мбит/с:'))
+        for column, (label, number) in enumerate((('Количество сцен', self.scene_count),
+                                                 ('Начало', self.start), ('Длина', self.duration))):
+            parameters.addWidget(SliderValue(number, label), 0, column)
+            parameters.setColumnStretch(column, 1)
         self.rates = []
-        for value in suggested_rates(rate):
+        for column, value in enumerate(suggested_rates(rate)):
             spin = QDoubleSpinBox()
             spin.setRange(5, 28)
             spin.setDecimals(1)
@@ -234,13 +234,20 @@ class QualityDialog(QDialog):
             spin.setValue(value/1e6)
             spin.valueChanged.connect(self._refresh_apply)
             self.rates.append(spin)
-            row.addWidget(spin)
+            parameters.addWidget(SliderValue(spin, f'Проба {column + 1} · Мбит/с'), 1, column)
         self.start.timeChanged.connect(self._refresh_apply)
         self.duration.valueChanged.connect(self._refresh_apply)
         self.mode.currentIndexChanged.connect(self._mode_changed)
         self.scene_count.valueChanged.connect(self._refresh_apply)
         self.retry_rates.toggled.connect(self._refresh_apply)
-        root.addWidget(self.controls)
+        self.controls_scroll = QScrollArea()
+        self.controls_scroll.setWidgetResizable(True)
+        self.controls_scroll.setFrameShape(QFrame.NoFrame)
+        self.controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.controls_scroll.setMinimumHeight(90)
+        self.controls_scroll.setMaximumHeight(230)
+        self.controls_scroll.setWidget(self.controls)
+        root.addWidget(self.controls_scroll)
         encoding = ['CPU x264', 'NVIDIA NVENC', 'Авто: NVIDIA / CPU'][encoder]
         root.addWidget(QLabel(f'Настройки сборки: {encoding} · {"быстро" if fast else "сбалансированно"}. '
                               'Проба содержит только видео, без звука, субтитров и меню.'))
