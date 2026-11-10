@@ -37,7 +37,7 @@ from subtitle_panel import SubtitlePanel
 from subtitles import select_subtitles, validate_selection
 from audio_selection import selected_tracks, select_tracks
 from source_chapters import titles_for_chapters, is_chapter_label, clean_title
-from chapter_list import ChapterNameDelegate, CHAPTER_NAME_ROLE, CHAPTER_OWNER_ROLE
+from chapter_list import ChapterList, ChapterNameDelegate, CHAPTER_NAME_ROLE, CHAPTER_OWNER_ROLE
 from gpu_monitor import GpuMonitor
 from collection_titles import movie_title, normalize_names, validate_title
 from bitrate_advisor import recommend as recommend_bitrate, analyze_bitrate, planned_rate, normalize_rates
@@ -608,7 +608,7 @@ class Window(QMainWindow):
         chapter_box.addWidget(self.chapter_movie)
         self.chapter_status = QLabel('Сначала добавьте фильм и выберите его слева.')
         chapter_box.addWidget(self.chapter_status)
-        self.chapter_list = QListWidget()
+        self.chapter_list = ChapterList()
         self.chapter_list.currentItemChanged.connect(self.select_chapter_time)
         self.chapter_list.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.chapter_name_delegate = ChapterNameDelegate(self.chapter_list)
