@@ -1888,6 +1888,8 @@ def main() -> int:
         app.processEvents()
         resources = Path(__file__).parent
         checks = {'window': w.tabs.count() == 6,
+                  'english_interface': active_language() == 'en' and w.tabs.tabText(3) == 'Chapters'
+                                       and w.menu_editor.current_design().language == 'en',
                   'menu_image': not w.menu_editor.preview.image.isNull(),
                   'xlet': (resources / 'assets/bdj/menu.jar').is_file(),
                   'windows_iso': sys.platform != 'win32' or (resources / 'tools/windows_iso.ps1').is_file()}

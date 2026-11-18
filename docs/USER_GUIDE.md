@@ -1,4 +1,8 @@
-# Руководство DiskForge Studio 1.5.0
+# Руководство DiskForge Studio 1.5.2
+
+[English user guide · Studio 1.5.2 for Windows and macOS](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md#native-screenshots)
+
+Иллюстрации русского интерфейса ниже сохранены для справки по предыдущим версиям.
 
 Studio доступна для Windows 10/11 x64 и macOS Apple Silicon. Слева — библиотека фильмов, в центре — рабочая область, справа — свойства меню. [Обзор интерфейса со скриншотами](STUDIO.md) · [Windows](WINDOWS_STUDIO.md) · [macOS](MACOS.md).
 

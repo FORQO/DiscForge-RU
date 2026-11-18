@@ -1,6 +1,9 @@
 # Обновлённая студия меню
 
-[English guide and current Windows and macOS screenshots](STUDIO_EN.md) · [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md)
+[Current editor screenshots · Studio 1.5.2 for Windows and macOS](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md#native-screenshots)
+
+Иллюстрации русского интерфейса ниже сохранены для справки по предыдущим версиям.
+
 
 Тёмные поверхности, спокойные янтарные акценты и крупный холст сохранены. Свойства кнопок распределены по четырём разделам, а основные инструменты доступны над холстом.
 

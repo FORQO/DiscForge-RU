@@ -14,6 +14,8 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT/'docs/images')
     parser.add_argument('--language', choices=['en', 'ru'], default='en')
     args = parser.parse_args()
+    from dataclasses import replace
+    from subtitles import embedded_tracks
     from studio_locale import configure_language
     from studio_ui import ExportDialog
     from quality_dialog import QualityDialog
@@ -54,9 +56,10 @@ def main():
                     video_max_bps=10000000, audio_results={1:{'ok':True,'bytes':150000000}}),
                 audio_streams=({'index':1,'codec_name':'ac3','language':('eng' if english else 'rus'),'channels':2,
                     'sample_rate':'48000','bit_rate':'384000'},), selected_audio=(1,),
+                subtitle_streams=({'index': 2, 'codec_name': 'subrip', 'tags': {'language': 'eng', 'title': 'English captions'}},),
                 source_chapters=(0.,480.,960.,1440.,1920.,2700.),
                 source_chapter_titles=('Opening','Arrival','Conversation','On the Road','The Decision','Finale') if english else ('Начало','Прибытие','Разговор','Дорога','Решение','Финал'))
-            window._scanned(path, info, '')
+            window._scanned(path, replace(info, selected_subtitles=tuple(embedded_tracks(info))), '')
         window.movies.setCurrentRow(0)
         window.menu_title.setText('After Midnight' if english else 'После полуночи'); window._refresh_buttons()
         editor = window.menu_editor

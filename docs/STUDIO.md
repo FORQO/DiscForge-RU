@@ -1,4 +1,8 @@
-# DiskForge Studio 1.5.0
+# DiskForge Studio 1.5.2
+
+[Menu editor, themes and export · Studio 1.5.2 for Windows and macOS](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md#native-screenshots)
+
+Иллюстрации русского интерфейса ниже сохранены для справки по предыдущим версиям.
 
 Единый интерфейс для Windows 10/11 x64 и macOS Apple Silicon. Основная ветка `main` содержит исходники обеих версий.
 
