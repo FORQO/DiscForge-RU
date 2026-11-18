@@ -1,10 +1,12 @@
-# DiskForge Studio 1.5.1 для macOS
+# DiskForge Studio 1.5.2 для macOS
 
-[Studio 1.5.1](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio) для Apple Silicon (M1 и новее). Python, Qt, FFmpeg, ffprobe,
+[English guide and current Windows and macOS screenshots](STUDIO_EN.md) · [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md)
+
+[Studio 1.5.2](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio) для Apple Silicon (M1 и новее). Python, Qt, FFmpeg, ffprobe,
 tsMuxer, Java 8 и модуль UDF 2.50 входят в `.app`. Установка Python или Homebrew для
 запуска готового приложения не требуется. Сборка для Intel здесь не проверена.
 
-Описание выпуска и известные особенности: [Studio 1.5.1](RELEASE_STUDIO_1.5.1.md).
+Описание выпуска и известные особенности: [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md).
 
 ## Запуск
 

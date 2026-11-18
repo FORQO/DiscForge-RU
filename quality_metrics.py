@@ -3,6 +3,7 @@
 Thresholds are DiskForge heuristics, not a promise of perceptual transparency.
 Recommendations concern only the tested fragment, encoder, and candidate rates.
 """
+from studio_locale import tr
 import json
 import math
 from pathlib import Path
@@ -24,7 +25,7 @@ LIMITS = {
 
 def summarize(values, low, high):
     if not values or any(not math.isfinite(v) or not low <= v <= high for v in values):
-        raise ValueError('Метрика содержит пустые или некорректные значения.')
+        raise ValueError(tr('Метрика содержит пустые или некорректные значения.'))
     ordered = sorted(values)
     return dict(frames=len(values), mean=math.fsum(values)/len(values),
                 p5=ordered[math.floor(.05*(len(values)-1))], minimum=ordered[0],
@@ -34,7 +35,7 @@ def summarize(values, low, high):
 def parse_vmaf(path, frames):
     rows = json.loads(Path(path).read_text('utf-8'))['frames']
     if len(rows) != frames or [r['frameNum'] for r in rows] != list(range(frames)):
-        raise ValueError('VMAF: отчёт не охватывает все кадры по порядку.')
+        raise ValueError(tr('VMAF: отчёт не охватывает все кадры по порядку.'))
     return summarize([float(r['metrics']['vmaf']) for r in rows], 0., 100.)
 
 
@@ -44,16 +45,16 @@ def parse_ssim(path, frames):
     for index, row in enumerate(rows, 1):
         match = re.search(r'\bn:(\d+)\s.*?\bAll:([^\s]+)', row)
         if not match or int(match[1]) != index:
-            raise ValueError('SSIM: пропущен или повторён кадр.')
+            raise ValueError(tr('SSIM: пропущен или повторён кадр.'))
         values.append(float(match[2]))
     if len(values) != frames:
-        raise ValueError('SSIM: отчёт не охватывает все кадры.')
+        raise ValueError(tr('SSIM: отчёт не охватывает все кадры.'))
     return summarize(values, -1., 1.)
 
 
 def metric_command(ffmpeg, reference, variant, frames, method):
     if method not in ('ssim', 'vmaf'):
-        raise ValueError('Неизвестная метрика.')
+        raise ValueError(tr('Неизвестная метрика.'))
     # A dedicated cwd and fixed report names keep Windows drive letters, quotes,
     # commas and Cyrillic paths out of FFmpeg's filter-expression grammar.
     binary = shutil.which(ffmpeg) or str(Path(ffmpeg).resolve())
@@ -81,10 +82,10 @@ def score_variant(ffmpeg, reference, variant, frames, directory, cancel, log, pr
     result = {'ssim': None, 'vmaf': None, 'warnings': [], 'model': MODEL if vmaf else None}
     methods = ['ssim', 'vmaf'] if vmaf else ['ssim']
     if not vmaf:
-        result['warnings'].append('VMAF недоступен в выбранном FFmpeg; оценка только по SSIM.')
+        result['warnings'].append(tr('VMAF недоступен в выбранном FFmpeg; оценка только по SSIM.'))
     for index, method in enumerate(methods):
         if cancel.is_set():
-            raise DiscForgeError('Проба отменена.')
+            raise DiscForgeError(tr('Проба отменена.'))
         timeout = threading.Event()
         timer = threading.Timer(max(60, frames/24*12), timeout.set)
         class Cancellation:
@@ -97,24 +98,24 @@ def score_variant(ffmpeg, reference, variant, frames, directory, cancel, log, pr
             with tempfile.TemporaryDirectory(prefix='metrics-', dir=directory) as work:
                 timer.start()
                 run_command(metric_command(ffmpeg, reference, variant, frames, method),
-                            'Оценка '+method.upper(), index*100/len(methods), 100/len(methods),
+                            tr('Оценка ')+method.upper(), index*100/len(methods), 100/len(methods),
                             frames*1001/24000, Cancellation(), log, progress, cwd=work)
                 if timeout.is_set():
-                    raise TimeoutError('истекло время расчёта')
+                    raise TimeoutError(tr('истекло время расчёта'))
                 result[method] = (parse_vmaf(Path(work)/'vmaf.json', frames) if method == 'vmaf'
                                   else parse_ssim(Path(work)/'ssim.log', frames))
         except (RuntimeError, ValueError, OSError, KeyError, TypeError) as exc:
             if cancel.is_set():
-                raise DiscForgeError('Проба отменена.') from exc
-            reason = 'истекло время расчёта' if timeout.is_set() else str(exc)
-            message = f'{method.upper()} не рассчитан: {reason}'
+                raise DiscForgeError(tr('Проба отменена.')) from exc
+            reason = tr('истекло время расчёта') if timeout.is_set() else str(exc)
+            message = tr('{0} не рассчитан: {1}', method.upper(), reason)
             result['warnings'].append(message)
             log(message)
         finally:
             timer.cancel()
         progress((index+1)*100/len(methods))
     if cancel.is_set():
-        raise DiscForgeError('Проба отменена.')
+        raise DiscForgeError(tr('Проба отменена.'))
     result['seconds'] = time.monotonic()-started
     return result
 
@@ -134,12 +135,11 @@ def recommend(variants, *, force_ssim=False):
     result = dict(policy=POLICY, limits=LIMITS, status='unavailable', method=None,
                   bitrate=None, best_bitrate=None, eligible=[], explanation='')
     if not variants or not all(_valid(v.get('quality', {}).get('ssim')) for v in variants):
-        result['explanation'] = ('Автоматическая рекомендация недоступна: не все пробы получили полную оценку. '
-                                 'Повторите пробу или сравните варианты вручную.')
+        result['explanation'] = (tr('Автоматическая рекомендация недоступна: не все пробы получили полную оценку. Повторите пробу или сравните варианты вручную.'))
         return result
     counts = {v['quality']['ssim']['frames'] for v in variants}
     if len(counts) != 1:
-        result['explanation'] = 'Автоматическая рекомендация недоступна: разное количество оценённых кадров.'
+        result['explanation'] = tr('Автоматическая рекомендация недоступна: разное количество оценённых кадров.')
         return result
     method = 'vmaf' if not force_ssim and all(_valid(v['quality'].get('vmaf')) and
         v['quality']['vmaf']['frames'] == v['quality']['ssim']['frames'] for v in variants) else 'ssim'
@@ -162,17 +162,12 @@ def recommend(variants, *, force_ssim=False):
     if eligible:
         rate = result['bitrate'] = min(eligible)
         result['status'] = 'recommended' if method == 'vmaf' else 'provisional'
-        prefix = 'Рекомендуется' if method == 'vmaf' else 'Предварительно, только SSIM'
+        prefix = tr('Рекомендуется') if method == 'vmaf' else tr('Предварительно, только SSIM')
         savings = 100*(1-rate/max(v['bitrate'] for v in variants))
-        result['explanation'] = (f'{prefix}: {rate/1e6:g} Мбит/с — минимальный из проверенных битрейтов, '
-            f'прошедших пороги качества и близких к лучшему результату. '
-            f'Экономия видео по целевому битрейту до {savings:.0f}% относительно самой высокой пробы. '
-            'Вывод относится к этому фрагменту; проверьте ещё несколько сложных сцен.')
+        result['explanation'] = (tr('{0}: {1} Мбит/с — минимальный из проверенных битрейтов, прошедших пороги качества и близких к лучшему результату. Экономия видео по целевому битрейту до {2}% относительно самой высокой пробы. Вывод относится к этому фрагменту; проверьте ещё несколько сложных сцен.', prefix, format(rate / 1000000.0, f'g'), format(savings, f'.0f')))
     else:
         result['status'] = 'below_target'
-        result['explanation'] = (f'Цель качества не достигнута. Лучшая проба по {method.upper()}: '
-            f'{best["bitrate"]/1e6:g} Мбит/с, но рекомендовать её как оптимальную пока нельзя. '
-            'Повысьте пробные битрейты или измените режим кодирования и сравните снова.')
+        result['explanation'] = (tr('Цель качества не достигнута. Лучшая проба по {0}: {1} Мбит/с, но рекомендовать её как оптимальную пока нельзя. Повысьте пробные битрейты или измените режим кодирования и сравните снова.', method.upper(), format(best['bitrate'] / 1000000.0, f'g')))
     if method == 'ssim':
-        result['explanation'] += ' Полного сравнения VMAF нет; достоверность рекомендации ниже.'
+        result['explanation'] += tr(' Полного сравнения VMAF нет; достоверность рекомендации ниже.')
     return result

@@ -1,4 +1,5 @@
 """Portable, bounded quality reports embedded in projects; never cached video paths."""
+from studio_locale import tr
 from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
@@ -25,7 +26,7 @@ def digest_file(path, cancel, progress=lambda _: None):
     with open(path, 'rb') as stream:
         while True:
             if cancel.is_set():
-                raise DiscForgeError('Проверка сохранённых проб отменена.')
+                raise DiscForgeError(tr('Проверка сохранённых проб отменена.'))
             block = stream.read(4*1024*1024)
             if not block:
                 break
@@ -49,8 +50,8 @@ def context(info, plan):
 
 def fingerprint(info, plan, config, cancel, log, progress):
     if source_stamp(info.path)[1] != info.size:
-        raise ValueError('Размер исходника изменился после анализа. Добавьте фильм заново.')
-    log('Проверка фильма для сохранённых проб: SHA-256, чтение без перекодирования…')
+        raise ValueError(tr('Размер исходника изменился после анализа. Добавьте фильм заново.'))
+    log(tr('Проверка фильма для сохранённых проб: SHA-256, чтение без перекодирования…'))
     source = digest_file(info.path, cancel, lambda p: progress(p*.9))
     tools = {}
     for index, name in enumerate(('ffmpeg', 'ffprobe')):
@@ -96,35 +97,35 @@ def make_record(result, plan, identity):
 def validate_record(raw):
     """Validate optional project data before any worker or file operation uses it."""
     if not isinstance(raw, dict) or raw.get('schema') != SCHEMA:
-        raise ValueError('Неизвестный формат сохранённых проб.')
+        raise ValueError(tr('Неизвестный формат сохранённых проб.'))
     if len(json.dumps(raw, ensure_ascii=False, allow_nan=False)) > MAX_RECORD:
-        raise ValueError('Сохранённый отчёт проб слишком велик.')
+        raise ValueError(tr('Сохранённый отчёт проб слишком велик.'))
     data = json.loads(json.dumps(raw, ensure_ascii=False, allow_nan=False))
     plan_data = data['plan']
     if not isinstance(plan_data, dict):
-        raise ValueError('Неверные параметры сохранённых проб.')
+        raise ValueError(tr('Неверные параметры сохранённых проб.'))
     # Old reports stay readable, but the changed engine/context requires new trials.
     plan_data.setdefault('enhance', False)
     plan_data.setdefault('quiet_rate', 0.0)
     if set(plan_data) != set(TrialPlan.__dataclass_fields__):
-        raise ValueError('Неверные параметры сохранённых проб.')
+        raise ValueError(tr('Неверные параметры сохранённых проб.'))
     plan = TrialPlan(**dict(plan_data, rates=tuple(plan_data['rates'])))
     from types import SimpleNamespace
     plan.validate(SimpleNamespace(is_hdr=False, duration=1e9))
     if any(type(plan_data[k]) is not bool for k in ('fast', 'gpu_frames', 'automatic', 'retry_rates')):
-        raise ValueError('Неверные параметры сохранённых проб.')
+        raise ValueError(tr('Неверные параметры сохранённых проб.'))
     identity = data['identity']
     for item in [identity['source'], identity['tools']['ffmpeg'], identity['tools']['ffprobe']]:
         stamp, digest = item['stamp'], item['sha256']
         if (not isinstance(stamp, list) or len(stamp) != 3 or not isinstance(stamp[0], str)
             or any(type(x) is not int or x < 0 for x in stamp[1:]) or not isinstance(digest, str)
             or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest)):
-            raise ValueError('Неверный отпечаток сохранённых проб.')
+            raise ValueError(tr('Неверный отпечаток сохранённых проб.'))
     if not isinstance(identity['context'], dict) or not isinstance(data['created'], str):
-        raise ValueError('Неверный контекст сохранённых проб.')
+        raise ValueError(tr('Неверный контекст сохранённых проб.'))
     scenes = data['scenes']
     if not isinstance(scenes, list) or not 1 <= len(scenes) <= 5:
-        raise ValueError('Неверное число сохранённых сцен.')
+        raise ValueError(tr('Неверное число сохранённых сцен.'))
     cleaned = []
     for scene in scenes:
         if (type(scene['frames']) is not int or not 1 <= scene['frames'] <= 721
@@ -132,23 +133,23 @@ def validate_record(raw):
             or scene['encoder'] not in ('CPU x264', 'NVIDIA NVENC')
             or scene['preset'] not in ('medium', 'fast', 'p3', 'p5') or type(scene['cuda']) is not bool
             or not 5_000_000 <= scene['peak'] <= 30_000_000):
-            raise ValueError('Неверные параметры сохранённой сцены.')
+            raise ValueError(tr('Неверные параметры сохранённой сцены.'))
         if set(scene['backend']) != {'nvenc', 'cuda', 'vmaf'} or any(type(x) is not bool for x in scene['backend'].values()):
-            raise ValueError('Неверный кодер сохранённой сцены.')
+            raise ValueError(tr('Неверный кодер сохранённой сцены.'))
         if not isinstance(scene['variants'], list) or not 1 <= len(scene['variants']) <= 11:
-            raise ValueError('Неверное число сохранённых вариантов.')
+            raise ValueError(tr('Неверное число сохранённых вариантов.'))
         rates = []
         for v in scene['variants']:
             rate = v['bitrate']
             if type(rate) is not int or not 5_000_000 <= rate <= min(28_000_000, scene['peak']):
-                raise ValueError('Неверный сохранённый битрейт.')
+                raise ValueError(tr('Неверный сохранённый битрейт.'))
             rates.append(rate)
             if (not isinstance(v['quality'], dict) or not isinstance(v['quality'].get('warnings', []), list)
                 or any(not isinstance(w, str) for w in v['quality'].get('warnings', []))):
-                raise ValueError('Неверные пояснения сохранённых метрик.')
+                raise ValueError(tr('Неверные пояснения сохранённых метрик.'))
             if any(not isinstance(v[k], (int, float)) or not math.isfinite(v[k]) or v[k] < 0
                    for k in ('bytes', 'seconds', 'film_video_bytes')):
-                raise ValueError('Неверные размеры сохранённых проб.')
+                raise ValueError(tr('Неверные размеры сохранённых проб.'))
             for method, low, high in (('ssim', -1, 1), ('vmaf', 0, 100)):
                 metric = v['quality'].get(method)
                 if metric is None:
@@ -157,16 +158,16 @@ def validate_record(raw):
                     or not 0 <= metric['worst_frame'] < scene['frames']
                     or any(not isinstance(metric[k], (int, float)) or not math.isfinite(metric[k])
                            or not low <= metric[k] <= high for k in ('mean', 'p5', 'minimum'))):
-                    raise ValueError('Неверные сохранённые метрики.')
+                    raise ValueError(tr('Неверные сохранённые метрики.'))
         if len(set(rates)) != len(rates):
-            raise ValueError('Повторяющиеся сохранённые битрейты.')
+            raise ValueError(tr('Повторяющиеся сохранённые битрейты.'))
         # Whitelist fields; cached paths/reference filenames are never trusted.
         cleaned.append(compact_scene(scene))
     if any({v['bitrate'] for v in s['variants']} != set(rates) for s in cleaned):
-        raise ValueError('Наборы битрейтов сохранённых сцен различаются.')
+        raise ValueError(tr('Наборы битрейтов сохранённых сцен различаются.'))
     selected = data.get('selected_rate')
     if selected is not None and (type(selected) is not int or selected not in rates):
-        raise ValueError('Выбранный сохранённый битрейт отсутствует в пробах.')
+        raise ValueError(tr('Выбранный сохранённый битрейт отсутствует в пробах.'))
     result = dict(schema=SCHEMA, created=data['created'], plan=plan_data, identity=identity,
                   scenes=cleaned, selected_rate=selected)
     if isinstance(data.get('search'), dict):
@@ -196,7 +197,7 @@ def restore_record(record, info, plan, config, cancel, log, progress):
     previous = record['identity']
     current_context = json.loads(json.dumps(context(info, plan), allow_nan=False))
     if previous['context'] != current_context:
-        raise ValueError('Фильм, звук, параметры кодирования или правила оценки изменились. Создайте новые пробы.')
+        raise ValueError(tr('Фильм, звук, параметры кодирования или правила оценки изменились. Создайте новые пробы.'))
     ensure_source(info.path, previous['source']['stamp'])
     current = fingerprint(info, plan, config, cancel, log, lambda p: progress(p*.9))
     same_tools = all(current['tools'][key]['sha256'] == previous['tools'][key]['sha256'] and
@@ -204,7 +205,7 @@ def restore_record(record, info, plan, config, cancel, log, progress):
                      for key in ('ffmpeg', 'ffprobe'))
     if (current['source'] != previous['source'] or current['context'] != previous['context']
         or current['gpu'] != previous.get('gpu') or not same_tools):
-        raise ValueError('Содержимое фильма, инструменты или видеокарта/драйвер изменились. Создайте новые пробы.')
+        raise ValueError(tr('Содержимое фильма, инструменты или видеокарта/драйвер изменились. Создайте новые пробы.'))
     backend = record['scenes'][0]['backend']
     nvenc = plan.encoder != 0 and nvenc_available(config['ffmpeg'], cancel, log)
     cuda = False
@@ -212,10 +213,10 @@ def restore_record(record, info, plan, config, cancel, log, progress):
         from gpu_pipeline import supported
         cuda = supported(info, config['ffmpeg'], cancel, log, run_command, make_video_command)
     if (nvenc, cuda) != (backend['nvenc'], backend['cuda']):
-        raise ValueError('Доступность кодера или GPU-фильтров изменилась. Создайте новые пробы.')
+        raise ValueError(tr('Доступность кодера или GPU-фильтров изменилась. Создайте новые пробы.'))
     ensure_source(info.path, current['source']['stamp'])
     if cancel.is_set():
-        raise DiscForgeError('Проверка сохранённых проб отменена.')
+        raise DiscForgeError(tr('Проверка сохранённых проб отменена.'))
     scenes = []
     for scene in record['scenes']:
         scenes.append(dict(scene, source=current['source']['stamp'], archived=True, enhance=plan.enhance,
@@ -227,5 +228,5 @@ def restore_record(record, info, plan, config, cancel, log, progress):
         result = scenes[0]
     result['_project_record'] = record
     progress(100)
-    log('Сохранённые оценки проверены. Повторный подбор не требуется.')
+    log(tr('Сохранённые оценки проверены. Повторный подбор не требуется.'))
     return result

@@ -1,4 +1,5 @@
 """Read-only NVIDIA telemetry, polled asynchronously while a build is active."""
+from studio_locale import tr
 import csv
 import io
 import os
@@ -73,26 +74,21 @@ class GpuMonitor(QWidget):
         self.accept_result = False
         self.hot_cards = {}
         self.missing_temperatures = set()
-        self.status = QLabel('Видеокарта · показания появятся во время сборки')
-        self.values = QLabel('Температура: —    GPU: —    Кодирование NVENC: —')
+        self.status = QLabel(tr('Видеокарта · показания появятся во время сборки'))
+        self.values = QLabel(tr('Температура: —    GPU: —    Кодирование NVENC: —'))
         for label in (self.status, self.values):
             label.setTextFormat(Qt.PlainText)
             label.setWordWrap(True)
-        self.values.setAccessibleName('Температура и загрузка видеокарты')
+        self.values.setAccessibleName(tr('Температура и загрузка видеокарты'))
         self.heat_warning = QLabel()
         self.heat_warning.setTextFormat(Qt.PlainText)
         self.heat_warning.setWordWrap(True)
-        self.heat_warning.setAccessibleName('Предупреждение о высокой температуре GPU')
+        self.heat_warning.setAccessibleName(tr('Предупреждение о высокой температуре GPU'))
         self.heat_warning.setStyleSheet('QLabel { background: #522727; color: #fff0e8; '
                                        'border: 2px solid #f18a65; border-radius: 5px; '
                                        'padding: 8px; font-weight: bold; }')
         self.heat_warning.hide()
-        self.setToolTip('Показания всех видеокарт NVIDIA, обновление каждые 2 секунды.\n'
-                        'Температура — датчик GPU, не Hot Spot. GPU и NVENC — разные показатели нагрузки.\n'
-                        'Учитывается работа всех программ, а не только DiskForge.\n'
-                        '«—» означает, что драйвер не предоставляет показание.\n'
-                        'Предупреждение от 85 °C, сброс при 80 °C и ниже. Это порог программы, '
-                        'а не температурный предел всех видеокарт. Сборка автоматически не останавливается.')
+        self.setToolTip(tr('Показания всех видеокарт NVIDIA, обновление каждые 2 секунды.\nТемпература — датчик GPU, не Hot Spot. GPU и NVENC — разные показатели нагрузки.\nУчитывается работа всех программ, а не только DiskForge.\n«—» означает, что драйвер не предоставляет показание.\nПредупреждение от 85 °C, сброс при 80 °C и ниже. Это порог программы, а не температурный предел всех видеокарт. Сборка автоматически не останавливается.'))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 3, 0, 3)
         layout.setSpacing(2)
@@ -120,10 +116,10 @@ class GpuMonitor(QWidget):
         self.heat_warning.hide()
         self.program = find_nvidia_smi()
         if not self.program:
-            self._unavailable('Мониторинг NVIDIA недоступен: видеокарта или её драйвер не найдены')
+            self._unavailable(tr('Мониторинг NVIDIA недоступен: видеокарта или её драйвер не найдены'))
             return
-        self.status.setText('Видеокарта · получение показаний…')
-        self.values.setText('Температура: —    GPU: —    Кодирование NVENC: —')
+        self.status.setText(tr('Видеокарта · получение показаний…'))
+        self.values.setText(tr('Температура: —    GPU: —    Кодирование NVENC: —'))
         self.timer.start()
         self.poll()
 
@@ -138,14 +134,14 @@ class GpuMonitor(QWidget):
     def _timeout(self):
         self.timed_out = True
         if self.active:
-            self._unavailable('Видеокарта · драйвер не ответил; повторяем опрос…')
+            self._unavailable(tr('Видеокарта · драйвер не ответил; повторяем опрос…'))
         self.process.kill()
 
     def _error(self, error):
         if error == QProcess.FailedToStart:
             self.deadline.stop()
             if self.active:
-                self._unavailable('Видеокарта · не удалось получить данные драйвера NVIDIA')
+                self._unavailable(tr('Видеокарта · не удалось получить данные драйвера NVIDIA'))
 
     def _finished(self, code, exit_status):
         self.deadline.stop()
@@ -154,20 +150,19 @@ class GpuMonitor(QWidget):
         if not self.active or not self.accept_result or self.timed_out:
             return
         if code != 0 or exit_status != QProcess.NormalExit or len(raw) > 65536:
-            self._unavailable('Видеокарта · данные NVIDIA временно недоступны')
+            self._unavailable(tr('Видеокарта · данные NVIDIA временно недоступны'))
             return
         readings = parse_readings(raw.decode('utf-8', errors='replace'))
         if not readings:
-            self._unavailable('Видеокарта · драйвер не вернул показания NVIDIA')
+            self._unavailable(tr('Видеокарта · драйвер не вернул показания NVIDIA'))
             return
         self.readings = readings
         def show(value, suffix):
             return '—' if value is None else f'{value}{suffix}'
         self.values.setText('\n'.join(
-            f'GPU {r.index} · {r.name}    Температура: {show(r.temperature, " °C")}    '
-            f'GPU: {show(r.gpu, "%")}    Кодирование NVENC: {show(r.encoder, "%")}'
+            tr('GPU {0} · {1}    Температура: {2}    GPU: {3}    Кодирование NVENC: {4}', r.index, r.name, show(r.temperature, ' °C'), show(r.gpu, '%'), show(r.encoder, '%'))
             for r in readings))
-        self.status.setText('Видеокарта · обновляется каждые 2 с')
+        self.status.setText(tr('Видеокарта · обновляется каждые 2 с'))
         self._update_heat(readings)
 
     def _update_heat(self, readings):
@@ -190,7 +185,7 @@ class GpuMonitor(QWidget):
         self.missing_temperatures = set(self.hot_cards) - available
         self._render_heat()
         if newly_hot:
-            message = 'Высокая температура GPU: ' + '; '.join(
+            message = tr('Высокая температура GPU: ') + '; '.join(
                 f'GPU {r.index} · {r.name}: {r.temperature} °C' for r in newly_hot)
             self.temperature_warning.emit(message)
             QApplication.beep()
@@ -204,22 +199,22 @@ class GpuMonitor(QWidget):
         for key, reading in self.hot_cards.items():
             value = f'GPU {reading.index} · {reading.name}: {reading.temperature} °C'
             if key in self.missing_temperatures:
-                value += ' — последнее значение; датчик недоступен'
+                value += tr(' — последнее значение; датчик недоступен')
             lines.append(value)
         if self.active:
-            title = 'ВЫСОКАЯ ТЕМПЕРАТУРА · порог 85 °C'
-            advice = 'Проверьте охлаждение. При необходимости отмените сборку кнопкой «Отмена». '
-            advice += 'Предупреждение снимется при 80 °C и ниже.'
+            title = tr('ВЫСОКАЯ ТЕМПЕРАТУРА · порог 85 °C')
+            advice = tr('Проверьте охлаждение. При необходимости отмените сборку кнопкой «Отмена». ')
+            advice += tr('Предупреждение снимется при 80 °C и ниже.')
         else:
-            title = 'ПРИ СБОРКЕ БЫЛА ВЫСОКАЯ ТЕМПЕРАТУРА'
-            advice = 'Опрос остановлен; показаны последние измерения, текущая температура неизвестна.'
+            title = tr('ПРИ СБОРКЕ БЫЛА ВЫСОКАЯ ТЕМПЕРАТУРА')
+            advice = tr('Опрос остановлен; показаны последние измерения, текущая температура неизвестна.')
         self.heat_warning.setText(title + '\n' + '\n'.join(lines) + '\n' + advice)
         self.heat_warning.show()
 
     def _unavailable(self, message):
         self.readings = []
         self.status.setText(message)
-        self.values.setText('Температура: —    GPU: —    Кодирование NVENC: —')
+        self.values.setText(tr('Температура: —    GPU: —    Кодирование NVENC: —'))
         self._update_heat([])
 
     def stop(self):
@@ -231,9 +226,9 @@ class GpuMonitor(QWidget):
         if self.process.state() != QProcess.NotRunning:
             self.process.kill()
         if self.readings:
-            self.status.setText('Видеокарта · последние показания, опрос остановлен')
+            self.status.setText(tr('Видеокарта · последние показания, опрос остановлен'))
         elif was_active:
-            self.status.setText('Видеокарта · опрос остановлен, показаний нет')
+            self.status.setText(tr('Видеокарта · опрос остановлен, показаний нет'))
         self._render_heat()
 
     def shutdown(self):

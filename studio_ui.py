@@ -1,4 +1,5 @@
 """Studio shell styling and the export sheet; authoring remains in core.py."""
+from studio_locale import tr
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize, QRect
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QFont, QPainterPath, QLinearGradient
@@ -104,44 +105,43 @@ QToolTip {{ background: {panel}; color: {fg}; border: 1px solid {line}; padding:
 class ExportDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
-        self.setWindowTitle('Создание Blu-ray')
+        self.setWindowTitle(tr('Создание Blu-ray'))
         self.setMinimumWidth(500)
         self.setWindowModality(Qt.WindowModal)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(26, 24, 26, 22)
         layout.setSpacing(16)
-        title = QLabel('Создание Blu-ray'); title.setObjectName('studioHeading')
+        title = QLabel(tr('Создание Blu-ray')); title.setObjectName('studioHeading')
         layout.addWidget(title)
-        description = QLabel(f'Фильмов: {len(window.media)} · ' +
-                             ('Общий диск' if window.disc_mode.currentIndex() == 0 else 'Отдельный диск для каждого фильма'))
+        description = QLabel(tr('Фильмов: {0} · ', len(window.media)) +
+                             (tr('Общий диск') if window.disc_mode.currentIndex() == 0 else tr('Отдельный диск для каждого фильма')))
         description.setObjectName('hint'); layout.addWidget(description)
         form = QFormLayout(); form.setSpacing(12)
         self.profile = QComboBox(); self.profile.addItems(['BD25', 'BD50']); self.profile.setCurrentText(window.profile.currentText())
-        self.mode = QComboBox(); self.mode.addItems(['ISO-образ', 'Папка BDMV']); self.mode.setCurrentIndex(window.output_mode.currentIndex())
-        form.addRow('Носитель', self.profile); form.addRow('Результат', self.mode)
-        self.folder = QLineEdit(window.output_folder.text()); self.folder.setAccessibleName('Папка результата')
+        self.mode = QComboBox(); self.mode.addItems([tr('ISO-образ'), tr('Папка BDMV')]); self.mode.setCurrentIndex(window.output_mode.currentIndex())
+        form.addRow(tr('Носитель'), self.profile); form.addRow(tr('Результат'), self.mode)
+        self.folder = QLineEdit(window.output_folder.text()); self.folder.setAccessibleName(tr('Папка результата'))
         row = QHBoxLayout(); row.addWidget(self.folder, 1)
-        choose = QPushButton('Выбрать…'); choose.clicked.connect(self.choose_folder); row.addWidget(choose)
-        form.addRow('Сохранить в', row); layout.addLayout(form)
-        notice = QLabel('Готовые этапы сохраняются для возобновления. Исходные видео остаются на месте.'); notice.setWordWrap(True); notice.setObjectName('hint'); layout.addWidget(notice)
+        choose = QPushButton(tr('Выбрать…')); choose.clicked.connect(self.choose_folder); row.addWidget(choose)
+        form.addRow(tr('Сохранить в'), row); layout.addLayout(form)
+        notice = QLabel(tr('Готовые этапы сохраняются для возобновления. Исходные видео остаются на месте.')); notice.setWordWrap(True); notice.setObjectName('hint'); layout.addWidget(notice)
         if window.menu_editor.enabled.isChecked():
-            animation_note = QLabel('Оформление, расположение и выделение кнопок сохраняются. '
-                                   'Плавные переходы и появление кнопок в этой версии экспортируются как статичные состояния.')
+            animation_note = QLabel(tr('Оформление, расположение и выделение кнопок сохраняются. Плавные переходы и появление кнопок в этой версии экспортируются как статичные состояния.'))
             animation_note.setWordWrap(True); animation_note.setObjectName('hint')
             layout.addWidget(animation_note)
         buttons = QHBoxLayout(); buttons.addStretch()
-        cancel = QPushButton('Отмена'); cancel.clicked.connect(self.reject); buttons.addWidget(cancel)
-        self.create = QPushButton('Начать сборку'); self.create.setObjectName('primary'); self.create.clicked.connect(self.accept); self.create.setDefault(True); buttons.addWidget(self.create)
+        cancel = QPushButton(tr('Отмена')); cancel.clicked.connect(self.reject); buttons.addWidget(cancel)
+        self.create = QPushButton(tr('Начать сборку')); self.create.setObjectName('primary'); self.create.clicked.connect(self.accept); self.create.setDefault(True); buttons.addWidget(self.create)
         layout.addLayout(buttons)
 
     def choose_folder(self):
-        selected = QFileDialog.getExistingDirectory(self, 'Папка результата', self.folder.text())
+        selected = QFileDialog.getExistingDirectory(self, tr('Папка результата'), self.folder.text())
         if selected:
             self.folder.setText(selected)
 
     def accept(self):
         if not self.folder.text().strip():
-            QMessageBox.warning(self, 'Папка результата', 'Выберите папку для готового диска.')
+            QMessageBox.warning(self, tr('Папка результата'), tr('Выберите папку для готового диска.'))
             return
         super().accept()
 
@@ -203,7 +203,7 @@ class MovieDelegate(QStyledItemDelegate):
             duration = int(info.duration)
             detail = f'{duration//3600}:{duration//60%60:02d}:{duration%60:02d} · {info.height}p'
         else:
-            detail = 'Не удалось прочитать' if str(index.data()).startswith('❌') else 'Анализ файла…'
+            detail = tr('Не удалось прочитать') if str(index.data()).startswith('❌') else tr('Анализ файла…')
         font = QFont(option.font); font.setPixelSize(10); painter.setFont(font)
         painter.setPen(QColor('#a5a8b2' if dark else '#666d7a'))
         painter.drawText(QRect(text_rect.x(), rect.y()+53, text_rect.width(), 16), Qt.AlignVCenter, QFontMetrics(font).elidedText(detail, Qt.ElideRight, text_rect.width()))

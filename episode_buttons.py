@@ -3,6 +3,7 @@
 Old projects retain their exact geometry until a layout mode is explicitly set.
 Style presets deliberately exclude geometry, typography and padding.
 """
+from studio_locale import tr
 import copy
 import math
 import re
@@ -29,7 +30,7 @@ def valid_button_key(key):
 
 def validate_style(style):
     if not isinstance(style, dict):
-        raise ValueError('Некорректное оформление кнопки.')
+        raise ValueError(tr('Некорректное оформление кнопки.'))
     ranges = dict(width=(0, 10), font_size=(12, 160), opacity=(0, 100), radius=(0, 540),
                   padding_x=(0, 200), padding_y=(0, 200), glow_strength=(0, 100))
     for name, value in style.items():
@@ -49,12 +50,12 @@ def validate_style(style):
         else:
             valid = False
         if not valid:
-            raise ValueError('Некорректный параметр оформления кнопки: ' + str(name))
+            raise ValueError(tr('Некорректный параметр оформления кнопки: ') + str(name))
 
 
 def validate_layout(layout):
     if not isinstance(layout, dict):
-        raise ValueError('Некорректная расстановка кнопок.')
+        raise ValueError(tr('Некорректная расстановка кнопок.'))
     for key, value in layout.items():
         if key == 'mode':
             valid = value in ('free', 'column', 'grid')
@@ -69,42 +70,42 @@ def validate_layout(layout):
         else:
             valid = False
         if not valid:
-            raise ValueError('Некорректный параметр сетки: ' + str(key))
+            raise ValueError(tr('Некорректный параметр сетки: ') + str(key))
 
 
 def validate_editor(data):
     if not isinstance(data, dict) or set(data) - {'animation', 'pages', 'order', 'presets', 'template'}:
-        raise ValueError('Некорректные настройки редактора кнопок.')
+        raise ValueError(tr('Некорректные настройки редактора кнопок.'))
     if not isinstance(data.get('animation', 'restrained'), str) or data.get('animation', 'restrained') not in ANIMATIONS:
-        raise ValueError('Неизвестный режим анимации.')
+        raise ValueError(tr('Неизвестный режим анимации.'))
     for group in ('pages', 'order', 'presets'):
         if not isinstance(data.get(group, {}), dict) or len(data.get(group, {})) > 1000:
-            raise ValueError('Некорректные настройки кнопок: ' + group)
+            raise ValueError(tr('Некорректные настройки кнопок: ') + group)
     for scope, layout in data.get('pages', {}).items():
         if not isinstance(scope, str) or not re.fullmatch(r'(catalog:)?\d{1,3}', scope) or not isinstance(layout, dict):
-            raise ValueError('Некорректная страница расстановки.')
+            raise ValueError(tr('Некорректная страница расстановки.'))
         validate_layout(layout)
     if 'template' in data:
         template = data['template']
         if not isinstance(template, dict) or set(template) != {'style', 'layout'}:
-            raise ValueError('Некорректный общий образец кнопок.')
+            raise ValueError(tr('Некорректный общий образец кнопок.'))
         validate_style(template['style'])
         if set(template['style']) - TEMPLATE_STYLE_KEYS:
-            raise ValueError('Образец может изменять только оформление кнопок.')
+            raise ValueError(tr('Образец может изменять только оформление кнопок.'))
         validate_layout(template['layout'])
         if template['layout'].get('mode') not in ('column', 'grid') or template['layout'].get('uniform') is not True:
-            raise ValueError('Для общего образца требуется равномерная расстановка.')
+            raise ValueError(tr('Для общего образца требуется равномерная расстановка.'))
     for scope, keys in data.get('order', {}).items():
         if (not isinstance(scope, str) or not re.fullmatch(r'(catalog:)?\d{1,3}', scope)
                 or not isinstance(keys, list) or len(keys) > 16 or any(not valid_button_key(k) for k in keys)
                 or len(set(keys)) != len(keys)):
-            raise ValueError('Некорректный порядок кнопок.')
+            raise ValueError(tr('Некорректный порядок кнопок.'))
     if len(data.get('presets', {})) > 100:
-        raise ValueError('Достигнут предел собственных пресетов (100).')
+        raise ValueError(tr('Достигнут предел собственных пресетов (100).'))
     for name, preset in data.get('presets', {}).items():
         if (not isinstance(name, str) or not 1 <= len(name.strip()) <= 60 or any(ord(c) < 32 for c in name)
                 or not isinstance(preset, dict) or set(preset) - APPEARANCE_KEYS):
-            raise ValueError('Некорректный пресет оформления.')
+            raise ValueError(tr('Некорректный пресет оформления.'))
         validate_style(preset)
 
 
@@ -138,11 +139,11 @@ def arrange_rects(keys, rects, config):
     total_w = sum(col_widths) + config['gap_x'] * (columns-1)
     total_h = sum(row_heights) + config['gap_y'] * (rows-1)
     if total_w > 1620 or total_h > 540:
-        raise ValueError('Кнопки не помещаются в область списка. Уменьшите размеры/интервалы или измените число колонок.')
+        raise ValueError(tr('Кнопки не помещаются в область списка. Уменьшите размеры/интервалы или измените число колонок.'))
     x = config['x'] if config['align'] == 'left' else (1920-total_w)//2 if config['align'] == 'center' else 1770-total_w
     y = config['y']
     if x + total_w > 1920 or y + total_h > 960:
-        raise ValueError('Сетка выходит за границы области списка.')
+        raise ValueError(tr('Сетка выходит за границы области списка.'))
     result = {}
     for i, key in enumerate(keys):
         row, col = divmod(i, columns)

@@ -1,15 +1,15 @@
-name: Studio 1.5.1 qualification
+name: Studio 1.5.2 qualification
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
-    paths: ['docs/RELEASE_STUDIO_1.5.1.md']
+    paths: ['docs/RELEASE_STUDIO_1.5.2.md']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: studio-v1.5.1-release
+  group: studio-v1.5.2-release
   cancel-in-progress: false
 jobs:
   tests:
@@ -31,6 +31,10 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           PYTHONUTF8: '1'
         run: python -m unittest discover -s tests -v
+      - name: Capture English Studio on Windows
+        run: python tools/capture_studio_release.py --language en --output build/gallery-windows
+      - name: Archive native gallery
+        run: python -c "import shutil; shutil.make_archive('build/gallery-windows', 'zip', 'build/gallery-windows')"
       - name: Build Studio
         run: python tools/build_windows.py
       - uses: actions/cache@v6
@@ -60,10 +64,11 @@ jobs:
       - name: Stage Windows assets
         shell: bash
         run: |
+          cp build/gallery-windows.zip release/DiskForge-Studio-1.5.2-gallery-Windows.zip
           cp build/studio-journey/journey.json release/journey-Windows.json
           cp build/studio-journey/vlc-single-iso.json release/vlc-single-Windows.json
           cp build/studio-journey/vlc-collection-iso.json release/vlc-collection-Windows.json
-          cp docs/RELEASE_STUDIO_1.5.1.md release/RELEASE_STUDIO_1.5.1.md
+          cp docs/RELEASE_STUDIO_1.5.2.md release/RELEASE_STUDIO_1.5.2.md
           mv release/verification.json release/verification-Windows.json
           rm release/SHA256SUMS.txt
           printf '%s' "$GITHUB_SHA" > release/source-Windows.txt
@@ -91,6 +96,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: .venv/bin/python -m unittest discover -s tests -v
+      - name: Capture English Studio on macOS
+        run: .venv/bin/python tools/capture_studio_release.py --language en --output build/gallery-macos
+      - name: Archive native gallery
+        run: .venv/bin/python -c "import shutil; shutil.make_archive('build/gallery-macos', 'zip', 'build/gallery-macos')"
       - name: Build and verify packaged app
         run: bash build_app_macos.sh
       - name: Full macOS Studio journey
@@ -107,8 +116,9 @@ jobs:
       - name: Stage macOS assets
         run: |
           mkdir release
-          cp dist/DiskForge-Studio-1.5.1-macOS-arm64.zip release/
+          cp dist/DiskForge-Studio-1.5.2-macOS-arm64.zip release/
           cp build/macos-self-test.json release/verification-macOS.json
+          cp build/gallery-macos.zip release/DiskForge-Studio-1.5.2-gallery-macOS.zip
           cp build/studio-journey/journey.json release/journey-macOS.json
           cp docs/MACOS.md release/README-macOS.md
           printf '%s' "$GITHUB_SHA" > release/source-macOS.txt
@@ -139,11 +149,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v1.5.1-studio --json isDraft > existing-release.json; then
+          if gh release view v1.5.2-studio --json isDraft > existing-release.json; then
             python -c 'import json; assert json.load(open("existing-release.json"))["isDraft"], "Refusing to replace a published release"'
-            gh release edit v1.5.1-studio --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — единый стиль меню и проверка GIEC G2805" --notes-file docs/RELEASE_STUDIO_1.5.1.md
-            gh release upload v1.5.1-studio release/* --clobber
-            gh release edit v1.5.1-studio --draft=false --prerelease=false --latest
+            gh release edit v1.5.2-studio --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.2 — English and Russian interface" --notes-file docs/RELEASE_STUDIO_1.5.2.md
+            gh release upload v1.5.2-studio release/* --clobber
+            gh release edit v1.5.2-studio --draft=false --prerelease=false --latest
           else
-            gh release create v1.5.1-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.1 — единый стиль меню и проверка GIEC G2805" --notes-file docs/RELEASE_STUDIO_1.5.1.md --latest
+            gh release create v1.5.2-studio release/* --target "$GITHUB_SHA" --title "DiskForge Studio 1.5.2 — English and Russian interface" --notes-file docs/RELEASE_STUDIO_1.5.2.md --latest
           fi

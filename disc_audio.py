@@ -1,4 +1,5 @@
 """Primary audio inventory: source metadata for labels, MPLS order for controls."""
+from studio_locale import tr
 from dataclasses import replace
 import re
 from audio_selection import selected_tracks, language
@@ -38,7 +39,7 @@ def playlist_tracks(path, *, subtitles=False, coding=False):
         data = stream.read(16 * 1024 * 1024 + 1)
     def require(condition):
         if not condition:
-            raise ValueError('Не удалось проверить аудиодорожки в плейлисте Blu-ray.')
+            raise ValueError(tr('Не удалось проверить аудиодорожки в плейлисте Blu-ray.'))
     def u16(at): return int.from_bytes(data[at:at+2], 'big')
     def u32(at): return int.from_bytes(data[at:at+4], 'big')
     require(40 <= len(data) <= 16 * 1024 * 1024 and data[:8] in (b'MPLS0100', b'MPLS0200'))
@@ -93,7 +94,7 @@ def bind_tracks(design, playlist, metadata=None):
     labels = design.audio_tracks if metadata is None else metadata
     if metadata is not None and (len(labels) != len(actual) or
             any(a['language'] != b['language'] for a, b in zip(labels, actual))):
-        raise ValueError('Аудиодорожки меню не совпадают с собранным плейлистом.')
+        raise ValueError(tr('Аудиодорожки меню не совпадают с собранным плейлистом.'))
     tracks = [dict(language=t['language'], title=(labels[i]['title'] if i < len(labels)
                    and labels[i]['language'] == t['language'] else '')) for i, t in enumerate(actual)]
     return replace(design, audio_tracks=tracks)
@@ -108,7 +109,7 @@ def bind_subtitles(design, playlist, metadata=None):
     labels = design.subtitle_tracks if metadata is None else metadata
     if metadata is not None and (len(labels) != len(actual) or
             any(a['language'] != b['language'] for a, b in zip(labels, actual))):
-        raise ValueError('Субтитры меню не совпадают с собранным плейлистом.')
+        raise ValueError(tr('Субтитры меню не совпадают с собранным плейлистом.'))
     tracks = [dict(language=t['language'], title=(labels[i]['title'] if i < len(labels)
                    and labels[i]['language'] == t['language'] else '')) for i, t in enumerate(actual)]
     return replace(design, subtitle_tracks=tracks)

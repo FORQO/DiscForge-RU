@@ -1,4 +1,5 @@
 """Conservative, independently verified per-track passthrough planning."""
+from studio_locale import tr
 import math
 from pathlib import Path
 from audio_selection import selected_tracks, stream_map
@@ -49,13 +50,13 @@ def scan_audio(info, ffprobe, cancel):
             # Matroska's millisecond time base cannot represent an 833 us AU.
             duration = 1/1200 if truehd and f.get('duration_time', 'N/A') == 'N/A' else float(f['duration_time'])
             if not math.isfinite(pts) or not math.isfinite(duration) or duration <= 0 or size <= 0 or 'C' in f.get('flags', ''):
-                raise ValueError('неверный или повреждённый пакет')
+                raise ValueError(tr('неверный или повреждённый пакет'))
             if s['end'] is not None and abs(pts - s['end']) > .002:
-                raise ValueError('разрыв временных меток')
+                raise ValueError(tr('разрыв временных меток'))
             if truehd and s['start'] is not None and abs(pts-s['start']-s['packets']/1200) > .002:
-                raise ValueError('временные метки TrueHD не соответствуют числу кадров')
+                raise ValueError(tr('временные метки TrueHD не соответствуют числу кадров'))
             if tracks[index].get('codec_name') == 'ac3' and (size > 2560 or abs(duration-.032) > .002):
-                raise ValueError('пакет AC-3 превышает ограничения')
+                raise ValueError(tr('пакет AC-3 превышает ограничения'))
             if s['start'] is None:
                 s['start'] = pts
             s['end'], s['bytes'] = pts + duration, s['bytes'] + size
@@ -67,10 +68,10 @@ def scan_audio(info, ffprobe, cancel):
                       'packet=stream_index,pts_time,duration_time,size,flags', '-of', 'compact=p=0', info.path], cancel, feed)
     for index, s in state.items():
         if not copy_format(tracks[index]):
-            s['reason'] = 'формат не входит в проверенный набор AC-3 / DTS core / LPCM / TrueHD 48–96 кГц'
+            s['reason'] = tr('формат не входит в проверенный набор AC-3 / DTS core / LPCM / TrueHD 48–96 кГц')
         elif (first_video is None or s['start'] is None or s['end'] is None or
               abs(s['start'] - first_video) > .05 or abs(s['end'] - first_video - info.duration) > .1):
-            s['reason'] = s['reason'] or 'смещение или длительность звука требует коррекции'
+            s['reason'] = s['reason'] or tr('смещение или длительность звука требует коррекции')
         s['ok'] = not s['reason']
     return state
 
@@ -81,22 +82,22 @@ def plan_audio(info, checks, work, log):
         index = track.get('index', 0)
         policy = info.audio_modes.get(str(index), 'auto')
         if policy not in ('auto', 'copy', 'ac3'):
-            raise ValueError('Неизвестный режим аудиодорожки.')
+            raise ValueError(tr('Неизвестный режим аудиодорожки.'))
         checked = checks.get(index, {})
         fmt = copy_format(track)
         copy = bool(fmt and checked.get('ok') and policy != 'ac3')
         if (policy == 'copy' or track.get('codec_name') == 'truehd' and policy == 'auto') and not copy:
-            raise ValueError(f'Аудио #{index}: копирование не подтверждено. ' + checked.get('reason', 'Требуется проверка.'))
+            raise ValueError(tr('Аудио #{0}: копирование не подтверждено. ', index) + checked.get('reason', tr('Требуется проверка.')))
         ext, mux, bitrate = fmt if copy else ('ac3', 'A_AC3', 640000)
         stream = dict(track, output_copy=copy, output_format=ext, output_mux=mux, output_bitrate=bitrate)
         if copy and track.get('codec_name') == 'truehd':
             stream['output_codec'] = 'truehd'
             stream['output_average_bitrate'] = math.ceil(checked['bytes'] * 8 / info.duration) + 640000
         outputs.append((Path(work) / f'audio_{number}.{ext}', stream))
-        log(f'Аудио #{index}: ' + (f'сохранение {track.get("codec_name")} без потерь' if copy else
-            'AC-3 48 кГц, до 5.1' + (' · ' + checked.get('reason', '') if policy != 'ac3' else ' · выбрано вручную')))
+        log(tr('Аудио #{0}: ', index) + (tr('сохранение {0} без потерь', track.get('codec_name')) if copy else
+            tr('AC-3 48 кГц, до 5.1') + (' · ' + checked.get('reason', '') if policy != 'ac3' else tr(' · выбрано вручную'))))
         if stream.get('output_codec') == 'truehd':
-            log('TrueHD/Atmos: основной поток копируется побитно; отдельно создаётся совместимый слой AC-3.')
+            log(tr('TrueHD/Atmos: основной поток копируется побитно; отдельно создаётся совместимый слой AC-3.'))
     return outputs
 
 

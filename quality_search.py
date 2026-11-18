@@ -1,4 +1,5 @@
 """Bounded adaptive bitrate search using the exact same scenes and reference frames."""
+from studio_locale import tr
 import math
 from pathlib import Path
 import shutil
@@ -37,19 +38,19 @@ def run_quality_search(info, plan, config, directory, cancel, log, progress):
     runner = run_auto_trial if plan.automatic else run_trial
     if not plan.retry_rates:
         return runner(info, plan, config, directory, cancel, log, progress)
-    log('Первичные пробы. Если общего подходящего битрейта нет, начнётся автоматический подбор.')
+    log(tr('Первичные пробы. Если общего подходящего битрейта нет, начнётся автоматический подбор.'))
     result = runner(info, plan, config, directory, cancel, log, lambda p: progress(p*.6))
     ceiling = min(MAX_RATE, video_peak(info))//100_000*100_000
     history = [dict(rates=list(plan.rates), status=result['recommendation']['status'],
                     bitrate=result['recommendation'].get('bitrate'))]
     trigger = result['recommendation']['status'] == 'below_target'
-    stop = 'Первичные пробы уже дали рекомендацию; дополнительные варианты не требуются.'
+    stop = tr('Первичные пробы уже дали рекомендацию; дополнительные варианты не требуются.')
     if result['recommendation']['status'] == 'unavailable':
-        stop = 'Автоподбор остановлен: неполные метрики. Увеличение битрейта не исправит ошибку оценки.'
+        stop = tr('Автоподбор остановлен: неполные метрики. Увеличение битрейта не исправит ошибку оценки.')
     if trigger:
         for attempt in range(MAX_EXTRA_ROUNDS):
             if cancel.is_set():
-                raise DiscForgeError('Проба отменена.')
+                raise DiscForgeError(tr('Проба отменена.'))
             ensure_source(info.path, result['source'])
             scenes = result.get('scenes', [result])
             tested = [v['bitrate'] for v in scenes[0]['variants']]
@@ -57,27 +58,25 @@ def run_quality_search(info, plan, config, directory, cancel, log, progress):
             candidate = next_rate(tested, advice, ceiling)
             if candidate is None:
                 if advice['status'] == 'unavailable':
-                    stop = 'Автоподбор остановлен: неполные метрики, автоматический совет недоступен.'
+                    stop = tr('Автоподбор остановлен: неполные метрики, автоматический совет недоступен.')
                 elif advice.get('bitrate'):
-                    stop = ('Подходит наименьший проверенный битрейт; более низкие значения не проверялись.'
+                    stop = (tr('Подходит наименьший проверенный битрейт; более низкие значения не проверялись.')
                             if advice['bitrate'] == min(tested) else
-                            'Уточнение завершено: интервал до ближайшей меньшей пробы не более 0,5 Мбит/с.')
+                            tr('Уточнение завершено: интервал до ближайшей меньшей пробы не более 0,5 Мбит/с.'))
                 else:
-                    stop = (f'Достигнут предел {ceiling/1e6:g} Мбит/с с учётом выбранного звука. '
-                            'Качество не достигнуто; измените кодер или пресет и повторите проверку.')
+                    stop = (tr('Достигнут предел {0} Мбит/с с учётом выбранного звука. Качество не достигнуто; измените кодер или пресет и повторите проверку.', format(ceiling / 1000000.0, f'g')))
                 break
             reserve = math.ceil(sum(s['duration'] for s in scenes)*candidate/8*1.3)+128_000_000
             if shutil.disk_usage(directory).free < reserve:
-                stop = (f'Автоподбор остановлен: для следующего раунда нужно около {reserve/1e9:.2f} ГБ '
-                        'свободного места. Завершённые пробы доступны для просмотра.')
+                stop = (tr('Автоподбор остановлен: для следующего раунда нужно около {0} ГБ свободного места. Завершённые пробы доступны для просмотра.', format(reserve / 1000000000.0, f'.2f')))
                 break
-            stage = 'уточняем границу' if advice.get('bitrate') else 'повышаем битрейт'
-            log(f'Автоподбор {attempt+1}/{MAX_EXTRA_ROUNDS}: {stage}, {candidate/1e6:g} Мбит/с · {len(scenes)} сцен.')
+            stage = tr('уточняем границу') if advice.get('bitrate') else tr('повышаем битрейт')
+            log(tr('Автоподбор {0}/{1}: {2}, {3} Мбит/с · {4} сцен.', attempt + 1, MAX_EXTRA_ROUNDS, stage, format(candidate / 1000000.0, f'g'), len(scenes)))
             updated = []
             for index, scene in enumerate(scenes):
                 if cancel.is_set():
-                    raise DiscForgeError('Проба отменена.')
-                log(f'Раунд {attempt+1} · сцена {index+1}/{len(scenes)} · {candidate/1e6:g} Мбит/с')
+                    raise DiscForgeError(tr('Проба отменена.'))
+                log(tr('Раунд {0} · сцена {1}/{2} · {3} Мбит/с', attempt + 1, index + 1, len(scenes), format(candidate / 1000000.0, f'g')))
                 updated.append(extend_trial(info, plan, config, scene, candidate, cancel, log,
                     lambda p, i=index, a=attempt: progress(60+(a+(i+p/100)/len(scenes))*39/MAX_EXTRA_ROUNDS)))
             # Commit only a complete round. Every scene must have the same rates.
@@ -89,11 +88,10 @@ def run_quality_search(info, plan, config, directory, cancel, log, progress):
                                 bitrate=result['recommendation'].get('bitrate')))
             log(result['recommendation']['explanation'])
         else:
-            stop = (f'Выполнено {MAX_EXTRA_ROUNDS} дополнительных раундов — предел автоматического поиска. '
-                    'Итог относится только к проверенным значениям.')
+            stop = (tr('Выполнено {0} дополнительных раундов — предел автоматического поиска. Итог относится только к проверенным значениям.', MAX_EXTRA_ROUNDS))
     ensure_source(info.path, result['source'])
     if cancel.is_set():
-        raise DiscForgeError('Проба отменена.')
+        raise DiscForgeError(tr('Проба отменена.'))
     result['search'] = dict(rounds=history, ceiling=ceiling, triggered=trigger, stop=stop,
                             extra_limit=MAX_EXTRA_ROUNDS, resolution=RATE_STEP)
     result['recommendation'] = dict(result['recommendation'],

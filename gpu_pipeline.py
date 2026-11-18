@@ -1,4 +1,5 @@
 """Probe a real source through CUDA filters before selecting the hardware path."""
+from studio_locale import tr
 import threading
 
 
@@ -20,7 +21,7 @@ def supported(info, ffmpeg, cancel, log, runner, make_video):
     if (info.is_hdr or v.get('pix_fmt') != 'yuv420p' or
             v.get('field_order') != 'progressive' or v.get('sample_aspect_ratio') != '1:1' or
             any(s.get('rotation', 0) for s in v.get('side_data_list', []))):
-        log('NVDEC: параметры источника требуют CPU-фильтров; кодирование остаётся на NVENC.')
+        log(tr('NVDEC: параметры источника требуют CPU-фильтров; кодирование остаётся на NVENC.'))
         return False
     probe = cuda_command(make_video(ffmpeg, info.path, '-', 8_000_000, True, True))
     probe[-3:] = ['-frames:v', '24', '-f', 'null', '-']
@@ -33,13 +34,13 @@ def supported(info, ffmpeg, cancel, log, runner, make_video):
             return self.is_set()
     timer.start()
     try:
-        runner(probe, 'Проверка NVDEC и CUDA на исходнике', 0, 0, 1, Cancellation(), log, lambda _: None)
-        log('GPU-конвейер: NVDEC → масштабирование CUDA → NVENC. Частота кадров приводится к 23,976.')
+        runner(probe, tr('Проверка NVDEC и CUDA на исходнике'), 0, 0, 1, Cancellation(), log, lambda _: None)
+        log(tr('GPU-конвейер: NVDEC → масштабирование CUDA → NVENC. Частота кадров приводится к 23,976.'))
         return True
     except RuntimeError as exc:
         if cancel.is_set():
             raise
-        log('CUDA-проверка не пройдена; используются CPU-фильтры + NVENC. ' + str(exc))
+        log(tr('CUDA-проверка не пройдена; используются CPU-фильтры + NVENC. ') + str(exc))
         return False
     finally:
         timer.cancel()

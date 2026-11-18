@@ -1,4 +1,5 @@
 """Keyboard-accessible style swatches drawn with the actual disc renderer."""
+from studio_locale import tr
 from PySide6.QtCore import Qt, QRectF, QSize
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
 from PySide6.QtWidgets import QPushButton, QSizePolicy
@@ -14,7 +15,7 @@ class ButtonStyleCard(QPushButton):
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.setFixedHeight(82)
         self.setCursor(Qt.PointingHandCursor)
-        self.setAccessibleName('Стиль: '+title)
+        self.setAccessibleName(tr('Стиль: ')+title)
         self.setToolTip(title)
 
     def sizeHint(self):
@@ -37,7 +38,7 @@ class ButtonStyleCard(QPushButton):
                      font_family='Noto Sans', bold=False, italic=False, radius=6,
                      padding_x=9, padding_y=0)
         style.update(STYLE_PRESETS[self.variant])
-        paint_button(painter, dict(rect=[12, 12, max(30, self.width()-24), 29], style=style, shown='Эпизод'))
+        paint_button(painter, dict(rect=[12, 12, max(30, self.width()-24), 29], style=style, shown=tr('Эпизод')))
         font = QFont(self.font()); font.setPixelSize(11); painter.setFont(font)
         painter.setPen(QColor('#f1b76d' if self.isChecked() else '#b7c0ce' if dark else '#465262'))
         text = QFontMetrics(font).elidedText(self.text(), Qt.ElideRight, self.width()-16)

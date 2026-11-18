@@ -1,4 +1,5 @@
 """Menu-only ISO operations with progress and cancellation."""
+from studio_locale import tr
 from pathlib import Path
 import threading
 import time
@@ -43,15 +44,13 @@ class IsoMenuPanel(QWidget):
         self.fraction = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        note = QLabel('Меню готового ISO DiscForge: видео и звук копируются без обработки, главы сохраняются. '
-                      'Результат — новый ISO; требуется место примерно как для исходного образа. '
-                      'Исправление обводки работает и без проекта. Для замены используется меню из вкладки «Меню».')
+        note = QLabel(tr('Меню готового ISO DiscForge: видео и звук копируются без обработки, главы сохраняются. Результат — новый ISO; требуется место примерно как для исходного образа. Исправление обводки работает и без проекта. Для замены используется меню из вкладки «Меню».'))
         note.setWordWrap(True)
         layout.addWidget(note)
         row = QHBoxLayout()
-        self.load = QPushButton('Загрузить меню из ISO')
-        self.repair = QPushButton('Исправить обводку в ISO…')
-        self.replace = QPushButton('Сохранить текущее меню в ISO…')
+        self.load = QPushButton(tr('Загрузить меню из ISO'))
+        self.repair = QPushButton(tr('Исправить обводку в ISO…'))
+        self.replace = QPushButton(tr('Сохранить текущее меню в ISO…'))
         self.load.clicked.connect(lambda: self.start('load'))
         self.repair.clicked.connect(lambda: self.start('repair'))
         self.replace.clicked.connect(lambda: self.start('replace'))
@@ -63,12 +62,12 @@ class IsoMenuPanel(QWidget):
         self.progress.setRange(0, 1000)
         self.progress.setFormat('%p%')
         row.addWidget(self.progress, 1)
-        self.cancel = QPushButton('Отмена обновления')
+        self.cancel = QPushButton(tr('Отмена обновления'))
         self.cancel.setEnabled(False)
         self.cancel.clicked.connect(self.cancel_job)
         row.addWidget(self.cancel)
         layout.addLayout(row)
-        self.status = QLabel('Обновление ISO не запущено.')
+        self.status = QLabel(tr('Обновление ISO не запущено.'))
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.timer = QTimer(self)
@@ -84,31 +83,31 @@ class IsoMenuPanel(QWidget):
             self.owner.choose()
         source = Path(self.owner.path.text().strip())
         if not source.is_file() or source.suffix.lower() != '.iso':
-            QMessageBox.warning(self, 'Меню ISO', 'Выберите существующий ISO в поле выше.')
+            QMessageBox.warning(self, tr('Меню ISO'), tr('Выберите существующий ISO в поле выше.'))
             return
         design, destination = None, None
         try:
             if mode == 'replace':
                 if self.editor is None:
-                    raise ValueError('Редактор меню недоступен.')
+                    raise ValueError(tr('Редактор меню недоступен.'))
                 design = self.editor.design()
                 if design is None:
-                    raise ValueError('Включите интерактивное меню во вкладке «Меню».')
+                    raise ValueError(tr('Включите интерактивное меню во вкладке «Меню».'))
                 # Freeze the design while the editor remains usable.
                 from disc_menu import MenuDesign
                 import copy
                 design = MenuDesign.from_dict(design.title, copy.deepcopy(design.to_dict()))
             if mode != 'load':
-                destination, _ = QFileDialog.getSaveFileName(self, 'Сохранить обновлённый ISO',
+                destination, _ = QFileDialog.getSaveFileName(self, tr('Сохранить обновлённый ISO'),
                     str(source.with_name(source.stem + '_menu.iso')), 'ISO (*.iso)')
                 if not destination:
                     return
                 if not destination.lower().endswith('.iso'):
                     destination += '.iso'
                 if Path(destination).exists() or Path(destination).resolve() == source.resolve():
-                    raise ValueError('Выберите новое имя: существующие образы не перезаписываются.')
+                    raise ValueError(tr('Выберите новое имя: существующие образы не перезаписываются.'))
         except (ValueError, OSError) as exc:
-            QMessageBox.warning(self, 'Меню ISO', str(exc))
+            QMessageBox.warning(self, tr('Меню ISO'), str(exc))
             return
         self.worker = MenuIsoJob(source, destination, design)
         self.worker.message.connect(self.owner.report.appendPlainText)
@@ -136,9 +135,9 @@ class IsoMenuPanel(QWidget):
         def clock(seconds):
             n = int(seconds)
             return f'{n//3600:02}:{n//60%60:02}:{n%60:02}'
-        remaining = clock(elapsed*(1-self.fraction)/self.fraction) if self.fraction > .01 else 'расчёт…'
-        suffix = ' · отмена…' if self.worker.cancel_event.is_set() else ''
-        self.status.setText(f'Прошло: {clock(elapsed)} · Осталось примерно: {remaining}{suffix}')
+        remaining = clock(elapsed*(1-self.fraction)/self.fraction) if self.fraction > .01 else tr('расчёт…')
+        suffix = tr(' · отмена…') if self.worker.cancel_event.is_set() else ''
+        self.status.setText(tr('Прошло: {0} · Осталось примерно: {1}{2}', clock(elapsed), remaining, suffix))
 
     def cancel_job(self):
         if self.is_running():
@@ -150,21 +149,19 @@ class IsoMenuPanel(QWidget):
         if isinstance(result, tuple):
             chapters, design = result
             if design is None:
-                self.status.setText('В старом ISO нет редактируемых настроек. Обводку можно исправить без проекта.')
-                QMessageBox.information(self, 'Старое меню', 'В этом ISO сохранены готовые изображения меню, но нет исходных настроек. '
-                    'Для исправления линий нажмите «Исправить обводку в ISO…». Для изменения текста или оформления '
-                    'откройте сохранённый проект либо создайте меню во вкладке «Меню» и сохраните его в новый ISO.')
+                self.status.setText(tr('В старом ISO нет редактируемых настроек. Обводку можно исправить без проекта.'))
+                QMessageBox.information(self, tr('Старое меню'), tr('В этом ISO сохранены готовые изображения меню, но нет исходных настроек. Для исправления линий нажмите «Исправить обводку в ISO…». Для изменения текста или оформления откройте сохранённый проект либо создайте меню во вкладке «Меню» и сохраните его в новый ISO.'))
             elif self.editor is not None:
                 self.loading_design.emit()
                 self.editor.set_chapters(chapters)
                 self.editor.apply_design(design)
                 self.editor.enabled.setChecked(True)
-                self.status.setText('Меню загружено. После редактирования нажмите «Сохранить текущее меню в ISO…».')
+                self.status.setText(tr('Меню загружено. После редактирования нажмите «Сохранить текущее меню в ISO…».'))
                 self.edit_requested.emit()
         else:
             self.owner.path.setText(str(result))
             self.progress.setValue(1000)
-            self.status.setText('Готово. Обновлённый ISO выбран выше — можно проверить его в VLC.')
+            self.status.setText(tr('Готово. Обновлённый ISO выбран выше — можно проверить его в VLC.'))
 
     def failed(self, message):
         self.timer.stop()

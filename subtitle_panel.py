@@ -1,4 +1,5 @@
 """Per-movie soft subtitle selection and external SRT / SUP import."""
+from studio_locale import tr
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QFileDialog, QComboBox, QLineEdit, QMessageBox)
@@ -19,10 +20,7 @@ class SubtitlePanel(QWidget):
         box = QVBoxLayout(self)
         self.heading = QLabel()
         box.addWidget(self.heading)
-        note = QLabel('Отметьте субтитры из фильма или добавьте файлы SRT / SUP (PGS).\n'
-                      'На диске появится меню «Субтитры» с выбором дорожки и пунктом «Выключить». '
-                      'Изначально субтитры выключены. Текст преобразуется в PGS без изменения видео. '
-                      'Оформление ASS/SSA упрощается; VobSub не поддерживается.')
+        note = QLabel(tr('Отметьте субтитры из фильма или добавьте файлы SRT / SUP (PGS).\nНа диске появится меню «Субтитры» с выбором дорожки и пунктом «Выключить». Изначально субтитры выключены. Текст преобразуется в PGS без изменения видео. Оформление ASS/SSA упрощается; VobSub не поддерживается.'))
         note.setWordWrap(True)
         box.addWidget(note)
         self.tracks = QListWidget()
@@ -30,25 +28,25 @@ class SubtitlePanel(QWidget):
         self.tracks.currentItemChanged.connect(self._selected)
         box.addWidget(self.tracks, 1)
         row = QHBoxLayout()
-        self.add_button = QPushButton('+ Добавить SRT / SUP…')
+        self.add_button = QPushButton(tr('+ Добавить SRT / SUP…'))
         self.add_button.clicked.connect(self._add)
-        self.remove_button = QPushButton('Удалить внешний файл')
+        self.remove_button = QPushButton(tr('Удалить внешний файл'))
         self.remove_button.clicked.connect(self._remove)
         row.addWidget(self.add_button)
         row.addWidget(self.remove_button)
         box.addLayout(row)
         row = QHBoxLayout()
-        row.addWidget(QLabel('Язык:'))
+        row.addWidget(QLabel(tr('Язык:')))
         self.language = QComboBox()
-        for name, code in [('Русский', 'rus'), ('English', 'eng'), ('Українська', 'ukr'),
+        for name, code in [(tr('Русский'), 'rus'), ('English', 'eng'), (tr('Українська'), 'ukr'),
                            ('Deutsch', 'deu'), ('Français', 'fra'), ('Español', 'spa'),
-                           ('Italiano', 'ita'), ('日本語', 'jpn'), ('Не указан', 'und')]:
+                           ('Italiano', 'ita'), ('日本語', 'jpn'), (tr('Не указан'), 'und')]:
             self.language.addItem(name, code)
         self.language.currentIndexChanged.connect(self._metadata)
         row.addWidget(self.language)
         self.title = QLineEdit()
         self.title.setMaxLength(80)
-        self.title.setPlaceholderText('Название дорожки в меню диска')
+        self.title.setPlaceholderText(tr('Название дорожки в меню диска'))
         self.title.editingFinished.connect(self._metadata)
         row.addWidget(self.title, 1)
         box.addLayout(row)
@@ -58,7 +56,7 @@ class SubtitlePanel(QWidget):
         self.info = info
         self.tracks.blockSignals(True)
         self.tracks.clear()
-        self.heading.setText('Субтитры · '+info.name if info else 'Сначала добавьте и проанализируйте фильм.')
+        self.heading.setText(tr('Субтитры · ')+info.name if info else tr('Сначала добавьте и проанализируйте фильм.'))
         self.add_button.setEnabled(info is not None)
         if info:
             selected = {identity(t): t for t in info.selected_subtitles}
@@ -85,9 +83,9 @@ class SubtitlePanel(QWidget):
 
     def _label(self, item):
         t = item.data(Qt.UserRole)
-        source = 'Файл' if t['source'] == 'external' else 'Поток '+str(t['index'])
+        source = tr('Файл') if t['source'] == 'external' else tr('Поток ')+str(t['index'])
         item.setText(f"{source} · {t['language'].upper()} · {t['codec'].upper()} · {t['title']}" +
-                     (' · не поддерживается' if t['codec'] not in SUPPORTED_CODECS else ''))
+                     (tr(' · не поддерживается') if t['codec'] not in SUPPORTED_CODECS else ''))
         item.setToolTip(t['path'])
 
     def _selected(self, *_):
@@ -129,7 +127,7 @@ class SubtitlePanel(QWidget):
         try:
             validate_selection(selection)
         except ValueError as exc:
-            QMessageBox.warning(self, 'Субтитры', str(exc))
+            QMessageBox.warning(self, tr('Субтитры'), str(exc))
             self.set_media(self.info)
             return
         self.selection_changed.emit(selection)
@@ -137,7 +135,7 @@ class SubtitlePanel(QWidget):
     def _add(self):
         if not self.info:
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, 'Добавить субтитры', '', 'Субтитры (*.srt *.sup)')
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('Добавить субтитры'), '', tr('Субтитры (*.srt *.sup)'))
         for path in paths:
             try:
                 t = external_track(path)
@@ -149,7 +147,7 @@ class SubtitlePanel(QWidget):
                 self.tracks.blockSignals(False)
                 self.tracks.setCurrentItem(item)
             except ValueError as exc:
-                QMessageBox.warning(self, 'Субтитры', str(exc))
+                QMessageBox.warning(self, tr('Субтитры'), str(exc))
         self._changed()
 
     def _remove(self):

@@ -4,6 +4,7 @@ Binary field layout is derived from Sun's BSD-licensed HD Cookbook tools;
 see THIRD_PARTY_NOTICES.md. Hardware interoperability is experimental.
 """
 from __future__ import annotations
+from studio_locale import tr
 
 import io
 import base64
@@ -41,7 +42,7 @@ def theme_background(theme):
     path = theme_background_path(theme)
     image = QImage(str(path))
     if image.isNull():
-        raise ValueError('Не найден фон темы: ' + str(path))
+        raise ValueError(tr('Не найден фон темы: ') + str(path))
     return image
 
 TEXT = {
@@ -64,10 +65,10 @@ def background_image(data: str):
     try:
         raw = base64.b64decode(data, validate=True)
     except ValueError as exc:
-        raise ValueError('Повреждено изображение фона.') from exc
+        raise ValueError(tr('Повреждено изображение фона.')) from exc
     image = QImage.fromData(raw, 'PNG')
     if image.isNull() or image.width() > 1920 or image.height() > 1080:
-        raise ValueError('Фон должен быть PNG размером не более 1920×1080.')
+        raise ValueError(tr('Фон должен быть PNG размером не более 1920×1080.'))
     return image
 
 
@@ -79,16 +80,16 @@ def import_background(path: str) -> str:
     reader.setAutoTransform(True)
     size = reader.size()
     if not size.isValid() or size.width() * size.height() > 100_000_000:
-        raise ValueError('Не удалось прочитать изображение или оно слишком большое.')
+        raise ValueError(tr('Не удалось прочитать изображение или оно слишком большое.'))
     reader.setScaledSize(size.scaled(QSize(1920, 1080), Qt.KeepAspectRatio))
     image = reader.read()
     if image.isNull():
-        raise ValueError('Не удалось открыть фон: ' + reader.errorString())
+        raise ValueError(tr('Не удалось открыть фон: ') + reader.errorString())
     image = image.scaled(1920, 1080, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     buffer = QBuffer()
     buffer.open(QIODevice.WriteOnly)
     if not image.save(buffer, 'PNG'):
-        raise ValueError('Не удалось сохранить фон.')
+        raise ValueError(tr('Не удалось сохранить фон.'))
     return base64.b64encode(bytes(buffer.data())).decode('ascii')
 
 
@@ -103,7 +104,7 @@ def initialize_fonts():
     if not _font_loaded:
         from PySide6.QtGui import QFontDatabase
         if QFontDatabase.addApplicationFont(str(Path(__file__).parent / 'assets/fonts/NotoSans-Regular.ttf')) < 0:
-            raise RuntimeError('Не удалось загрузить шрифт меню Noto Sans.')
+            raise RuntimeError(tr('Не удалось загрузить шрифт меню Noto Sans.'))
         QFontDatabase.addApplicationFont(str(Path(__file__).parent / 'assets/fonts/NotoSansSymbols2-Regular.ttf'))
         _font_loaded = True
 
@@ -133,91 +134,91 @@ class MenuDesign:
         validate_editor(self.button_editor)
         object.__setattr__(self, 'button_editor', copy.deepcopy(self.button_editor))
         if type(self.logo_visible) is not bool:
-            raise ValueError('Некорректная видимость логотипа.')
+            raise ValueError(tr('Некорректная видимость логотипа.'))
         if (not isinstance(self.chapter_titles, list) or len(self.chapter_titles) > 999 or
                 any(not isinstance(t, str) or len(t) > 120 or any(ord(c) < 32 for c in t) for t in self.chapter_titles)):
-            raise ValueError('Некорректные названия глав меню.')
+            raise ValueError(tr('Некорректные названия глав меню.'))
         object.__setattr__(self, 'chapter_titles', list(self.chapter_titles))
         if (not isinstance(self.audio_tracks, list) or len(self.audio_tracks) > 32 or
                 any(not isinstance(t, dict) or set(t) != {'language', 'title'} or
                     not isinstance(t['language'], str) or not re.fullmatch('[a-z]{3}', t['language']) or
                     not isinstance(t['title'], str) or len(t['title']) > 80 or
                     any(ord(c) < 32 for c in t['title']) for t in self.audio_tracks)):
-            raise ValueError('Некорректный список аудиодорожек меню.')
+            raise ValueError(tr('Некорректный список аудиодорожек меню.'))
         object.__setattr__(self, 'audio_tracks', copy.deepcopy(self.audio_tracks))
         if (not isinstance(self.subtitle_tracks, list) or len(self.subtitle_tracks) > 32 or
                 any(not isinstance(t, dict) or set(t) != {'language', 'title'} or
                     not isinstance(t['language'], str) or not re.fullmatch('[a-z]{3}', t['language']) or
                     not isinstance(t['title'], str) or len(t['title']) > 80 or
                     any(ord(c) < 32 for c in t['title']) for t in self.subtitle_tracks)):
-            raise ValueError('Некорректный список субтитров меню.')
+            raise ValueError(tr('Некорректный список субтитров меню.'))
         object.__setattr__(self, 'subtitle_tracks', copy.deepcopy(self.subtitle_tracks))
         if not isinstance(self.hidden_text, list) or any(key not in TEXT_RECTS for key in self.hidden_text):
-            raise ValueError('Некорректный список удалённых текстов.')
+            raise ValueError(tr('Некорректный список удалённых текстов.'))
         object.__setattr__(self, 'hidden_text', list(dict.fromkeys(self.hidden_text)))
         if not isinstance(self.title, str) or not 1 <= len(self.title.strip()) <= 80:
-            raise ValueError('Название меню должно содержать от 1 до 80 символов.')
+            raise ValueError(tr('Название меню должно содержать от 1 до 80 символов.'))
         if any(ord(c) < 32 for c in self.title) or not isinstance(self.theme, str) or self.theme not in THEMES:
-            raise ValueError('Некорректное оформление меню.')
+            raise ValueError(tr('Некорректное оформление меню.'))
         if not isinstance(self.language, str) or self.language not in TEXT:
-            raise ValueError('Неизвестный язык меню.')
+            raise ValueError(tr('Неизвестный язык меню.'))
         if self.background_fit not in ('cover', 'contain') or type(self.dim) is not int or not 0 <= self.dim <= 80:
-            raise ValueError('Некорректные настройки фона.')
+            raise ValueError(tr('Некорректные настройки фона.'))
         if not isinstance(self.background, str) or len(self.background) > 16_000_000:
-            raise ValueError('Некорректное изображение фона.')
+            raise ValueError(tr('Некорректное изображение фона.'))
         if not isinstance(self.labels, dict) or len(self.labels) > 2100:
-            raise ValueError('Некорректные подписи кнопок.')
+            raise ValueError(tr('Некорректные подписи кнопок.'))
         for key, value in self.labels.items():
             if (not isinstance(key, str) or not re.fullmatch(r'(ru|en):(play|chapters|subtitles|sub:\d{1,2}|sub_previous|sub_next|sub_back|audio|audio_previous|audio_next|audio_back|audio_hint|audio:\d{1,2}|previous|next|home|subtitle|brand|hint|chapter:\d{1,3}|custom:[a-f0-9]{12})', key)
                     or not isinstance(value, str) or not 1 <= len(value.strip()) <= 120
                     or any(ord(c) < 32 for c in value)):
-                raise ValueError('Подпись должна содержать от 1 до 80 символов без переносов строк.')
+                raise ValueError(tr('Подпись должна содержать от 1 до 80 символов без переносов строк.'))
         object.__setattr__(self, 'labels', dict(self.labels))
         def valid_id(key):
             from episode_buttons import valid_button_key
             return valid_button_key(key) or isinstance(key, str) and key in ('sub_previous', 'sub_next', 'sub_back')
         if (not isinstance(self.hidden_buttons, list) or len(self.hidden_buttons) > 2000
                 or any(not valid_id(key) for key in self.hidden_buttons)):
-            raise ValueError('Некорректный список удалённых кнопок.')
+            raise ValueError(tr('Некорректный список удалённых кнопок.'))
         if not isinstance(self.button_styles, dict) or len(self.button_styles) > 2000:
-            raise ValueError('Некорректное оформление кнопок.')
+            raise ValueError(tr('Некорректное оформление кнопок.'))
         for key, style in self.button_styles.items():
             if not valid_id(key) or not isinstance(style, dict):
-                raise ValueError('Некорректное оформление кнопки.')
+                raise ValueError(tr('Некорректное оформление кнопки.'))
             validate_style(style)
         object.__setattr__(self, 'hidden_buttons', list(dict.fromkeys(self.hidden_buttons)))
         object.__setattr__(self, 'button_styles', {k: dict(v) for k, v in self.button_styles.items()})
         if not isinstance(self.layout, dict) or len(self.layout) > 2500:
-            raise ValueError('Некорректная компоновка меню.')
+            raise ValueError(tr('Некорректная компоновка меню.'))
         for key, rect in self.layout.items():
             if (not (key == 'logo' or valid_id(key) or key in ['text:'+k for k in TEXT_RECTS])
                     or not isinstance(rect, (tuple, list)) or len(rect) != 4
                     or any(type(n) is not int for n in rect)):
-                raise ValueError('Некорректная область элемента.')
+                raise ValueError(tr('Некорректная область элемента.'))
             x, y, w, h = rect
             if min(x, y) < 0 or w < 32 or h < 32 or x+w > 1920 or y+h > 1080:
-                raise ValueError('Элемент должен находиться внутри меню 1920×1080.')
+                raise ValueError(tr('Элемент должен находиться внутри меню 1920×1080.'))
         if not isinstance(self.text_styles, dict) or len(self.text_styles) > len(TEXT_RECTS):
-            raise ValueError('Некорректные стили текста.')
+            raise ValueError(tr('Некорректные стили текста.'))
         for key, style in self.text_styles.items():
             if key not in TEXT_RECTS or not isinstance(style, dict):
-                raise ValueError('Неизвестный текстовый элемент.')
+                raise ValueError(tr('Неизвестный текстовый элемент.'))
             for name, value in style.items():
                 valid = (name == 'text' and isinstance(value, str) and re.fullmatch(r'#[a-fA-F0-9]{6}', value)
                          or name == 'font_size' and type(value) is int and 12 <= value <= 160
                          or name == 'font_family' and isinstance(value, str) and 1 <= len(value) <= 100 and not any(ord(c) < 32 for c in value)
                          or name in ('bold', 'italic') and type(value) is bool)
                 if not valid:
-                    raise ValueError('Некорректный стиль текста.')
+                    raise ValueError(tr('Некорректный стиль текста.'))
         if not isinstance(self.custom_buttons, list) or len(self.custom_buttons) > 500:
-            raise ValueError('Слишком много дополнительных кнопок.')
+            raise ValueError(tr('Слишком много дополнительных кнопок.'))
         ids = set()
         for button in self.custom_buttons:
             if (not isinstance(button, dict) or set(button) != {'id', 'page', 'action'}
                     or not isinstance(button['id'], str) or not re.fullmatch(r'custom:[a-f0-9]{12}', button['id'])
                     or button['id'] in ids or type(button['page']) is not int or not 0 <= button['page'] <= 200
                     or not isinstance(button['action'], str) or not re.fullmatch(r'(play|page):\d{1,3}', button['action'])):
-                raise ValueError('Некорректная дополнительная кнопка.')
+                raise ValueError(tr('Некорректная дополнительная кнопка.'))
             ids.add(button['id'])
         for key in ('layout', 'text_styles', 'custom_buttons'):
             object.__setattr__(self, key, copy.deepcopy(getattr(self, key)))
@@ -300,20 +301,20 @@ def validate_menu_navigation(chapters, design):
              for p, entries in enumerate(graph)]
     for button in design.custom_buttons:
         if button['page'] >= len(graph) and button['id'] not in design.hidden_buttons:
-            raise ValueError('Страница дополнительной кнопки больше не существует.')
+            raise ValueError(tr('Страница дополнительной кнопки больше не существует.'))
     for entries in graph:
         for _, action in entries:
             kind, value = resolve_action(design, action).split(':')
             if kind == 'sub':
                 if not 0 <= int(value) <= len(design.subtitle_tracks):
-                    raise ValueError('Кнопка ссылается на отсутствующие субтитры.')
+                    raise ValueError(tr('Кнопка ссылается на отсутствующие субтитры.'))
                 continue
             if kind == 'audio':
                 if not 1 <= int(value) <= len(design.audio_tracks):
-                    raise ValueError('Кнопка ссылается на отсутствующую аудиодорожку.')
+                    raise ValueError(tr('Кнопка ссылается на отсутствующую аудиодорожку.'))
                 continue
             if int(value) >= (len(chapters) if kind == 'play' else len(graph)):
-                raise ValueError('Кнопка ссылается на отсутствующую главу или страницу. Исправьте её действие.')
+                raise ValueError(tr('Кнопка ссылается на отсутствующую главу или страницу. Исправьте её действие.'))
     pending, seen = [0], set()
     while pending:
         page = pending.pop()
@@ -326,7 +327,7 @@ def validate_menu_navigation(chapters, design):
                 return
             if kind == 'page':
                 pending.append(int(value))
-    raise ValueError('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.')
+    raise ValueError(tr('В меню нет доступной кнопки запуска фильма. Восстановите кнопки перед созданием ISO.'))
 
 
 def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[tuple[str, str]]]:
@@ -336,21 +337,21 @@ def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[
     pages. Custom buttons use the same exported geometry as the renderer.
     """
     if not chapters or len(chapters) > 999:
-        raise ValueError('Для меню требуется от 1 до 999 глав.')
+        raise ValueError(tr('Для меню требуется от 1 до 999 глав.'))
     previous = None
     for timestamp in chapters:
         if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
-            raise ValueError('Отметки глав должны быть конечными числами.')
+            raise ValueError(tr('Отметки глав должны быть конечными числами.'))
         try:
             valid = math.isfinite(timestamp) and timestamp >= 0
         except OverflowError:
             valid = False
         if not valid:
-            raise ValueError('Отметки глав должны быть конечными неотрицательными числами.')
+            raise ValueError(tr('Отметки глав должны быть конечными неотрицательными числами.'))
         if previous is None and timestamp != 0:
-            raise ValueError('Первая глава должна начинаться с 00:00:00.')
+            raise ValueError(tr('Первая глава должна начинаться с 00:00:00.'))
         if previous is not None and timestamp <= previous:
-            raise ValueError('Отметки глав должны строго возрастать.')
+            raise ValueError(tr('Отметки глав должны строго возрастать.'))
         previous = timestamp
     design = design or MenuDesign('Blu-ray')
     result = [[(design.text('play'), 'play:0')]]
@@ -408,7 +409,7 @@ def pages(chapters: list[float], design: MenuDesign | None = None) -> list[list[
         result[p] = [entry for entry in entries if button_id(p, entry[1]) not in design.hidden_buttons]
         result[p], _ = ordered_entries(design, p, result[p], [button_id(p, a) for _, a in result[p]])
         if len(result[p]) > 16:
-            raise ValueError('На странице поддерживается до 16 кнопок. Удалите лишние кнопки.')
+            raise ValueError(tr('На странице поддерживается до 16 кнопок. Удалите лишние кнопки.'))
     return result
 
 def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
@@ -423,36 +424,36 @@ def validate_menu_chapters(playlist: Path, chapters: list[float]) -> None:
         with playlist.open('rb') as handle:
             data = handle.read(MAX_PLAYLIST_BYTES + 1)
     except OSError as exc:
-        raise ValueError('Не удалось прочитать плейлист для меню.') from exc
+        raise ValueError(tr('Не удалось прочитать плейлист для меню.')) from exc
     if not 40 <= len(data) <= MAX_PLAYLIST_BYTES or data[:8] not in (b'MPLS0100', b'MPLS0200'):
-        raise ValueError('Некорректный плейлист для меню.')
+        raise ValueError(tr('Некорректный плейлист для меню.'))
     play_start = int.from_bytes(data[8:12], 'big')
     marks_start = int.from_bytes(data[12:16], 'big')
     if play_start < 40 or play_start % 2 or play_start + 10 > len(data):
-        raise ValueError('Некорректный раздел PlayList в меню.')
+        raise ValueError(tr('Некорректный раздел PlayList в меню.'))
     play_size = int.from_bytes(data[play_start:play_start + 4], 'big')
     play_end = play_start + 4 + play_size
     if play_size < 6 or play_end > len(data):
-        raise ValueError('Некорректные границы PlayList в меню.')
+        raise ValueError(tr('Некорректные границы PlayList в меню.'))
     play_items = int.from_bytes(data[play_start + 6:play_start + 8], 'big')
     if play_items == 0:
-        raise ValueError('В плейлисте нет PlayItem для меню.')
+        raise ValueError(tr('В плейлисте нет PlayItem для меню.'))
     if marks_start < play_end or marks_start % 2 or marks_start + 6 > len(data):
-        raise ValueError('В плейлисте отсутствует корректный раздел глав.')
+        raise ValueError(tr('В плейлисте отсутствует корректный раздел глав.'))
     marks_size = int.from_bytes(data[marks_start:marks_start + 4], 'big')
     marks_end = marks_start + 4 + marks_size
     if marks_size < 2 or marks_end > len(data):
-        raise ValueError('Некорректные границы раздела глав.')
+        raise ValueError(tr('Некорректные границы раздела глав.'))
     count = int.from_bytes(data[marks_start + 4:marks_start + 6], 'big')
     if count != len(chapters) or 2 + 14 * count > marks_size:
-        raise ValueError('Количество глав меню не совпадает с плейлистом.')
+        raise ValueError(tr('Количество глав меню не совпадает с плейлистом.'))
     for index in range(count):
         record = marks_start + 6 + 14 * index
         if data[record + 1] != 1:
-            raise ValueError('Меню поддерживает только EntryMark главы.')
+            raise ValueError(tr('Меню поддерживает только EntryMark главы.'))
         ref_item = int.from_bytes(data[record + 2:record + 4], 'big')
         if ref_item >= play_items:
-            raise ValueError('Глава меню ссылается на отсутствующий PlayItem.')
+            raise ValueError(tr('Глава меню ссылается на отсутствующий PlayItem.'))
     # Verify the actual 45-kHz chapter positions, not only EntryMark counts.
     from chapter_timeline import validate_chapter_timeline
     validate_chapter_timeline(data, chapters)
@@ -741,14 +742,14 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
     from PySide6.QtCore import QBuffer, QIODevice
     from PySide6.QtGui import QGuiApplication
     if QGuiApplication.instance() is None:
-        raise RuntimeError('Для создания меню требуется QGuiApplication.')
+        raise RuntimeError(tr('Для создания меню требуется QGuiApplication.'))
     template = Path(__file__).parent / 'assets' / 'bdj' / 'menu.jar'
     if not template.is_file():
-        raise RuntimeError('Не найден движок меню assets/bdj/menu.jar. Пересоберите приложение.')
+        raise RuntimeError(tr('Не найден движок меню assets/bdj/menu.jar. Пересоберите приложение.'))
     bdmv = root / 'BDMV'
     playlists = sorted((bdmv / 'PLAYLIST').glob('*.mpls'))
     if len(playlists) != 1 or playlists[0].stem != '00000':
-        raise ValueError('Меню v1 поддерживает один фильм с плейлистом 00000.')
+        raise ValueError(tr('Меню v1 поддерживает один фильм с плейлистом 00000.'))
     if design.audio_tracks:
         from disc_audio import bind_tracks
         design = bind_tracks(design, playlists[0], design.audio_tracks)
@@ -786,7 +787,7 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
             buffer = QBuffer()
             buffer.open(QIODevice.WriteOnly)
             if not base.save(buffer, 'PNG'):
-                raise RuntimeError('Не удалось отрисовать меню.')
+                raise RuntimeError(tr('Не удалось отрисовать меню.'))
             jar.writestr(f'page{p}.png', bytes(buffer.data()))
             enabled = [e for e in page_elements(design, chapters, p) if e['button'] and not e['style'].get('disabled')]
             for export_index, element in enumerate(enabled):
@@ -795,14 +796,14 @@ def install_menu(root: Path, design: MenuDesign, chapters: list[float]) -> None:
                 buffer = QBuffer()
                 buffer.open(QIODevice.WriteOnly)
                 if not patch.save(buffer, 'PNG'):
-                    raise RuntimeError('Не удалось отрисовать выделение кнопки.')
+                    raise RuntimeError(tr('Не удалось отрисовать выделение кнопки.'))
                 jar.writestr(name, bytes(buffer.data()))
                 key = f'page.{p}.{export_index}'
                 props.extend((f'{key}.focus={name}', f'{key}.focusX={x}', f'{key}.focusY={y}'))
                 pressed, _, _ = focus_patch(base, element, 0.35)
                 buffer = QBuffer(); buffer.open(QIODevice.WriteOnly)
                 if not pressed.save(buffer, 'PNG'):
-                    raise RuntimeError('Не удалось отрисовать нажатие кнопки.')
+                    raise RuntimeError(tr('Не удалось отрисовать нажатие кнопки.'))
                 name = f'pressed{p}_{export_index}.png'
                 jar.writestr(name, bytes(buffer.data()))
                 props.append(f'{key}.pressed={name}')

@@ -36,6 +36,7 @@ def find_binary(name: str) -> str:
 def defaults():
     return {
         'ui_theme': 'graphite',
+        'ui_language': 'auto',
         'ffmpeg': find_binary('ffmpeg'),
         'ffprobe': find_binary('ffprobe'),
         'tsmuxer': find_binary('tsmuxer') if sys.platform == 'darwin' else find_binary('tsMuxeR'),

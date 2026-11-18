@@ -1,4 +1,5 @@
 """Compact verification status, separate from the overall build percentage."""
+from studio_locale import tr
 import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar
@@ -24,7 +25,7 @@ class VerificationPanel(QWidget):
         self.file.setMinimumWidth(0)
         self.bar = QProgressBar()
         self.bar.setFixedHeight(14)
-        self.bar.setAccessibleName('Прогресс проверки файлов')
+        self.bar.setAccessibleName(tr('Прогресс проверки файлов'))
         layout.addWidget(self.bar)
         self.event = None
         self.timer = QTimer(self)
@@ -52,7 +53,7 @@ class VerificationPanel(QWidget):
         path = e['file']
         self.file.setToolTip(path)
         self.file.setText(self.file.fontMetrics().elidedText(
-            f"Файл {e['index']}/{e['count']}: {path}" if path else 'Подготовка доступа к образу…',
+            tr('Файл {0}/{1}: {2}', e['index'], e['count'], path) if path else tr('Подготовка доступа к образу…'),
             Qt.ElideMiddle, max(100, self.width())))
         waiting = e['state'] == 'waiting'
         self.bar.setRange(0, 0 if waiting else 1000)
@@ -61,19 +62,19 @@ class VerificationPanel(QWidget):
             self.bar.setValue(1000 if e['complete'] else min(999, int(fraction*1000)))
             self.bar.setFormat(f"{100 if e['complete'] else min(99.9, fraction*100):.1f}%")
         stale = time.monotonic()-self.updated > 3
-        speed = f"{e['speed']/1e6:.1f} МБ/с" if e['speed'] and not stale and not waiting else 'скорость уточняется'
-        eta = duration(e['remaining']) if e['remaining'] >= 0 and not stale and not waiting else 'рассчитывается…'
-        scope = 'До конца проверки ISO' if e['scope'] == 'iso-final' else 'До конца этого этапа'
-        self.stats.setText(f"Прочитано {e['done']/1e9:.2f} / {e['total']/1e9:.2f} ГБ · {speed} · {scope} ≈ {eta}")
+        speed = tr('{0} МБ/с', format(e['speed'] / 1000000.0, f'.1f')) if e['speed'] and not stale and not waiting else tr('скорость уточняется')
+        eta = duration(e['remaining']) if e['remaining'] >= 0 and not stale and not waiting else tr('рассчитывается…')
+        scope = tr('До конца проверки ISO') if e['scope'] == 'iso-final' else tr('До конца этого этапа')
+        self.stats.setText(tr('Прочитано {0} / {1} ГБ · {2} · {3} ≈ {4}', format(e['done'] / 1000000000.0, f'.2f'), format(e['total'] / 1000000000.0, f'.2f'), speed, scope, eta))
         if e['complete']:
-            self.stats.setText(f"Чтение завершено · {e['done']/1e9:.2f} ГБ")
+            self.stats.setText(tr('Чтение завершено · {0} ГБ', format(e['done'] / 1000000000.0, f'.2f')))
             self.timer.stop()
 
     def stop(self, success):
         self.timer.stop()
         if self.event and not success:
-            self.title.setText('Проверка остановлена')
-            self.stats.setText('Осталось: — · Подробности в журнале работы')
+            self.title.setText(tr('Проверка остановлена'))
+            self.stats.setText(tr('Осталось: — · Подробности в журнале работы'))
             if self.bar.maximum() == 0:
                 self.bar.setRange(0, 1000)
                 self.bar.setValue(0)

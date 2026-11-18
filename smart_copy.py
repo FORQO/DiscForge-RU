@@ -3,6 +3,7 @@
 No decoding: scan packet timing/size and every SPS/PPS in the file. Unknown
 or unsupported properties fail closed. Reports live in memory, never in projects.
 """
+from studio_locale import tr
 from dataclasses import dataclass, field, replace
 from audio_selection import available_tracks, selected_tracks
 from collections import deque
@@ -29,14 +30,14 @@ def signature(path, cancel=None):
     with p.open('rb') as f:
         while True:
             if cancel is not None and cancel.is_set():
-                raise RuntimeError('Анализ отменён.')
+                raise RuntimeError(tr('Анализ отменён.'))
             block = f.read(4*1024*1024)
             if not block:
                 break
             h.update(block)
     after = p.stat()
     if (st.st_size, st.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        raise ValueError('Исходник изменился во время проверки.')
+        raise ValueError(tr('Исходник изменился во время проверки.'))
     return (str(p.resolve()), st.st_size, st.st_mtime_ns, h.hexdigest())
 
 
@@ -56,11 +57,11 @@ class CopyReport:
     def for_selection(self, info):
         tracks = selected_tracks(info)
         if not tracks:
-            return replace(self, audio_ok=True, audio_bytes=0, audio_reason='Аудиодорожки не выбраны.')
+            return replace(self, audio_ok=True, audio_bytes=0, audio_reason=tr('Аудиодорожки не выбраны.'))
         if not self.audio_results:
             return self
-        results = [self.audio_results.get(t.get('index'), {'ok':False, 'bytes':0, 'reason':'дорожка не проверена'}) for t in tracks]
-        results = [dict(r, ok=False, reason=f'дорожка #{t.get("index")}: выбрано преобразование в AC-3')
+        results = [self.audio_results.get(t.get('index'), {'ok':False, 'bytes':0, 'reason':tr('дорожка не проверена')}) for t in tracks]
+        results = [dict(r, ok=False, reason=tr('дорожка #{0}: выбрано преобразование в AC-3', t.get('index')))
                    if getattr(info, 'audio_modes', {}).get(str(t.get('index'))) == 'ac3' else r for t, r in zip(tracks, results)]
         return replace(self, audio_ok=all(r['ok'] for r in results),
                        audio_bytes=sum(r['bytes'] if r['ok'] else math.ceil(info.duration*640000/8) for r in results),
@@ -69,21 +70,21 @@ class CopyReport:
     def recommendation(self, info, capacity):
         self = self.for_selection(info)
         if not self.video_ok:
-            return 'encode', 'Нужно перекодирование: ' + '; '.join(self.reasons)
+            return 'encode', tr('Нужно перекодирование: ') + '; '.join(self.reasons)
         from audio_pipeline import copy_format
         audio_bps = sum(copy_format(t)[2] if copy_format(t) and self.audio_results.get(t.get('index'), {}).get('ok')
                         and getattr(info, 'audio_modes', {}).get(str(t.get('index'))) != 'ac3' else 640000 for t in selected_tracks(info))
         if self.video_max_bps + audio_bps > 44_000_000:
-            return 'encode', 'Суммарный битрейт выбранных потоков слишком высок. Выберите меньше дорожек или перекодирование.'
+            return 'encode', tr('Суммарный битрейт выбранных потоков слишком высок. Выберите меньше дорожек или перекодирование.')
         audio_size = self.audio_bytes if self.audio_ok or self.audio_results else math.ceil(info.duration*640000/8)*len(selected_tracks(info))
         audio_size += sum(math.ceil(info.duration*640000/8) for t in selected_tracks(info)
                           if t.get('codec_name') == 'truehd' and info.audio_modes.get(str(t.get('index'))) != 'ac3')
         estimated = int((self.video_bytes+audio_size)*1.07)+256_000_000
         if estimated > capacity:
-            return 'encode', 'Исходные потоки с запасом на меню не помещаются на выбранный диск. Выберите BD50 или перекодирование.'
+            return 'encode', tr('Исходные потоки с запасом на меню не помещаются на выбранный диск. Выберите BD50 или перекодирование.')
         if self.audio_ok:
-            return 'copy', 'Рекомендуется без перекодирования: видео и выбранные аудиодорожки прошли проверки, размер подходит. Качество исходных потоков сохраняется.'
-        return 'video_copy', 'Рекомендуется копировать видео; обработка звука определяется отдельно для каждой дорожки: ' + self.audio_reason
+            return 'copy', tr('Рекомендуется без перекодирования: видео и выбранные аудиодорожки прошли проверки, размер подходит. Качество исходных потоков сохраняется.')
+        return 'video_copy', tr('Рекомендуется копировать видео; обработка звука определяется отдельно для каждой дорожки: ') + self.audio_reason
 
 
 def stream_lines(command, cancel, consume):
@@ -118,9 +119,9 @@ def stream_lines(command, cancel, consume):
     try:
         while True:
             if cancel.is_set():
-                raise RuntimeError('Анализ отменён.')
+                raise RuntimeError(tr('Анализ отменён.'))
             if time.monotonic()-last > 60:
-                raise RuntimeError('Инструмент анализа не отвечает.')
+                raise RuntimeError(tr('Инструмент анализа не отвечает.'))
             try:
                 line = output.get(timeout=.1)
             except queue.Empty:
@@ -132,7 +133,7 @@ def stream_lines(command, cancel, consume):
             consume(line.strip())
         proc.wait(timeout=5)
         if proc.returncode:
-            raise ValueError('Поток не удалось проверить: ' + ' '.join(recent)[-400:])
+            raise ValueError(tr('Поток не удалось проверить: ') + ' '.join(recent)[-400:])
     finally:
         stop.set()
         if proc.poll() is None:
@@ -146,27 +147,27 @@ def metadata_reasons(info):
     v = info.video_details
     reasons = []
     if info.video_codec != 'h264':
-        reasons.append('копирование сейчас поддерживает AVC/H.264; этот файл — '+info.video_codec)
+        reasons.append(tr('копирование сейчас поддерживает AVC/H.264; этот файл — ')+info.video_codec)
     if info.is_hdr:
-        reasons.append('HDR требует отдельного UHD-конвейера')
+        reasons.append(tr('HDR требует отдельного UHD-конвейера'))
     try:
         fps = Fraction(info.video_fps)
     except (ValueError, ZeroDivisionError):
         fps = Fraction(0)
     allowed = (Fraction(24000,1001), Fraction(24)) if (info.width, info.height)==(1920,1080) else tuple(RATES) if (info.width,info.height)==(1280,720) else ()
     if fps not in allowed:
-        reasons.append('для копирования поддерживаются 1080p 23,976/24 и 720p 23,976/24/50/59,94; разрешение и частота этого файла не подходят')
+        reasons.append(tr('для копирования поддерживаются 1080p 23,976/24 и 720p 23,976/24/50/59,94; разрешение и частота этого файла не подходят'))
     if v.get('pix_fmt') != 'yuv420p':
-        reasons.append('требуется 8-битное видео 4:2:0')
+        reasons.append(tr('требуется 8-битное видео 4:2:0'))
     levels = (40,41) if info.height==1080 else (32,40,41) if fps>30 else (31,32,40,41)
     if v.get('profile') not in ('High', 'Main') or int(v.get('level') or 0) not in levels:
-        reasons.append('требуется профиль Main/High и уровень, подходящий разрешению и частоте (не выше 4.1)')
+        reasons.append(tr('требуется профиль Main/High и уровень, подходящий разрешению и частоте (не выше 4.1)'))
     if v.get('field_order') != 'progressive':
-        reasons.append('прогрессивная развёртка не подтверждена')
+        reasons.append(tr('прогрессивная развёртка не подтверждена'))
     if v.get('sample_aspect_ratio') != '1:1':
-        reasons.append('квадратные пиксели не подтверждены')
+        reasons.append(tr('квадратные пиксели не подтверждены'))
     if any(item.get('rotation', 0) for item in v.get('side_data_list', [])):
-        reasons.append('поворот изображения задан в контейнере; его нужно применить при преобразовании')
+        reasons.append(tr('поворот изображения задан в контейнере; его нужно применить при преобразовании'))
     return reasons
 
 
@@ -187,44 +188,44 @@ class HeaderCheck:
         # requires stable sequence and picture parameters throughout the title.
         old = self.seen.get(kind)
         if old is not None and old != f:
-            raise ValueError('SPS/PPS меняются внутри фильма; безопасное копирование не подтверждено')
+            raise ValueError(tr('SPS/PPS меняются внутри фильма; безопасное копирование не подтверждено'))
         if kind == 'sps':
             required = ('profile_idc','level_idc','frame_mbs_only_flag','max_num_ref_frames',
                         'max_dec_frame_buffering','max_num_reorder_frames','nal_hrd_parameters_present_flag',
                         'bit_rate_scale','cpb_size_scale','bit_rate_value_minus1[0]','cpb_size_value_minus1[0]')
             if any(k not in f for k in required):
-                raise ValueError('не подтверждены SPS/HRD и ограничения буфера Blu-ray')
+                raise ValueError(tr('не подтверждены SPS/HRD и ограничения буфера Blu-ray'))
             if (f['profile_idc'] not in (77,100) or f['level_idc']>41 or f['frame_mbs_only_flag'] != 1
                 or f.get('bit_depth_luma_minus8',0) != 0 or f.get('bit_depth_chroma_minus8',0) != 0
                 or f.get('chroma_format_idc',1) != 1 or f['max_num_ref_frames']>4
                 or f['max_dec_frame_buffering']>4 or f['max_num_reorder_frames']>3):
-                raise ValueError('параметры SPS не входят в поддерживаемый профиль копирования Blu-ray')
+                raise ValueError(tr('параметры SPS не входят в поддерживаемый профиль копирования Blu-ray'))
             if f['nal_hrd_parameters_present_flag'] != 1 or f.get('cpb_cnt_minus1') != 0:
-                raise ValueError('HRD потока не соответствует проверяемому режиму')
+                raise ValueError(tr('HRD потока не соответствует проверяемому режиму'))
             if self.dimensions is not None:
                 if 'pic_width_in_mbs_minus1' not in f or 'pic_height_in_map_units_minus1' not in f:
-                    raise ValueError('не подтверждены размеры изображения в SPS')
+                    raise ValueError(tr('не подтверждены размеры изображения в SPS'))
                 width = (f['pic_width_in_mbs_minus1']+1)*16 - 2*(f.get('frame_crop_left_offset',0)+f.get('frame_crop_right_offset',0))
                 height = (f['pic_height_in_map_units_minus1']+1)*16 - 2*(f.get('frame_crop_top_offset',0)+f.get('frame_crop_bottom_offset',0))
                 if (width, height) != self.dimensions:
-                    raise ValueError('размеры SPS не совпадают с контейнером')
+                    raise ValueError(tr('размеры SPS не совпадают с контейнером'))
                 mbs = (f['pic_width_in_mbs_minus1']+1)*(f['pic_height_in_map_units_minus1']+1)
                 dpb_limit = {31:18000, 32:20480, 40:32768, 41:32768}.get(f['level_idc'], 0)
                 if mbs * f['max_dec_frame_buffering'] > dpb_limit:
-                    raise ValueError('буфер декодированных кадров превышает уровень H.264')
+                    raise ValueError(tr('буфер декодированных кадров превышает уровень H.264'))
             rate = (f['bit_rate_value_minus1[0]']+1)*2**(6+f['bit_rate_scale'])
             buffer = (f['cpb_size_value_minus1[0]']+1)*2**(4+f['cpb_size_scale'])
             if rate>40_000_000 or buffer>30_000_000:
-                raise ValueError('HRD превышает 40 Мбит/с или буфер 30 Мбит')
+                raise ValueError(tr('HRD превышает 40 Мбит/с или буфер 30 Мбит'))
             if self.fps is not None:
                 if f.get('timing_info_present_flag') != 1 or f.get('num_units_in_tick',0)<=0:
-                    raise ValueError('не подтверждена частота кадров в SPS')
+                    raise ValueError(tr('не подтверждена частота кадров в SPS'))
                 rate = f.get('time_scale',0)/(2*f['num_units_in_tick'])
                 if abs(rate-self.fps)>.001:
-                    raise ValueError('частота кадров SPS не совпадает с временными метками контейнера')
+                    raise ValueError(tr('частота кадров SPS не совпадает с временными метками контейнера'))
         else:
             if f.get('num_slice_groups_minus1') != 0 or f.get('weighted_bipred_idc',0) not in (0,1,2):
-                raise ValueError('PPS не входит в поддерживаемый профиль копирования')
+                raise ValueError(tr('PPS не входит в поддерживаемый профиль копирования'))
         self.seen[kind] = dict(f)
         self.current = None
 
@@ -243,7 +244,7 @@ class HeaderCheck:
     def complete(self):
         self.finish()
         if set(self.seen) != {'sps','pps'}:
-            raise ValueError('SPS/PPS не найдены')
+            raise ValueError(tr('SPS/PPS не найдены'))
 
 
 class PacketCheck:
@@ -261,7 +262,7 @@ class PacketCheck:
 
     def pts_check(self, pts):
         if self.last_pts is not None and abs(pts-self.last_pts-self.step)>.002:
-            raise ValueError('обнаружена переменная частота кадров или разрыв временных меток')
+            raise ValueError(tr('обнаружена переменная частота кадров или разрыв временных меток'))
         if self.first_pts is None:
             self.first_pts = pts
         self.last_pts = pts
@@ -275,19 +276,19 @@ class PacketCheck:
             return
         size = int(fields.get('size',0))
         if size <= 0 or size>20_000_000:
-            raise ValueError('некорректный размер пакета')
+            raise ValueError(tr('некорректный размер пакета'))
         if 'C' in fields.get('flags',''):
-            raise ValueError('обнаружен повреждённый пакет')
+            raise ValueError(tr('обнаружен повреждённый пакет'))
         if index == self.audio_index:
             pts = float(fields['pts_time'])
             truehd = self.info.audio_codec == 'truehd'
             duration = 1/1200 if truehd and fields.get('duration_time', 'N/A') == 'N/A' else float(fields['duration_time'])
             if not math.isfinite(pts) or not math.isfinite(duration) or duration<=0:
-                raise ValueError('неизвестные временные метки звука')
+                raise ValueError(tr('неизвестные временные метки звука'))
             if self.audio_end is not None and abs(pts-self.audio_end)>.002:
-                raise ValueError('разрыв временных меток звука требует обработки синхронизации')
+                raise ValueError(tr('разрыв временных меток звука требует обработки синхронизации'))
             if self.info.audio_codec == 'ac3' and (size>2560 or abs(duration-.032)>.002):
-                raise ValueError('пакеты AC-3 выходят за проверяемые ограничения Blu-ray')
+                raise ValueError(tr('пакеты AC-3 выходят за проверяемые ограничения Blu-ray'))
             self.audio_end = pts+duration
             self.audio_bytes += size
             if self.audio_start is None:
@@ -299,14 +300,14 @@ class PacketCheck:
         raw_dts = fields.get('dts_time','N/A')
         dts = None if raw_dts == 'N/A' and self.count < 4 else float(raw_dts)
         if (dts is not None and not math.isfinite(dts)) or not math.isfinite(pts):
-            raise ValueError('неизвестные временные метки видео')
+            raise ValueError(tr('неизвестные временные метки видео'))
         if self.last_dts is not None and dts is not None and abs(dts-self.last_dts-self.step)>.002:
-            raise ValueError('непостоянная частота кадров или разрыв DTS')
+            raise ValueError(tr('непостоянная частота кадров или разрыв DTS'))
         position = self.count*self.step
         if 'K' in fields.get('flags',''):
             self.last_key = position
         if self.last_key is None or position-self.last_key>1.01:
-            raise ValueError('ключевые кадры реже одного раза в секунду; точные переходы Blu-ray не подтверждены')
+            raise ValueError(tr('ключевые кадры реже одного раза в секунду; точные переходы Blu-ray не подтверждены'))
         heapq.heappush(self.pts, pts)
         if len(self.pts)>16:
             self.pts_check(heapq.heappop(self.pts))
@@ -315,7 +316,7 @@ class PacketCheck:
         while self.window and self.window[0][0]<=position-1:
             self.window_bytes -= self.window.popleft()[1]
         if self.window_bytes*8>40_000_000:
-            raise ValueError('пиковый видеобитрейт превышает 40 Мбит/с')
+            raise ValueError(tr('пиковый видеобитрейт превышает 40 Мбит/с'))
         self.video_bytes += size
         self.count += 1
         self.last_dts = dts
@@ -324,10 +325,10 @@ class PacketCheck:
         while self.pts:
             self.pts_check(heapq.heappop(self.pts))
         if self.count<2 or abs(self.count*self.step-self.info.duration)>max(.25,self.step*3):
-            raise ValueError('длительность потока не совпадает с фильмом или поток неполон')
+            raise ValueError(tr('длительность потока не совпадает с фильмом или поток неполон'))
         if self.info.audio_tracks and (self.audio_start is None or not math.isfinite(self.audio_start)
                 or abs(self.audio_start-self.first_pts)>.05):
-            raise ValueError('смещение звука требует отдельной обработки синхронизации')
+            raise ValueError(tr('смещение звука требует отдельной обработки синхронизации'))
 
 
 def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
@@ -366,9 +367,9 @@ def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
         headers.complete()
         from avc_audit import inspect_idr
         if inspect_idr(info, ffmpeg, cancel) != packets.count:
-            raise ValueError('число кадров AVC не совпадает с пакетами контейнера')
+            raise ValueError(tr('число кадров AVC не совпадает с пакетами контейнера'))
         if signature(info.path, cancel) != result.signature:
-            raise ValueError('файл изменился во время анализа')
+            raise ValueError(tr('файл изменился во время анализа'))
         result.video_ok = True
         result.video_bytes = packets.video_bytes
         sps = headers.seen['sps']
@@ -380,26 +381,26 @@ def analyze_copy(info, ffprobe, ffmpeg, cancel=None):
                   and checked.audio_start is not None and abs(checked.audio_start-packets.first_pts)<=.05
                   and checked.audio_end is not None and abs(checked.audio_end-packets.first_pts-info.duration)<=.1)
             result.audio_results[index] = dict(ok=ok, bytes=checked.audio_bytes,
-                reason='' if ok else audio_errors.get(index, f'дорожка #{index}: {checked.info.audio_codec}; не подтверждены поддерживаемый AC-3 / DTS core / LPCM и непрерывные временные метки'))
+                reason='' if ok else audio_errors.get(index, tr('дорожка #{0}: {1}; не подтверждены поддерживаемый AC-3 / DTS core / LPCM и непрерывные временные метки', index, checked.info.audio_codec)))
         selected = result.for_selection(info)
         result.audio_ok, result.audio_bytes, result.audio_reason = selected.audio_ok, selected.audio_bytes, selected.audio_reason
         result.fps = RATES[Fraction(info.video_fps)]
     except (ValueError, KeyError, TypeError, OSError, OverflowError, subprocess.SubprocessError) as exc:
-        result.reasons = ['совместимость не подтверждена: '+str(exc)]
+        result.reasons = [tr('совместимость не подтверждена: ')+str(exc)]
     return result
 
 
 def choose_mode(mode, report, info, capacity):
     report = report.for_selection(info)
     if mode not in MODES:
-        raise ValueError('Неизвестный режим обработки')
+        raise ValueError(tr('Неизвестный режим обработки'))
     if mode == 'encode':
-        return 'encode', 'Выбрано полное перекодирование.'
+        return 'encode', tr('Выбрано полное перекодирование.')
     recommended, reason = report.recommendation(info,capacity)
     if mode == 'auto':
         return recommended, reason
     if recommended == 'encode' or (mode == 'copy' and not report.audio_ok):
-        raise ValueError('Режим без перекодирования недоступен. '+reason)
+        raise ValueError(tr('Режим без перекодирования недоступен. ')+reason)
     if mode == 'video_copy' and report.audio_ok:
         return 'copy', reason
     return mode, reason

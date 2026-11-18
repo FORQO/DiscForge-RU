@@ -1,4 +1,5 @@
 """Bounded, disposable video trials using the production Blu-ray encoder settings."""
+from studio_locale import tr
 from dataclasses import dataclass, replace
 import json
 import math
@@ -32,22 +33,22 @@ class TrialPlan:
         from video_treatment import validate
         validate(self.enhance, self.quiet_rate)
         if type(self.scene_count) is not int or not 2 <= self.scene_count <= 5:
-            raise ValueError('Выберите от двух до пяти сцен.')
+            raise ValueError(tr('Выберите от двух до пяти сцен.'))
         if info.is_hdr:
-            raise ValueError('Проба HDR пока не поддерживается: сначала нужен согласованный SDR-конвейер.')
+            raise ValueError(tr('Проба HDR пока не поддерживается: сначала нужен согласованный SDR-конвейер.'))
         if not all(math.isfinite(x) for x in (info.duration, self.start, self.seconds)):
-            raise ValueError('Некорректная длительность фрагмента.')
+            raise ValueError(tr('Некорректная длительность фрагмента.'))
         if self.start < 0 or not 1 <= self.seconds <= 30 or self.start >= info.duration:
-            raise ValueError('Выберите фрагмент от 1 до 30 секунд в пределах фильма.')
+            raise ValueError(tr('Выберите фрагмент от 1 до 30 секунд в пределах фильма.'))
         if not 1 <= len(self.rates) <= 3 or len(set(self.rates)) != len(self.rates):
-            raise ValueError('Выберите от одного до трёх разных битрейтов.')
+            raise ValueError(tr('Выберите от одного до трёх разных битрейтов.'))
         if any(type(r) is not int or not MIN_RATE <= r <= MAX_RATE for r in self.rates):
-            raise ValueError('Битрейт должен быть от 5 до 28 Мбит/с.')
+            raise ValueError(tr('Битрейт должен быть от 5 до 28 Мбит/с.'))
         if self.encoder not in (0, 1, 2):
-            raise ValueError('Неизвестный видеокодер.')
+            raise ValueError(tr('Неизвестный видеокодер.'))
         frames = math.floor(min(self.seconds, info.duration-self.start) * FPS)
         if frames < 1:
-            raise ValueError('В конце фильма недостаточно кадров; выберите более раннее начало.')
+            raise ValueError(tr('В конце фильма недостаточно кадров; выберите более раннее начало.'))
         return frames
 
 
@@ -69,7 +70,7 @@ def source_stamp(path):
 
 def ensure_source(path, stamp):
     if source_stamp(path) != tuple(stamp):
-        raise ValueError('Исходный файл изменился. Повторите анализ и пробное кодирование.')
+        raise ValueError(tr('Исходный файл изменился. Повторите анализ и пробное кодирование.'))
 
 
 def capture(command, cancel, timeout=60):
@@ -80,9 +81,9 @@ def capture(command, cancel, timeout=60):
     try:
         while True:
             if cancel.is_set():
-                raise DiscForgeError('Проба отменена.')
+                raise DiscForgeError(tr('Проба отменена.'))
             if time.monotonic() > end:
-                raise DiscForgeError('Превышено время проверки пробного видео.')
+                raise DiscForgeError(tr('Превышено время проверки пробного видео.'))
             try:
                 output, error = process.communicate(timeout=.2)
                 break
@@ -102,9 +103,9 @@ def inspect_clip(ffprobe, path, cancel):
         '-show_entries', 'stream=width,height,nb_read_frames,r_frame_rate,pix_fmt', '-of', 'json', str(path)], cancel))
     stream = data['streams'][0]
     if (stream['width'], stream['height'], stream['pix_fmt']) != (WIDTH, HEIGHT, 'yuv420p'):
-        raise DiscForgeError('Проба не соответствует формату 1080p yuv420p.')
+        raise DiscForgeError(tr('Проба не соответствует формату 1080p yuv420p.'))
     if stream['r_frame_rate'] != '24000/1001':
-        raise DiscForgeError('Неверная частота кадров пробы.')
+        raise DiscForgeError(tr('Неверная частота кадров пробы.'))
     return int(stream['nb_read_frames'])
 
 
@@ -126,7 +127,7 @@ def reference_command(ffmpeg, info, destination, plan, frames, cuda=False):
     command = make_video_command(ffmpeg, info.path, str(destination), plan.rates[0], False, plan.fast,
                                  enhance=plan.enhance, quiet_rate=plan.quiet_rate)
     if cuda and plan.enhance:
-        raise ValueError('Бережное улучшение использует CPU-фильтры.')
+        raise ValueError(tr('Бережное улучшение использует CPU-фильтры.'))
     if cuda:
         from gpu_pipeline import cuda_command
         command = cuda_command(command)
@@ -156,56 +157,56 @@ def run_trial(info, plan, config, directory, cancel, log, progress, *, backend=N
     frames = plan.validate(info)
     stamp = source_stamp(info.path)
     if stamp[1] != info.size:
-        raise ValueError('Размер исходника изменился после анализа. Добавьте фильм заново.')
+        raise ValueError(tr('Размер исходника изменился после анализа. Добавьте фильм заново.'))
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     peak = video_peak(info)
     if max(plan.rates) > peak:
-        raise ValueError(f'Выбранный звук оставляет для видео не более {peak/1e6:.2f} Мбит/с. Измените битрейты или выбор аудио.')
+        raise ValueError(tr('Выбранный звук оставляет для видео не более {0} Мбит/с. Измените битрейты или выбор аудио.', format(peak / 1000000.0, f'.2f')))
     reserve = int(frames*WIDTH*HEIGHT*(4 if plan.enhance else 2) + frames/FPS*sum(plan.rates)/8*1.3 + 128_000_000)
     if shutil.disk_usage(directory).free < reserve:
-        raise ValueError(f'Для временных проб требуется около {reserve/1e9:.2f} ГБ свободного места. Уменьшите длительность.')
+        raise ValueError(tr('Для временных проб требуется около {0} ГБ свободного места. Уменьшите длительность.', format(reserve / 1000000000.0, f'.2f')))
     ffmpeg, ffprobe = config['ffmpeg'], config['ffprobe']
     nvenc = backend['nvenc'] if backend else plan.encoder != 0 and nvenc_available(ffmpeg, cancel, log)
     if plan.encoder == 1 and not nvenc:
-        raise DiscForgeError('Выбран NVIDIA NVENC, но кодер недоступен. Выберите CPU или «Авто» и повторите пробу.')
+        raise DiscForgeError(tr('Выбран NVIDIA NVENC, но кодер недоступен. Выберите CPU или «Авто» и повторите пробу.'))
     cuda = backend['cuda'] if backend else False
     if backend is None and nvenc and plan.gpu_frames and not plan.enhance:
         from gpu_pipeline import supported
         cuda = supported(info, ffmpeg, cancel, log, run_command, make_video_command)
     name = 'NVIDIA NVENC' if nvenc else 'CPU x264'
     if plan.enhance and cuda:
-        raise ValueError('Параметры подготовки кадров изменились; повторите пробы.')
+        raise ValueError(tr('Параметры подготовки кадров изменились; повторите пробы.'))
     from video_treatment import describe
     describe(plan.enhance, plan.quiet_rate, log)
     preset = ('p3' if plan.fast else 'p5') if nvenc else ('fast' if plan.fast else 'medium')
-    log(f'{name} · {preset} · подготовка кадров: {"CUDA" if cuda else "CPU"}')
-    log('Подготавливаем одинаковые кадры исходника: 1080p, 23,976 кадр/с, без потерь (FFV1).')
+    log(tr('{0} · {1} · подготовка кадров: {2}', name, preset, 'CUDA' if cuda else 'CPU'))
+    log(tr('Подготавливаем одинаковые кадры исходника: 1080p, 23,976 кадр/с, без потерь (FFV1).'))
     reference = directory/'reference.mkv'
     before = directory/'before.mkv' if plan.enhance else reference
     if plan.enhance:
-        log('Готовим «до»: обычное масштабирование без улучшения, без потерь.')
+        log(tr('Готовим «до»: обычное масштабирование без улучшения, без потерь.'))
         run_command(reference_command(ffmpeg, info, before, replace(plan, enhance=False), frames),
-                    'До улучшения', 0, 10, frames/FPS, cancel, log, progress)
-    run_command(reference_command(ffmpeg, info, reference, plan, frames, cuda), 'Подготовка исходника',
+                    tr('До улучшения'), 0, 10, frames/FPS, cancel, log, progress)
+    run_command(reference_command(ffmpeg, info, reference, plan, frames, cuda), tr('Подготовка исходника'),
                 10 if plan.enhance else 0, 10 if plan.enhance else 20, frames/FPS, cancel, log, progress)
     actual = inspect_clip(ffprobe, reference, cancel)
     if actual < max(1, frames-1):
-        raise DiscForgeError('В исходнике оказалось меньше кадров, чем ожидалось. Выберите другой фрагмент или повторите анализ.')
+        raise DiscForgeError(tr('В исходнике оказалось меньше кадров, чем ожидалось. Выберите другой фрагмент или повторите анализ.'))
     frames = actual
     if plan.enhance and inspect_clip(ffprobe, before, cancel) != frames:
-        raise DiscForgeError('Кадры до и после улучшения не совпали по количеству; сравнение остановлено.')
+        raise DiscForgeError(tr('Кадры до и после улучшения не совпали по количеству; сравнение остановлено.'))
     variants = []
     for i, rate in enumerate(plan.rates):
         output = directory/f'video-{rate}.mkv'
-        log(f'Кодируем вариант {i+1}/{len(plan.rates)}: {rate/1e6:g} Мбит/с…')
+        log(tr('Кодируем вариант {0}/{1}: {2} Мбит/с…', i + 1, len(plan.rates), format(rate / 1000000.0, f'g')))
         started = time.monotonic()
         run_command(variant_command(ffmpeg, reference, output, rate, nvenc, plan.fast, frames, peak, plan.quiet_rate),
-                    'Пробное кодирование', 20+i*50/len(plan.rates), 50/len(plan.rates), frames/FPS,
+                    tr('Пробное кодирование'), 20+i*50/len(plan.rates), 50/len(plan.rates), frames/FPS,
                     cancel, log, progress)
         elapsed = time.monotonic()-started
         if inspect_clip(ffprobe, output, cancel) != frames:
-            raise DiscForgeError('Количество кадров пробы отличается от исходника; сравнение остановлено.')
+            raise DiscForgeError(tr('Количество кадров пробы отличается от исходника; сравнение остановлено.'))
         variants.append(dict(path=str(output), bitrate=rate, bytes=output.stat().st_size, seconds=elapsed,
                              film_video_bytes=math.ceil(info.duration*rate/8)))
     from quality_metrics import has_vmaf, score_variant, recommend
@@ -214,17 +215,17 @@ def run_trial(info, plan, config, directory, cancel, log, progress, *, backend=N
     except (RuntimeError, OSError) as exc:
         if cancel.is_set():
             raise
-        log('Не удалось проверить VMAF; используем SSIM. '+str(exc))
+        log(tr('Не удалось проверить VMAF; используем SSIM. ')+str(exc))
         vmaf = False
     for i, variant in enumerate(variants):
-        log(f'Автоматическое сравнение {i+1}/{len(variants)}: {variant["bitrate"]/1e6:g} Мбит/с…')
+        log(tr('Автоматическое сравнение {0}/{1}: {2} Мбит/с…', i + 1, len(variants), format(variant['bitrate'] / 1000000.0, f'g')))
         variant['quality'] = score_variant(ffmpeg, reference, variant['path'], frames, directory,
             cancel, log, lambda value, i=i: progress(70+(i+value/100)*29/len(variants)), vmaf=vmaf)
     advice = recommend(variants)
     log(advice['explanation'])
     ensure_source(info.path, stamp)
     if cancel.is_set():
-        raise DiscForgeError('Проба отменена.')
+        raise DiscForgeError(tr('Проба отменена.'))
     result = dict(source=stamp, reference=str(reference), before=str(before), enhance=plan.enhance,
                   frames=frames, start=plan.start,
                   duration=frames/FPS, encoder=name, preset=preset, cuda=cuda, peak=peak,
@@ -243,29 +244,29 @@ def extend_trial(info, plan, config, scene, rate, cancel, log, progress):
     replace(plan, start=scene['start'], rates=(rate,)).validate(info)
     ensure_source(info.path, scene['source'])
     if rate > scene['peak'] or rate > video_peak(info):
-        raise ValueError('Битрейт превышает доступный поток с учётом звука.')
+        raise ValueError(tr('Битрейт превышает доступный поток с учётом звука.'))
     if any(v['bitrate'] == rate for v in scene['variants']):
-        raise ValueError('Этот битрейт уже проверен.')
+        raise ValueError(tr('Этот битрейт уже проверен.'))
     if cancel.is_set():
-        raise DiscForgeError('Проба отменена.')
+        raise DiscForgeError(tr('Проба отменена.'))
     reference = Path(scene['reference'])
     output = reference.parent/f'video-{rate}.mkv'
     frames = scene['frames']
     backend = scene['backend']
     started = time.monotonic()
     run_command(variant_command(config['ffmpeg'], reference, output, rate, backend['nvenc'],
-                plan.fast, frames, scene['peak'], plan.quiet_rate), 'Дополнительная проба', 0, 65, frames/FPS,
+                plan.fast, frames, scene['peak'], plan.quiet_rate), tr('Дополнительная проба'), 0, 65, frames/FPS,
                 cancel, log, progress)
     elapsed = time.monotonic()-started
     if inspect_clip(config['ffprobe'], output, cancel) != frames:
-        raise DiscForgeError('Количество кадров дополнительной пробы отличается от эталона.')
+        raise DiscForgeError(tr('Количество кадров дополнительной пробы отличается от эталона.'))
     variant = dict(path=str(output), bitrate=rate, bytes=output.stat().st_size, seconds=elapsed,
                    film_video_bytes=math.ceil(info.duration*rate/8))
     variant['quality'] = score_variant(config['ffmpeg'], reference, output, frames, reference.parent,
         cancel, log, lambda p: progress(65+p*.35), vmaf=backend['vmaf'])
     ensure_source(info.path, scene['source'])
     if cancel.is_set():
-        raise DiscForgeError('Проба отменена.')
+        raise DiscForgeError(tr('Проба отменена.'))
     variants = sorted(scene['variants']+[variant], key=lambda v: v['bitrate'])
     return dict(scene, variants=variants, recommendation=recommend(variants))
 

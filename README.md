@@ -1,15 +1,27 @@
+# DiskForge Studio
+
+Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with Apple Silicon. Arrange your movies, design disc menus, edit chapters, select audio and subtitle tracks, and check disc capacity before building. Studio 1.5.2 includes English and Russian interfaces.
+
+[Download for Windows](https://github.com/FORQO/DiscForge-RU/releases/download/v1.5.2-studio/DiskForge-Studio-1.5.2-Windows-x64.zip) · [Download for macOS](https://github.com/FORQO/DiscForge-RU/releases/download/v1.5.2-studio/DiskForge-Studio-1.5.2-macOS-arm64.zip) · [English guide and screenshots](docs/STUDIO_EN.md) · [Release notes](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio)
+
+![DiskForge Studio 1.5.2 menu editor in English](docs/images/studio-1.5.2/windows/menu.jpg)
+
+## Русский
+
+В Studio 1.5.2 доступны русский и английский интерфейсы. Выберите язык в **Language / Язык** и перезапустите программу. [Снимки Windows и macOS](docs/STUDIO_EN.md#native-screenshots) · [Что нового](docs/RELEASE_STUDIO_1.5.2.md)
+
 <p align="center">
   <img src=".github/forqo-banner.svg" alt="DiskForge · FORQO — Ваша коллекция. Ваше меню. Готовый Blu-ray ISO." width="100%">
 </p>
 
 <p align="center"><b>Фильмы и серии на одном Blu-ray: меню, главы, звук и субтитры.</b></p>
 
-<p align="center"><a href="#быстрый-старт">Быстрый старт</a> · <a href="#возможности">Возможности</a> · <a href="docs/README.md">Документация</a> · <a href="#разработка">Разработка</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio">Windows</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio">macOS Studio</a></p>
+<p align="center"><a href="#быстрый-старт">Быстрый старт</a> · <a href="#возможности">Возможности</a> · <a href="docs/README.md">Документация</a> · <a href="#разработка">Разработка</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio">Windows</a> · <a href="https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio">macOS Studio</a></p>
 
 | Платформа / направление | Статус | Технологии |
 | :--- | :--- | :--- |
-| Windows 10/11 x64 | [Studio 1.5.1 · готовый ZIP](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio) | Python · PySide6 · FFmpeg |
-| macOS · Apple Silicon (M1 и новее) | [Studio 1.5.1 · готовое приложение .app](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio) | Python · PySide6 · FFmpeg · UDF 2.50 |
+| Windows 10/11 x64 | [Studio 1.5.2 · готовый ZIP](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio) | Python · PySide6 · FFmpeg |
+| macOS · Apple Silicon (M1 и новее) | [Studio 1.5.2 · готовое приложение .app](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio) | Python · PySide6 · FFmpeg · UDF 2.50 |
 
 ---
 
@@ -19,7 +31,7 @@
 
 [Что нового в Studio](docs/STUDIO.md) · [Руководство](docs/USER_GUIDE.md) · [Roadmap](docs/ROADMAP.md)
 
-**Studio 1.5.1: единое оформление всего меню одним нажатием, удобное редактирование глав и обновлённые числовые настройки. Физическая проверка диска на GIEC G2805 прошла успешно — результат подтверждён автором проекта 9 ноября 2026 года.** [Что нового](docs/RELEASE_STUDIO_1.5.1.md) · [Физическая проверка](docs/PLAYER_TEST_MATRIX.md).
+**В предыдущей Studio 1.5.1: единое оформление всего меню одним нажатием, удобное редактирование глав и обновлённые числовые настройки. Физическая проверка диска на GIEC G2805 прошла успешно — результат подтверждён автором проекта 9 ноября 2026 года.** [Что нового](docs/RELEASE_STUDIO_1.5.1.md) · [Физическая проверка](docs/PLAYER_TEST_MATRIX.md).
 
 Сохранены [пробы качества, сложные сцены, VMAF/SSIM и подбор битрейта](docs/QUALITY_TRIAL.md), [бережное улучшение отдельно для каждого фильма и сравнение до/после](docs/VIDEO_ENHANCEMENT.md). Четыре стрелки в предпросмотре и BD-J выбирают ближайшую кнопку в указанном направлении.
 
@@ -31,7 +43,7 @@
 
 ![DiskForge Studio 1.5.1: общий стиль всех кнопок](docs/images/studio-1.5.1-menu.jpg)
 
-*Свежие снимки Studio 1.5.1 сняты на Windows с демонстрационным проектом. Интерфейс приложения настоящий; фильмы и названия в примере демонстрационные. macOS использует тот же редактор, системные шрифты и оформление окна могут отличаться.*
+*Архивные снимки русского интерфейса Studio 1.5.1 сняты на Windows с демонстрационным проектом. Интерфейс приложения настоящий; фильмы и названия в примере демонстрационные. macOS использует тот же редактор, системные шрифты и оформление окна могут отличаться.*
 
 [Светлая тема](docs/images/studio-1.5.1-light.jpg) · [Предпросмотр с пультом](docs/images/studio-1.5.1-preview.jpg) · [Устройство интерфейса](docs/STUDIO_DESIGN.md).
 
@@ -39,7 +51,7 @@
 
 ### Windows · Studio
 
-1. Распакуйте **всю папку** `DiskForge-Studio-1.5.1-Windows-x64.zip` и запустите `DiscForge_RU.exe`. Инструменты и отдельная Java уже в комплекте; VLC устанавливается отдельно. В Studio настройки меню разделены на «Оформление», «Объект» и «Расстановка», пульт находится под изображением, журнал сворачивается.
+1. Распакуйте **всю папку** `DiskForge-Studio-1.5.2-Windows-x64.zip` и запустите `DiscForge_RU.exe`. Инструменты и отдельная Java уже в комплекте; VLC устанавливается отдельно. В Studio настройки меню разделены на «Оформление», «Объект» и «Расстановка», пульт находится под изображением, журнал сворачивается.
 2. Добавьте фильмы, дождитесь анализа и выберите общий диск либо отдельный диск для каждого фильма.
 3. В «Подготовке» проверьте план: копирование или перекодирование, индивидуальные битрейты и заполнение BD25/BD50. Автоподбор включён в новых проектах; старые настройки сохраняются.
 4. Выберите звук, субтитры и главы для каждого фильма. Отредактируйте названия и порядок фильмов, оформите меню.
@@ -47,13 +59,13 @@
 
 ### macOS · Studio
 
-1. Скачайте [DiskForge-Studio-1.5.1-macOS-arm64.zip](https://github.com/FORQO/DiscForge-RU/releases/download/v1.5.1-studio/DiskForge-Studio-1.5.1-macOS-arm64.zip), распакуйте и перенесите `DiskForge.app` в «Программы».
+1. Скачайте [DiskForge-Studio-1.5.2-macOS-arm64.zip](https://github.com/FORQO/DiscForge-RU/releases/download/v1.5.2-studio/DiskForge-Studio-1.5.2-macOS-arm64.zip), распакуйте и перенесите `DiskForge.app` в «Программы».
 2. Добавьте видео, выберите дорожки и главы, оформите меню. Справа доступны «Оформление», «Объект» и «Расстановка»; «Предпросмотр» показывает пульт под изображением.
 3. Нажмите «Создать ISO…», выберите BD25/BD50, формат ISO/BDMV и папку результата. Python и Homebrew для запуска не требуются; VLC устанавливается отдельно.
 
 Нужен Mac с Apple Silicon (M1 и новее). Приложение имеет локальную подпись, без нотарификации Apple. Если macOS блокирует запуск, откройте «Системные настройки → Конфиденциальность и безопасность → Всё равно открыть» для DiskForge.
 
-[Релиз и контрольные суммы](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio) · [Инструкция для Mac](docs/MACOS.md) · [Исходники Studio](https://github.com/FORQO/DiscForge-RU/tree/main).
+[Релиз и контрольные суммы](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio) · [Инструкция для Mac](docs/MACOS.md) · [Исходники Studio](https://github.com/FORQO/DiscForge-RU/tree/main).
 
 ## Возможности
 

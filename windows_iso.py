@@ -1,4 +1,5 @@
 """Create UDF 2.50 images using Windows IMAPI2FS. Does not open a recorder."""
+from studio_locale import tr
 import os
 from pathlib import Path
 import subprocess
@@ -26,9 +27,9 @@ def create_iso(source: Path, destination: Path, capacity: int, cancel: threading
         from macos_iso import create_iso as create_macos_iso
         return create_macos_iso(source, destination, capacity, cancel, log, progress, overlay)
     if sys.platform != 'win32':
-        raise RuntimeError('ISO с меню пока собирается только на Windows. Выберите папку BDMV.')
+        raise RuntimeError(tr('ISO с меню пока собирается только на Windows. Выберите папку BDMV.'))
     if cancel.is_set():
-        raise RuntimeError('Операция отменена пользователем.')
+        raise RuntimeError(tr('Операция отменена пользователем.'))
     if destination.exists():
         raise FileExistsError(destination)
     powershell = Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
@@ -39,7 +40,7 @@ def create_iso(source: Path, destination: Path, capacity: int, cancel: threading
     if overlay is not None:
         command.extend(['-Overlay', str(overlay.resolve())])
     expected = sum(p.stat().st_size for p in source.rglob('*') if p.is_file()) + 1_048_576
-    log('Создаём файловую систему UDF 2.50…')
+    log(tr('Создаём файловую систему UDF 2.50…'))
     # A file prevents pipe deadlocks; this helper emits only bounded diagnostics.
     with tempfile.TemporaryFile() as output, tempfile.TemporaryDirectory(prefix='DiscForge_progress_') as metrics:
         marker = Path(metrics) / 'bytes.txt'
@@ -54,18 +55,18 @@ def create_iso(source: Path, destination: Path, capacity: int, cancel: threading
                     except (OSError, ValueError):
                         pass  # Writer may be replacing a progress sample.
                 if cancel.wait(0.1):
-                    raise RuntimeError('Операция отменена пользователем.')
+                    raise RuntimeError(tr('Операция отменена пользователем.'))
             output.seek(0)
             message = output.read(16000).decode('utf-8', errors='replace')
             if proc.returncode:
-                raise RuntimeError('Не удалось создать ISO: ' + message[-2000:])
+                raise RuntimeError(tr('Не удалось создать ISO: ') + message[-2000:])
             log(message.strip())
         finally:
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
     if not destination.is_file() or destination.stat().st_size == 0:
-        raise RuntimeError('Windows не создала ISO-образ.')
+        raise RuntimeError(tr('Windows не создала ISO-образ.'))
 
     if progress:
         progress(1.0)

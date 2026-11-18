@@ -1,4 +1,5 @@
 """Edit chapter names without exposing the timestamp as editable text."""
+from studio_locale import tr
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLineEdit, QListWidget, QStyledItemDelegate
 
@@ -25,7 +26,7 @@ class ChapterNameDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
         editor.setObjectName('chapterNameEdit')
-        editor.setAccessibleName('Название главы')
+        editor.setAccessibleName(tr('Название главы'))
         editor.setMaxLength(120)
         return editor
 

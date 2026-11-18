@@ -1,4 +1,5 @@
 """Source audio selection shared by probing, UI, bitrate planning and muxing."""
+from studio_locale import tr
 from dataclasses import replace
 
 
@@ -20,10 +21,10 @@ def selected_tracks(info):
 def select_tracks(info, indices):
     if (not isinstance(indices, (list, tuple)) or len(indices) > 32 or
             any(type(i) is not int for i in indices) or len(indices) != len(set(indices))):
-        raise ValueError('Выберите не более 32 разных аудиодорожек.')
+        raise ValueError(tr('Выберите не более 32 разных аудиодорожек.'))
     available = {t.get('index', 0) for t in available_tracks(info)}
     if not set(indices) <= available:
-        raise ValueError('Выбранная аудиодорожка отсутствует в файле. Выберите дорожки заново.')
+        raise ValueError(tr('Выбранная аудиодорожка отсутствует в файле. Выберите дорожки заново.'))
     return replace(info, selected_audio=tuple(indices))
 
 

@@ -3,6 +3,7 @@
 Packet sampling measures compressed video only. The heuristic is intentionally
 independent of free disc space: it never shrinks compatible streams to fit.
 """
+from studio_locale import tr
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -36,7 +37,7 @@ def source_rate(info):
 
 def analyze_bitrate(info, ffprobe, cancel):
     if cancel.is_set():
-        raise RuntimeError('Анализ отменён.')
+        raise RuntimeError(tr('Анализ отменён.'))
     known = source_rate(info)
     if known['bps']:
         return known
@@ -58,19 +59,19 @@ def analyze_bitrate(info, ffprobe, cancel):
             if packet_size and 0 < duration <= 10:
                 count += 1
                 if count > 100000:
-                    raise ValueError('Слишком много пакетов в пробе.')
+                    raise ValueError(tr('Слишком много пакетов в пробе.'))
                 size += packet_size
                 seconds += duration
         stream_lines([ffprobe, '-v', 'error', '-select_streams', 'v:0', '-read_intervals', intervals,
                       '-show_packets', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0', info.path], cancel, consume)
         after = Path(info.path).stat()
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-            raise RuntimeError('Исходник изменился во время анализа битрейта.')
+            raise RuntimeError(tr('Исходник изменился во время анализа битрейта.'))
         if count >= 2 and seconds > 0:
             return dict(bps=round(size*8/seconds), method='samples', seconds=round(seconds, 2))
     except Exception as exc:
         if cancel.is_set():
-            raise RuntimeError('Анализ отменён.') from exc
+            raise RuntimeError(tr('Анализ отменён.')) from exc
         return dict(bps=0, method='unknown', reason=str(exc)[:300])
     return dict(bps=0, method='unknown')
 
@@ -87,43 +88,43 @@ class Advice:
 def recommend(info, capacity=10**18):
     measured = source_rate(info)
     rate, method = measured['bps'], measured['method']
-    mode, reason = info.copy_report.recommendation(info, capacity) if info.copy_report else ('encode', 'Совместимость для копирования не подтверждена.')
+    mode, reason = info.copy_report.recommendation(info, capacity) if info.copy_report else ('encode', tr('Совместимость для копирования не подтверждена.'))
     pixels = info.width*info.height
     floor = 5_000_000 if pixels <= 700000 else 6_000_000 if pixels <= 1100000 else 8_000_000 if pixels <= 2300000 else 10_000_000
     factor = 2.0 if info.video_codec in ('hevc', 'av1', 'vp9') else 1.25 if info.video_codec in ('h264', 'vp8') else 1.0
     raw = max(floor, rate*factor) if rate else max(floor, 8_000_000 if pixels <= 1100000 else 12_000_000)
     target = min(MAX_RATE, math.ceil(raw/500000)*500000)
-    origin = {'packets': 'по всем пакетам видео', 'metadata': 'по метаданным видеопотока',
-              'samples': 'приблизительно по коротким пробам', 'unknown': 'битрейт видеопотока неизвестен'}[method]
-    text = f'Исходник: {info.width}×{info.height}, {info.video_codec.upper()}; ' + (f'видео ≈ {rate/1e6:.2f} Мбит/с, {origin}.\n' if rate else origin+'.\n')
+    origin = {'packets': tr('по всем пакетам видео'), 'metadata': tr('по метаданным видеопотока'),
+              'samples': tr('приблизительно по коротким пробам'), 'unknown': tr('битрейт видеопотока неизвестен')}[method]
+    text = tr('Исходник: {0}×{1}, {2}; ', info.width, info.height, info.video_codec.upper()) + (tr('видео ≈ {0} Мбит/с, {1}.\n', format(rate / 1000000.0, f'.2f'), origin) if rate else origin+'.\n')
     text += reason + '\n'
     if info.is_hdr:
-        text += 'Сборка HDR пока недоступна: подбор битрейта не заменяет тонмаппинг.'
+        text += tr('Сборка HDR пока недоступна: подбор битрейта не заменяет тонмаппинг.')
     elif mode != 'encode':
-        text += 'Лучший способ сохранить качество видео — копировать его. Битрейт исходного видео не меняется.'
+        text += tr('Лучший способ сохранить качество видео — копировать его. Битрейт исходного видео не меняется.')
     else:
-        text += f'Экономный ориентир для H.264 1080p: {target/1e6:g} Мбит/с. '
-        text += 'Расчёт по разрешению, кодеку и битрейту исходника; это не измерение визуального качества. '
+        text += tr('Экономный ориентир для H.264 1080p: {0} Мбит/с. ', format(target / 1000000.0, f'g'))
+        text += tr('Расчёт по разрешению, кодеку и битрейту исходника; это не измерение визуального качества. ')
         if method == 'unknown':
-            text += 'Данных мало: выбран более осторожный ориентир. '
+            text += tr('Данных мало: выбран более осторожный ориентир. ')
         if method == 'samples':
-            text += 'Короткие пробы могут не захватить самые сложные сцены. '
+            text += tr('Короткие пробы могут не захватить самые сложные сцены. ')
         if raw > MAX_RATE:
-            text += 'Расчёт выше предела 28 Мбит/с: исходное качество при таком ограничении особенно важно проверить. '
+            text += tr('Расчёт выше предела 28 Мбит/с: исходное качество при таком ограничении особенно важно проверить. ')
         if info.width != 1920 or info.height != 1080:
-            text += 'Изменение размера кадра не восстановит отсутствующие детали. '
-        text += 'При перекодировании возможна потеря качества; проверьте динамичные и тёмные сцены. Минимум этой версии — 5 Мбит/с.'
+            text += tr('Изменение размера кадра не восстановит отсутствующие детали. ')
+        text += tr('При перекодировании возможна потеря качества; проверьте динамичные и тёмные сцены. Минимум этой версии — 5 Мбит/с.')
     return Advice(mode, target, rate, method, text)
 
 
 def normalize_rates(raw, paths):
     if not isinstance(raw, dict):
-        raise ValueError('Неверные индивидуальные битрейты.')
+        raise ValueError(tr('Неверные индивидуальные битрейты.'))
     known = {str(Path(p).resolve()) for p in paths}
     result = {}
     for path, rate in raw.items():
         if not isinstance(path, str) or type(rate) is not int or not MIN_RATE <= rate <= MAX_RATE:
-            raise ValueError('Битрейт фильма должен быть от 5 до 28 Мбит/с.')
+            raise ValueError(tr('Битрейт фильма должен быть от 5 до 28 Мбит/с.'))
         normalized = str(Path(path).resolve())
         if normalized in known:
             result[normalized] = rate

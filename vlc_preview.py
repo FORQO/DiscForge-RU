@@ -1,4 +1,5 @@
 """Launch installed VLC with our private Java runtime and Blu-ray menus."""
+from studio_locale import tr
 import os
 from pathlib import Path
 import shutil
@@ -14,18 +15,18 @@ def app_root():
 def pe_machine(path):
     with Path(path).open('rb') as stream:
         if stream.read(2) != b'MZ':
-            raise ValueError('Ожидался исполняемый файл Windows: ' + str(path))
+            raise ValueError(tr('Ожидался исполняемый файл Windows: ') + str(path))
         stream.seek(60)
         header = stream.read(4)
         if len(header) != 4:
-            raise ValueError('Повреждён файл Windows: ' + str(path))
+            raise ValueError(tr('Повреждён файл Windows: ') + str(path))
         offset = struct.unpack('<I', header)[0]
         stream.seek(offset)
         if stream.read(4) != b'PE\0\0':
-            raise ValueError('Некорректный файл Windows: ' + str(path))
+            raise ValueError(tr('Некорректный файл Windows: ') + str(path))
         machine = stream.read(2)
         if len(machine) != 2:
-            raise ValueError('Повреждён файл Windows: ' + str(path))
+            raise ValueError(tr('Повреждён файл Windows: ') + str(path))
         return struct.unpack('<H', machine)[0]
 
 
@@ -65,7 +66,7 @@ def find_vlc():
 def launch_iso(filename, vlc=None, root=None):
     iso = Path(filename).resolve()
     if not iso.is_file() or iso.suffix.lower() != '.iso' or iso.stat().st_size == 0:
-        raise ValueError('Выберите существующий непустой ISO-образ.')
+        raise ValueError(tr('Выберите существующий непустой ISO-образ.'))
     return launch_bluray(iso, vlc, root)
 
 
@@ -74,21 +75,21 @@ def launch_bluray(filename, vlc=None, root=None):
     source = Path(filename).resolve()
     if source.is_dir():
         if not (source / 'BDMV/index.bdmv').is_file():
-            raise ValueError('На выбранном диске не найдена структура Blu-ray (BDMV/index.bdmv).')
+            raise ValueError(tr('На выбранном диске не найдена структура Blu-ray (BDMV/index.bdmv).'))
     elif not source.is_file() or source.suffix.lower() != '.iso' or source.stat().st_size == 0:
-        raise ValueError('Выберите непустой ISO-образ или диск Blu-ray.')
+        raise ValueError(tr('Выберите непустой ISO-образ или диск Blu-ray.'))
     if sys.platform == 'darwin':
         return launch_macos(source, vlc, root)
     executable = Path(vlc) if vlc else find_vlc()
     if executable is None:
-        raise FileNotFoundError('Не найден VLC 64-bit. Выберите установленный vlc.exe.')
+        raise FileNotFoundError(tr('Не найден VLC 64-bit. Выберите установленный vlc.exe.'))
     java = (Path(root) if root else app_root()) / 'runtime/java'
     jvm = java / 'bin/server/jvm.dll'
     if not jvm.is_file() or not (java / 'lib/rt.jar').is_file():
-        raise FileNotFoundError('Не найдена Java из комплекта DiscForge: ' + str(java) +
-                                '\nРаспакуйте всю папку программы вместе с runtime.')
+        raise FileNotFoundError(tr('Не найдена Java из комплекта DiscForge: ') + str(java) +
+                                tr('\nРаспакуйте всю папку программы вместе с runtime.'))
     if pe_machine(executable) != 0x8664 or pe_machine(jvm) != 0x8664:
-        raise ValueError('Для Java из комплекта требуется VLC 64-bit. Выберите 64-разрядный vlc.exe.')
+        raise ValueError(tr('Для Java из комплекта требуется VLC 64-bit. Выберите 64-разрядный vlc.exe.'))
     env = os.environ.copy()
     env.update(JAVA_HOME=str(java), JRE_HOME=str(java), BDJ_JVM_PATH=str(jvm))
     env['PATH'] = str(java / 'bin') + os.pathsep + str(jvm.parent) + os.pathsep + env.get('PATH', '')
@@ -129,8 +130,7 @@ def macos_java(root=None):
             jvm = java / name
             if jvm.is_file():
                 return java, jvm
-    raise FileNotFoundError('Для меню Blu-ray в VLC установите Java JDK той же архитектуры, что и VLC, '
-                            'либо задайте JAVA_HOME. Само создание ISO не требует Java.')
+    raise FileNotFoundError(tr('Для меню Blu-ray в VLC установите Java JDK той же архитектуры, что и VLC, либо задайте JAVA_HOME. Само создание ISO не требует Java.'))
 
 
 def launch_macos(source, vlc=None, root=None):
@@ -138,7 +138,7 @@ def launch_macos(source, vlc=None, root=None):
     if executable and executable.suffix.lower() == '.app':
         executable = executable / 'Contents/MacOS/VLC'
     if executable is None or not executable.is_file():
-        raise FileNotFoundError('Не найден VLC. Установите VLC.app в папку «Программы».')
+        raise FileNotFoundError(tr('Не найден VLC. Установите VLC.app в папку «Программы».'))
     java, jvm = macos_java(root)
     env = os.environ.copy()
     env.update(JAVA_HOME=str(java), JRE_HOME=str(java), BDJ_JVM_PATH=str(jvm))
