@@ -1,6 +1,6 @@
 # DiskForge Studio 1.5.2 — Windows 10/11 x64
 
-Extract the entire Windows ZIP and launch `DiscForge_RU.exe`. Choose **Language / Язык → English** and restart the application. Studio remembers the setting. [English guide and screenshots](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md)
+Extract the entire Windows ZIP and launch `DiscForge_RU.exe`. Choose **Language → English** and restart the application. Studio remembers the setting. [English guide and screenshots](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md)
 
 Интерфейс Studio теперь доступен в Windows: большая область меню, библиотека фильмов слева и свойства справа. Вкладки «Оформление», «Объект» и «Расстановка», светлая и тёмная темы, отдельный режим предпросмотра с пультом под изображением. Журнал свёрнут по умолчанию и раскрывается при ошибке; параметры ISO/BDMV, BD25/BD50 и папка результата выбираются в отдельном окне.
 

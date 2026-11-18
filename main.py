@@ -711,7 +711,7 @@ class Window(QMainWindow):
             action.setShortcut({tr('Новый'): QKeySequence.New, tr('Открыть проект…'): QKeySequence.Open,
                                 tr('Сохранить проект…'): QKeySequence.Save}[text])
             project.addAction(action)
-        language_menu = self.menuBar().addMenu('Language / Язык')
+        language_menu = self.menuBar().addMenu(tr('Язык'))
         self.language_group = QActionGroup(self)
         self.language_group.setExclusive(True)
         self.language_actions = {}
@@ -799,7 +799,7 @@ class Window(QMainWindow):
         self.ui_language = key
         self.language_actions[key].setChecked(True)
         self._save_config()
-        QMessageBox.information(self, 'Language / Язык', tr('Новый язык интерфейса появится при следующем запуске DiskForge.'))
+        QMessageBox.information(self, tr('Язык'), tr('Новый язык интерфейса появится при следующем запуске DiskForge.'))
 
     def set_theme(self, key, save=False):
         self.ui_theme = key if key in self.theme_actions else 'graphite'

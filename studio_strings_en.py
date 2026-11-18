@@ -1290,6 +1290,7 @@ MESSAGES = {
     'ISO с меню пока собирается только на Windows. Выберите папку BDMV.': 'This ISO builder supports menus on Windows only. Choose BDMV folder output.',
     'Создаём файловую систему UDF 2.50…': 'Creating the UDF 2.50 file system…',
     'Windows не создала ISO-образ.': 'Windows did not create an ISO image.',
+    'Образец применён ко всем кнопкам проекта.': 'Button style applied to all buttons in this project.',
     'Как в системе': 'Use system language',
     'Язык меню диска': 'Disc menu language',
     'Новый язык интерфейса появится при следующем запуске DiskForge.': 'Your language choice will take effect next time you open DiskForge.',

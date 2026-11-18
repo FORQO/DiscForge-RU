@@ -9,7 +9,7 @@ DiskForge turns video files into a Blu-ray ISO or BDMV folder. Build a collectio
 
 ## Create a disc
 
-1. Open **Language / Язык** to choose **English**, **Русский** or **Use system language**. Restart Studio after changing this setting. New installations follow the system and default to English on non-Russian systems.
+1. Open **Language** (Язык in Russian) to choose **English**, **Русский** or **Use system language**. Restart Studio after changing this setting. New installations follow the system and default to English on non-Russian systems.
 2. Add videos or drop them into the window. After analysis, open **Prepare** to choose a collection disc or separate discs, disc capacity and video processing. Check the estimated size before exporting.
 3. Select the audio and subtitle tracks you want on the disc. In **Chapters**, edit the names and timing for each movie.
 4. Open **Menu** to style the disc menu and preview it with the remote. **Appearance → Disc menu language** controls the labels on the disc. Movie titles and your own labels keep their original text.

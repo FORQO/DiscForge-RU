@@ -8,7 +8,7 @@ Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with A
 
 ## Русский
 
-В Studio 1.5.2 доступны русский и английский интерфейсы. Выберите язык в **Language / Язык** и перезапустите программу. [Снимки Windows и macOS](docs/STUDIO_EN.md#native-screenshots) · [Что нового](docs/RELEASE_STUDIO_1.5.2.md)
+В Studio 1.5.2 доступны русский и английский интерфейсы. Выберите язык в меню **Язык** и перезапустите программу. [Снимки Windows и macOS](docs/STUDIO_EN.md#native-screenshots) · [Что нового](docs/RELEASE_STUDIO_1.5.2.md)
 
 <p align="center">
   <img src=".github/forqo-banner.svg" alt="DiskForge · FORQO — Ваша коллекция. Ваше меню. Готовый Blu-ray ISO." width="100%">

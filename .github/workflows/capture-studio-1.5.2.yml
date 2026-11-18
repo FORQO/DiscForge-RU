@@ -1,4 +1,4 @@
-name: Capture native Studio 1.5.2 screenshots
+name: Capture final native Studio 1.5.2 screenshots
 on:
   push:
     branches: [release-capture/studio-1.5.2]
