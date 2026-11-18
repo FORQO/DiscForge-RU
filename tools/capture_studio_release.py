@@ -68,10 +68,16 @@ def main():
             border='#cf8d48', opacity=76, radius=18, font_size=40, padding_x=28, width=2)
         editor.element_layout['catalog:movie:0'] = [150,400,600,90]
         editor.refresh(); editor.select_button('catalog:movie:0')
+        editor.inspector_tabs.setCurrentIndex(2)
+        capture('template-before')
         editor.button_inspector.apply_all_button.click()
         editor.inspector_tabs.setCurrentIndex(2)
 
         capture('menu')
+        for index, name in ((1, 'styles'), (2, 'grid'), (3, 'animation')):
+            editor.button_inspector.tabs.setCurrentIndex(index)
+            capture(name)
+        editor.button_inspector.tabs.setCurrentIndex(0)
         window.set_theme('graphite'); capture('light')
         window.set_theme('blue')
         editor.preview_mode.setChecked(True); capture('preview')
@@ -82,6 +88,11 @@ def main():
         window.rename_chapter(window.chapter_list.indexFromItem(window.chapter_list.item(1)), 'Meeting at the Station' if english else 'Встреча на вокзале')
         capture('chapters')
         window.tabs.setCurrentIndex(0); capture('plan')
+        window.movie_title_edit.setFocus()
+        window.movie_title_edit.setCursorPosition(0)
+        capture('movie-title', window.movie_title_edit)
+        if sys.platform == 'win32':
+            capture('gpu-status', window.gpu_monitor)
         for index, name in ((1, 'audio'), (2, 'subtitles'), (5, 'verify-iso')):
             window.tabs.setCurrentIndex(index)
             capture(name)

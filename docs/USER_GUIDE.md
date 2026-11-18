@@ -2,7 +2,7 @@
 
 [English user guide · Studio 1.5.2 for Windows and macOS](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md#native-screenshots)
 
-Иллюстрации русского интерфейса ниже сохранены для справки по предыдущим версиям.
+Снимки показывают английский интерфейс Studio 1.5.2 на Windows.
 
 Studio доступна для Windows 10/11 x64 и macOS Apple Silicon. Слева — библиотека фильмов, в центре — рабочая область, справа — свойства меню. [Обзор интерфейса со скриншотами](STUDIO.md) · [Windows](WINDOWS_STUDIO.md) · [macOS](MACOS.md).
 
@@ -60,7 +60,7 @@ Studio доступна для Windows 10/11 x64 и macOS Apple Silicon. Сле�
 
 Поле интервала и кнопки «Разбить по интервалу» и «Удалить главу» выровнены в общей строке; слайдер находится под ней.
 
-![Переименование глав и управление интервалом](images/chapters-editing.png)
+![Переименование глав и управление интервалом](images/studio-1.5.2/windows/chapters.jpg)
 
 ## 5. Меню
 

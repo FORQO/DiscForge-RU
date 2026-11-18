@@ -1,0 +1,49 @@
+name: Capture native Studio 1.5.2 screenshots
+on:
+  push:
+    branches: [release-capture/studio-1.5.2]
+    paths: ['.github/workflows/capture-studio-1.5.2.yml']
+permissions:
+  contents: read
+jobs:
+  capture:
+    strategy:
+      matrix:
+        include:
+          - {os: windows-latest, platform: windows, python: '3.12'}
+          - {os: macos-15, platform: macos, python: '3.11'}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements.txt
+      - run: python tools/capture_studio_release.py --language en --output build/gallery
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.platform }}
+          path: build/gallery/*.jpg
+          if-no-files-found: error
+  collect:
+    needs: capture
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: docs/images/studio-1.5.2
+      - name: Record native application screenshots on the capture branch
+        run: |
+          set -eu
+          test "$(find docs/images/studio-1.5.2/windows -name '*.jpg' | wc -l)" -eq 19
+          test "$(find docs/images/studio-1.5.2/macos -name '*.jpg' | wc -l)" -eq 18
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- docs/images/studio-1.5.2
+          git commit -m 'Capture English DiskForge Studio on Windows and macOS'
+          git push origin HEAD:refs/heads/release-capture/studio-1.5.2

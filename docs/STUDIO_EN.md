@@ -26,6 +26,12 @@ The screenshots show Studio 1.5.2 running on Windows and macOS with English sele
 | Audio track selection | [Windows](images/studio-1.5.2/windows/audio.jpg) | [macOS](images/studio-1.5.2/macos/audio.jpg) |
 | Subtitles | [Windows](images/studio-1.5.2/windows/subtitles.jpg) | [macOS](images/studio-1.5.2/macos/subtitles.jpg) |
 | Chapter editor | [Windows](images/studio-1.5.2/windows/chapters.jpg) | [macOS](images/studio-1.5.2/macos/chapters.jpg) |
+| Before applying a button style to all movies | [Windows](images/studio-1.5.2/windows/template-before.jpg) | [macOS](images/studio-1.5.2/macos/template-before.jpg) |
+| Button styles | [Windows](images/studio-1.5.2/windows/styles.jpg) | [macOS](images/studio-1.5.2/macos/styles.jpg) |
+| Button grid | [Windows](images/studio-1.5.2/windows/grid.jpg) | [macOS](images/studio-1.5.2/macos/grid.jpg) |
+| Button animation | [Windows](images/studio-1.5.2/windows/animation.jpg) | [macOS](images/studio-1.5.2/macos/animation.jpg) |
+| Editable movie title | [Windows](images/studio-1.5.2/windows/movie-title.jpg) | [macOS](images/studio-1.5.2/macos/movie-title.jpg) |
+| GPU status | [Windows](images/studio-1.5.2/windows/gpu-status.jpg) | Windows only |
 | Button layout | [Windows](images/studio-1.5.2/windows/menu.jpg) | [macOS](images/studio-1.5.2/macos/menu.jpg) |
 | Menu appearance | [Windows](images/studio-1.5.2/windows/appearance.jpg) | [macOS](images/studio-1.5.2/macos/appearance.jpg) |
 | Selected menu object | [Windows](images/studio-1.5.2/windows/object.jpg) | [macOS](images/studio-1.5.2/macos/object.jpg) |
