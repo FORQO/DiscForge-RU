@@ -8,7 +8,7 @@ Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with A
 
 ## Русский
 
-В Studio 1.5.2 доступны русский и английский интерфейсы. Выберите язык в **Language / Язык** и перезапустите программу. [Снимки Windows и macOS](docs/STUDIO_EN.md#native-screenshots) · [Что нового](docs/RELEASE_STUDIO_1.5.2.md)
+В Studio 1.5.2 доступны русский и английский интерфейсы. Выберите язык в меню **Язык** и перезапустите программу. [Снимки Windows и macOS](docs/STUDIO_EN.md#native-screenshots) · [Что нового](docs/RELEASE_STUDIO_1.5.2.md)
 
 <p align="center">
   <img src=".github/forqo-banner.svg" alt="DiskForge · FORQO — Ваша коллекция. Ваше меню. Готовый Blu-ray ISO." width="100%">
@@ -41,11 +41,11 @@ Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with A
 
 [Обновлённый дизайн студии](docs/STUDIO_DESIGN.md): четыре компактных раздела свойств, карточки стилей, панель инструментов холста, отдельные номера эпизодов и фоновые миниатюры фильмов.
 
-![DiskForge Studio 1.5.1: общий стиль всех кнопок](docs/images/studio-1.5.1-menu.jpg)
+![DiskForge Studio 1.5.2: общий стиль всех кнопок](docs/images/studio-1.5.2/windows/menu.jpg)
 
-*Архивные снимки русского интерфейса Studio 1.5.1 сняты на Windows с демонстрационным проектом. Интерфейс приложения настоящий; фильмы и названия в примере демонстрационные. macOS использует тот же редактор, системные шрифты и оформление окна могут отличаться.*
+*Снимки Studio 1.5.2 сделаны в работающем приложении с демонстрационным проектом. Полные галереи Windows и macOS доступны в английском руководстве.*
 
-[Светлая тема](docs/images/studio-1.5.1-light.jpg) · [Предпросмотр с пультом](docs/images/studio-1.5.1-preview.jpg) · [Устройство интерфейса](docs/STUDIO_DESIGN.md).
+[Светлая тема](docs/images/studio-1.5.2/windows/light.jpg) · [Предпросмотр с пультом](docs/images/studio-1.5.2/windows/preview.jpg) · [Устройство интерфейса](docs/STUDIO_DESIGN.md).
 
 ## Быстрый старт
 
@@ -85,7 +85,7 @@ Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with A
 | Редактор глав | Переименование двойным щелчком или F2; импорт из файла, ручное время и разбиение по интервалу |
 | Проводник | «Открыть Blu-ray в VLC» с правильным режимом и комплектной Java |
 
-![План диска и индивидуальные рекомендации](docs/images/studio-1.5.1-plan.jpg)
+![План диска и индивидуальные рекомендации](docs/images/studio-1.5.2/windows/plan.jpg)
 
 Первичный план по метаданным помогает избежать неоправданно большого файла; «Проба качества» дополнительно измеряет VMAF/SSIM выбранных сцен. Выборочная оценка не гарантирует качество всего фильма. **Перекодирование не гарантирует отсутствие потерь.** Совместимые копируемые потоки не уменьшаются ради заполнения общего диска. Если места не хватает, программа объясняет причину. [Расчёт битрейта](docs/BITRATE.md) · [Коллекции и место](docs/COLLECTIONS.md).
 
@@ -95,7 +95,7 @@ Create Blu-ray ISO images and BDMV folders on Windows 10/11 x64 and macOS with A
 
 Один щелчок выбирает элемент, перетаскивание перемещает, маркеры меняют размер. Двойной щелчок редактирует текст, Del удаляет объект. Доступны шрифты, цвет, заливка, форма кнопок, обводка, направляющие и свой фон. В Studio для Windows и macOS доступны светлая и тёмная темы. Язык меню диска — русский или английский.
 
-![Главы выбранного фильма](docs/images/studio-1.5.1-chapters.jpg)
+![Главы выбранного фильма](docs/images/studio-1.5.2/windows/chapters.jpg)
 
 [Аудио](docs/AUDIO.md) · [TrueHD/Atmos](docs/TRUEHD.md) · [Субтитры](docs/SUBTITLES.md) · [Возобновление, GPU и проверки](docs/LOCAL_ENGINE.md).
 

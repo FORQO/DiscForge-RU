@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,12 @@ DOWNLOADS = {
     'java.zip': ('https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_windows_hotspot_8u504b01.zip',
                  '82e2cdc6693737c5998445b31f69668fa0da77c7705121053f6508ac84961123'),
 }
+
+
+def guide_links(source, prefix):
+    """Rebase links when a guide is copied out of the docs directory."""
+    return re.sub(r'(?<=\]\()(?![a-zA-Z][a-zA-Z0-9+.-]*:|#|/)([^)]+)',
+                  lambda match: prefix + match.group(1), source)
 
 
 def digest(path):
@@ -80,10 +87,13 @@ def main():
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(repo/name, app/name)
     shutil.copytree(repo/'docs', app/'docs', dirs_exist_ok=True)
-    (app/'USER_GUIDE.md').write_text((repo/'docs/USER_GUIDE.md').read_text('utf-8').replace('(README.md)', '(docs/README.md)').replace('(AUDIO.md)', '(docs/AUDIO.md)').replace('(SUBTITLES.md)', '(docs/SUBTITLES.md)').replace('(LOCAL_ENGINE.md)', '(docs/LOCAL_ENGINE.md)').replace('(TRUEHD.md)', '(docs/TRUEHD.md)').replace('(COLLECTIONS.md)', '(docs/COLLECTIONS.md)').replace('(BITRATE.md)', '(docs/BITRATE.md)'), encoding='utf-8')
+    user_guide = (repo/'docs/USER_GUIDE.md').read_text(encoding='utf-8')
+    startup = (repo/'docs/WINDOWS_STUDIO.md').read_text(encoding='utf-8')
+    (app/'USER_GUIDE.md').write_text(guide_links(user_guide, 'docs/'), encoding='utf-8')
+    (app/'START-HERE.md').write_text(guide_links(startup, 'docs/'), encoding='utf-8')
     shutil.copy2(repo/'assets/brand/diskforge-logo.png', app/'DiskForge.png')
-    shutil.copy2(repo/'docs/WINDOWS_STUDIO.md', app/'START-HERE.md')
-    shutil.copy2(repo/'docs/WINDOWS_STUDIO.md', output/'README-Windows.md')
+    public_docs = 'https://github.com/FORQO/DiscForge-RU/blob/main/docs/'
+    (output/'README-Windows.md').write_text(guide_links(startup, public_docs), encoding='utf-8')
     report = output/'verification.json'
     subprocess.run([str(app/'DiscForge_RU.exe'), '--self-test', str(report)], timeout=60, check=True,
                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))

@@ -9,8 +9,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: studio-v1.5.2-release
-  cancel-in-progress: false
+  group: studio-qualification-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   tests:
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'

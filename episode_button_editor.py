@@ -240,7 +240,7 @@ class ButtonInspector(QWidget):
         self.editor.button_editor = copy.deepcopy(updated.button_editor)
         self.editor.button_styles = copy.deepcopy(updated.button_styles)
         self.editor.refresh()
-        self.editor.caption.setText(tr('Образец применён ко всем кнопкам проекта. Ctrl+Z — отменить.'))
+        self.editor.caption.setText(tr('Образец применён ко всем кнопкам проекта.'))
 
     def change_number(self, key, value):
         if self.syncing:

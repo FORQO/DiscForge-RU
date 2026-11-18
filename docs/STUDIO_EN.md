@@ -9,7 +9,7 @@ DiskForge turns video files into a Blu-ray ISO or BDMV folder. Build a collectio
 
 ## Create a disc
 
-1. Open **Language / Язык** to choose **English**, **Русский** or **Use system language**. Restart Studio after changing this setting. New installations follow the system and default to English on non-Russian systems.
+1. Open **Language** (Язык in Russian) to choose **English**, **Русский** or **Use system language**. Restart Studio after changing this setting. New installations follow the system and default to English on non-Russian systems.
 2. Add videos or drop them into the window. After analysis, open **Prepare** to choose a collection disc or separate discs, disc capacity and video processing. Check the estimated size before exporting.
 3. Select the audio and subtitle tracks you want on the disc. In **Chapters**, edit the names and timing for each movie.
 4. Open **Menu** to style the disc menu and preview it with the remote. **Appearance → Disc menu language** controls the labels on the disc. Movie titles and your own labels keep their original text.
@@ -26,6 +26,12 @@ The screenshots show Studio 1.5.2 running on Windows and macOS with English sele
 | Audio track selection | [Windows](images/studio-1.5.2/windows/audio.jpg) | [macOS](images/studio-1.5.2/macos/audio.jpg) |
 | Subtitles | [Windows](images/studio-1.5.2/windows/subtitles.jpg) | [macOS](images/studio-1.5.2/macos/subtitles.jpg) |
 | Chapter editor | [Windows](images/studio-1.5.2/windows/chapters.jpg) | [macOS](images/studio-1.5.2/macos/chapters.jpg) |
+| Before applying a button style to all movies | [Windows](images/studio-1.5.2/windows/template-before.jpg) | [macOS](images/studio-1.5.2/macos/template-before.jpg) |
+| Button styles | [Windows](images/studio-1.5.2/windows/styles.jpg) | [macOS](images/studio-1.5.2/macos/styles.jpg) |
+| Button grid | [Windows](images/studio-1.5.2/windows/grid.jpg) | [macOS](images/studio-1.5.2/macos/grid.jpg) |
+| Button animation | [Windows](images/studio-1.5.2/windows/animation.jpg) | [macOS](images/studio-1.5.2/macos/animation.jpg) |
+| Editable movie title | [Windows](images/studio-1.5.2/windows/movie-title.jpg) | [macOS](images/studio-1.5.2/macos/movie-title.jpg) |
+| GPU status | [Windows](images/studio-1.5.2/windows/gpu-status.jpg) | Windows only |
 | Button layout | [Windows](images/studio-1.5.2/windows/menu.jpg) | [macOS](images/studio-1.5.2/macos/menu.jpg) |
 | Menu appearance | [Windows](images/studio-1.5.2/windows/appearance.jpg) | [macOS](images/studio-1.5.2/macos/appearance.jpg) |
 | Selected menu object | [Windows](images/studio-1.5.2/windows/object.jpg) | [macOS](images/studio-1.5.2/macos/object.jpg) |

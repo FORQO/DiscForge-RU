@@ -1,12 +1,12 @@
 # DiskForge Studio 1.5.2 для macOS
 
-[English guide and current Windows and macOS screenshots](STUDIO_EN.md) · [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md)
+Unzip the download, move `DiskForge.app` to Applications, and open it. Change the interface language in the Language menu, then restart DiskForge. [English guide and current Windows and macOS screenshots](https://github.com/FORQO/DiscForge-RU/blob/main/docs/STUDIO_EN.md) · [Studio 1.5.2](https://github.com/FORQO/DiscForge-RU/blob/main/docs/RELEASE_STUDIO_1.5.2.md)
 
 [Studio 1.5.2](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio) для Apple Silicon (M1 и новее). Python, Qt, FFmpeg, ffprobe,
 tsMuxer, Java 8 и модуль UDF 2.50 входят в `.app`. Установка Python или Homebrew для
 запуска готового приложения не требуется. Сборка для Intel здесь не проверена.
 
-Описание выпуска и известные особенности: [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md).
+Описание выпуска и известные особенности: [Studio 1.5.2](https://github.com/FORQO/DiscForge-RU/blob/main/docs/RELEASE_STUDIO_1.5.2.md).
 
 ## Запуск
 
@@ -31,7 +31,7 @@ VLC устанавливается отдельно в `/Applications/VLC.app` �
 Для интерактивных меню BD-J используется комплектная Java 8 arm64 и VLC arm64.
 Если комплектный runtime отсутствует, приложение ищет Java через `JAVA_HOME`, `/usr/libexec/java_home` и стандартные каталоги JDK.
 Отсутствие Java не мешает созданию ISO. Автор проекта подтвердил успешную физическую
-проверку диска на GIEC G2805; подробности находятся в [матрице испытаний](PLAYER_TEST_MATRIX.md).
+проверку диска на GIEC G2805; подробности находятся в [матрице испытаний](https://github.com/FORQO/DiscForge-RU/blob/main/docs/PLAYER_TEST_MATRIX.md).
 В VLC на macOS после конца фильма может оставаться последний кадр, хотя навигация
 меню и повторный запуск работают. Успешная проверка GIEC не закрывает эту особенность VLC.
 

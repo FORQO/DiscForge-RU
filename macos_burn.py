@@ -4,7 +4,7 @@ Only burns an EXISTING image. No DRM processing, no image authoring, no GUI.
 The actual optical drive and a rewritable disc are required for hardware tests.
 """
 from __future__ import annotations
-from studio_locale import tr
+from studio_locale import configure_console_language, tr
 
 import argparse
 from pathlib import Path
@@ -108,4 +108,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    configure_console_language()
     raise SystemExit(main())

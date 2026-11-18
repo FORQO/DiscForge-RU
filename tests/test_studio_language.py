@@ -44,6 +44,11 @@ class StudioLanguageTests(unittest.TestCase):
             window.menu_editor.apply_design(MenuDesign(title, language='ru', labels={'ru:play': 'Моя кнопка'}))
             self.assertEqual(tr('Фильм: {0}\n{1}\nНачало сцены: {2}', title, 'X', '0'),
                              MESSAGES['Фильм: {0}\n{1}\nНачало сцены: {2}'].format(title, 'X', '0'))
+            with patch('main.save_settings', side_effect=OSError('read-only')), patch('main.QMessageBox.warning') as warning:
+                window.language_actions['ru'].trigger()
+                self.assertEqual(window.ui_language, 'en')
+                self.assertTrue(window.language_actions['en'].isChecked())
+                warning.assert_called_once()
             with patch('main.QMessageBox.information'):
                 window.language_actions['ru'].trigger()
             self.assertEqual(settings.load()['ui_language'], 'ru')

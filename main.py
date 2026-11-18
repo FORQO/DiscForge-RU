@@ -711,7 +711,7 @@ class Window(QMainWindow):
             action.setShortcut({tr('Новый'): QKeySequence.New, tr('Открыть проект…'): QKeySequence.Open,
                                 tr('Сохранить проект…'): QKeySequence.Save}[text])
             project.addAction(action)
-        language_menu = self.menuBar().addMenu('Language / Язык')
+        language_menu = self.menuBar().addMenu(tr('Язык'))
         self.language_group = QActionGroup(self)
         self.language_group.setExclusive(True)
         self.language_actions = {}
@@ -796,10 +796,15 @@ class Window(QMainWindow):
     def set_ui_language(self, key):
         if key not in self.language_actions or key == self.ui_language:
             return
+        previous = self.ui_language
         self.ui_language = key
         self.language_actions[key].setChecked(True)
-        self._save_config()
-        QMessageBox.information(self, 'Language / Язык', tr('Новый язык интерфейса появится при следующем запуске DiskForge.'))
+        if not self._save_config():
+            self.ui_language = previous
+            self.language_actions[previous].setChecked(True)
+            QMessageBox.warning(self, tr('Язык'), tr('Не удалось сохранить выбор языка. Проверьте доступ к папке настроек.'))
+            return
+        QMessageBox.information(self, tr('Язык'), tr('Новый язык интерфейса появится при следующем запуске DiskForge.'))
 
     def set_theme(self, key, save=False):
         self.ui_theme = key if key in self.theme_actions else 'graphite'
@@ -843,11 +848,13 @@ class Window(QMainWindow):
         self._update_recommendation()
         self._update_capacity()
 
-    def _save_config(self) -> None:
+    def _save_config(self) -> bool:
         try:
             save_settings(self._config())
         except OSError as exc:
             self._message(tr('Не удалось сохранить настройки: ') + str(exc))
+            return False
+        return True
 
     def _choose_path(self, key: str) -> None:
         if key == 'output':

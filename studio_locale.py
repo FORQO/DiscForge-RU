@@ -24,6 +24,18 @@ def resolve_language(value, system_language):
     return "ru" if str(system_language).replace("_", "-").lower().split("-")[0] == "ru" else "en"
 
 
+def configure_console_language():
+    import locale
+    from settings import load
+
+    global _active, _preference
+    _preference = normalize_preference(load().get("ui_language", "auto"))
+    system = locale.getlocale()[0] or ""
+    # The Windows C runtime may report an English language name, e.g. Russian_Russia.
+    _active = resolve_language(_preference, "ru" if system.lower().startswith("russian") else system)
+    return _active
+
+
 def configure_language(app, value):
     from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 
