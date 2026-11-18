@@ -1,4 +1,5 @@
 """Clean, aspect-correct fullscreen menu simulation."""
+from studio_locale import tr
 from PySide6.QtCore import Qt, QRect, QSize, QMargins
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtWidgets import QDialog, QPushButton, QGridLayout, QVBoxLayout, QWidget, QLayout
@@ -8,7 +9,7 @@ class FullscreenPreview(QDialog):
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
-        self.setWindowTitle('Предварительный просмотр — Esc / F11: выход')
+        self.setWindowTitle(tr('Предварительный просмотр — Esc / F11: выход'))
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.StrongFocus)
         layout = QVBoxLayout(self)
@@ -19,14 +20,14 @@ class FullscreenPreview(QDialog):
         row = QGridLayout(bar)
         row.setAlignment(Qt.AlignCenter)
         self._buttons = []
-        for label, action in [('Вверх', 'up'), ('Вниз', 'down'), ('Влево', 'left'), ('Вправо', 'right'),
-                              ('OK', 'enter'), ('Назад', 'back'), ('Главное меню', 'home')]:
+        for label, action in [(tr('Вверх'), 'up'), (tr('Вниз'), 'down'), (tr('Влево'), 'left'), (tr('Вправо'), 'right'),
+                              ('OK', 'enter'), (tr('Назад'), 'back'), (tr('Главное меню'), 'home')]:
             button = QPushButton(label)
             button.setFocusPolicy(Qt.NoFocus)
             button.clicked.connect(lambda checked=False, key=action: self.navigate(key))
             row.addWidget(button, 0, len(self._buttons))
             self._buttons.append(button)
-        close = QPushButton('Закрыть · Esc / F11')
+        close = QPushButton(tr('Закрыть · Esc / F11'))
         close.clicked.connect(self.close)
         close.setFocusPolicy(Qt.NoFocus)
         row.addWidget(close, 0, len(self._buttons))

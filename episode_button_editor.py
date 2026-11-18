@@ -1,4 +1,5 @@
 """Inspector for episode lists. It edits the existing MenuDesign, not a second scene."""
+from studio_locale import tr
 import copy
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -19,28 +20,28 @@ class ButtonInspector(QWidget):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         box = QVBoxLayout(self); box.setContentsMargins(0, 0, 0, 0); box.setSpacing(10)
-        self.selection_title = QLabel('Кнопки эпизодов'); self.selection_title.setObjectName('inspectorHeading')
+        self.selection_title = QLabel(tr('Кнопки эпизодов')); self.selection_title.setObjectName('inspectorHeading')
         box.addWidget(self.selection_title)
-        self.selection_detail = QLabel('Выберите кнопку на холсте')
+        self.selection_detail = QLabel(tr('Выберите кнопку на холсте'))
         self.selection_detail.setObjectName('hint'); self.selection_detail.setWordWrap(True)
         box.addWidget(self.selection_detail)
-        self.apply_all_button = QPushButton('Применить ко всем остальным')
+        self.apply_all_button = QPushButton(tr('Применить ко всем остальным'))
         self.apply_all_button.setObjectName('primary')
         self.apply_all_button.setMinimumWidth(0)
-        self.apply_all_button.setToolTip('Использовать выбранную кнопку как образец оформления и размеров для всех кнопок проекта, включая главы и навигацию. Расстановка выравнивается автоматически; названия, действия и доступность сохраняются. Ctrl+Z — отменить.')
+        self.apply_all_button.setToolTip(tr('Использовать выбранную кнопку как образец оформления и размеров для всех кнопок проекта, включая главы и навигацию. Расстановка выравнивается автоматически; названия, действия и доступность сохраняются. Ctrl+Z — отменить.'))
         self.apply_all_button.clicked.connect(self.apply_to_project)
         box.addWidget(self.apply_all_button)
         self.scope = QComboBox()
-        for text in ('Выбранные кнопки', 'Все на странице', 'Все в проекте'):
+        for text in (tr('Выбранные кнопки'), tr('Все на странице'), tr('Все в проекте')):
             self.scope.addItem(text)
         self.scope.currentIndexChanged.connect(self.sync)
-        self.scope.setAccessibleName('Применить настройки к кнопкам')
+        self.scope.setAccessibleName(tr('Применить настройки к кнопкам'))
         box.addWidget(self.scope)
         self.tabs = QTabWidget(); self.tabs.setObjectName('buttonInspectorTabs'); self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.setMinimumHeight(200)
         self.section_layouts = []
-        for caption in ('Размеры', 'Стиль', 'Сетка', 'Анимация'):
+        for caption in (tr('Размеры'), tr('Стиль'), tr('Сетка'), tr('Анимация')):
             page = QWidget(); page_box = QVBoxLayout(page); page_box.setContentsMargins(0, 12, 0, 8); page_box.setSpacing(12)
             scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setWidget(page)
@@ -55,75 +56,75 @@ class ButtonInspector(QWidget):
             self.section_layouts[section].addWidget(group)
             return form
 
-        geometry = group('Геометрия · px', 0)
-        for key, title, low, high in [('button_width', 'Ширина', 32, 1620), ('button_height', 'Высота', 32, 540),
-                ('padding_x', 'Отступ X', 0, 200), ('padding_y', 'Отступ Y', 0, 200),
-                ('font_size', 'Шрифт', 12, 160), ('radius', 'Скругление', 0, 270)]:
+        geometry = group(tr('Геометрия · px'), 0)
+        for key, title, low, high in [('button_width', tr('Ширина'), 32, 1620), ('button_height', tr('Высота'), 32, 540),
+                ('padding_x', tr('Отступ X'), 0, 200), ('padding_y', tr('Отступ Y'), 0, 200),
+                ('font_size', tr('Шрифт'), 12, 160), ('radius', tr('Скругление'), 0, 270)]:
             self.add_number(geometry, key, title, low, high)
-        reset = QPushButton('Сбросить размеры'); reset.clicked.connect(self.reset_sizes); geometry.addRow(reset)
-        self.layout_form = group('Расположение', 2)
+        reset = QPushButton(tr('Сбросить размеры')); reset.clicked.connect(self.reset_sizes); geometry.addRow(reset)
+        self.layout_form = group(tr('Расположение'), 2)
         self.mode = QComboBox()
-        for text, value in [('Свободное расположение', 'free'), ('Одна колонка', 'column'), ('Сетка', 'grid')]:
+        for text, value in [(tr('Свободное расположение'), 'free'), (tr('Одна колонка'), 'column'), (tr('Сетка'), 'grid')]:
             self.mode.addItem(text, value)
         self.mode.currentIndexChanged.connect(lambda: self.change_layout('mode', self.mode.currentData()))
-        self.layout_form.addRow('Режим', self.mode)
-        self.add_number(self.layout_form, 'columns', 'Колонки', 1, 8)
-        self.add_number(self.layout_form, 'gap_x', 'Промежуток X', 0, 300)
-        self.add_number(self.layout_form, 'gap_y', 'Промежуток Y', 0, 300)
-        self.add_number(self.layout_form, 'snap', 'Шаг сетки', 1, 100)
+        self.layout_form.addRow(tr('Режим'), self.mode)
+        self.add_number(self.layout_form, 'columns', tr('Колонки'), 1, 8)
+        self.add_number(self.layout_form, 'gap_x', tr('Промежуток X'), 0, 300)
+        self.add_number(self.layout_form, 'gap_y', tr('Промежуток Y'), 0, 300)
+        self.add_number(self.layout_form, 'snap', tr('Шаг сетки'), 1, 100)
         self.align = QComboBox()
-        for title, value in [('Слева', 'left'), ('По центру', 'center'), ('Справа', 'right')]:
+        for title, value in [(tr('Слева'), 'left'), (tr('По центру'), 'center'), (tr('Справа'), 'right')]:
             self.align.addItem(title, value)
         self.align.currentIndexChanged.connect(lambda: self.change_layout('align', self.align.currentData()))
-        self.layout_form.addRow('Выравнивание', self.align)
-        self.uniform = QCheckBox('Равные размеры')
+        self.layout_form.addRow(tr('Выравнивание'), self.align)
+        self.uniform = QCheckBox(tr('Равные размеры'))
         self.uniform.toggled.connect(lambda value: self.change_layout('uniform', value))
         self.layout_form.addRow(self.uniform)
         order_row = QHBoxLayout()
-        for text, delta in [('Раньше', -1), ('Позже', 1)]:
+        for text, delta in [(tr('Раньше'), -1), (tr('Позже'), 1)]:
             button = QPushButton(text); button.clicked.connect(lambda _=False, d=delta: self.move_order(d)); order_row.addWidget(button)
         self.layout_form.addRow(order_row)
         from button_style_card import ButtonStyleCard
         cards = QGridLayout(); cards.setSpacing(8)
         self.style_cards = {}
-        for i, (caption, variant) in enumerate((('Контурный', 'outline'), ('Стеклянный', 'glass'), ('Плашка', 'solid'), ('Минималистичный', 'minimal'))):
+        for i, (caption, variant) in enumerate(((tr('Контурный'), 'outline'), (tr('Стеклянный'), 'glass'), (tr('Плашка'), 'solid'), (tr('Минималистичный'), 'minimal'))):
             card = ButtonStyleCard(caption, variant)
             card.clicked.connect(lambda _=False, key=variant: self.apply_preset(self.preset.findData(key)))
             self.style_cards[variant] = card; cards.addWidget(card, i//2, i%2)
         self.section_layouts[1].addLayout(cards)
-        style_form = group('Поверхность', 1)
+        style_form = group(tr('Поверхность'), 1)
         self.preset = QComboBox()
-        self.preset.setPlaceholderText('Текущее оформление')
+        self.preset.setPlaceholderText(tr('Текущее оформление'))
         self.preset.activated.connect(self.apply_preset)
-        style_form.addRow('Стиль', self.preset)
-        for key, title, low, high in [('opacity', 'Заливка %', 0, 100), ('width', 'Контур', 0, 10), ('glow_strength', 'Свечение %', 0, 100)]:
+        style_form.addRow(tr('Стиль'), self.preset)
+        for key, title, low, high in [('opacity', tr('Заливка %'), 0, 100), ('width', tr('Контур'), 0, 10), ('glow_strength', tr('Свечение %'), 0, 100)]:
             self.add_number(style_form, key, title, low, high)
         colors = QHBoxLayout()
         self.colors = {}
-        for key, label in [('fill', 'Фон'), ('text', 'Текст'), ('border', 'Рамка'), ('highlight', 'Акцент')]:
+        for key, label in [('fill', tr('Фон')), ('text', tr('Текст')), ('border', tr('Рамка')), ('highlight', tr('Акцент'))]:
             button = QPushButton(label); button.setMinimumWidth(0)
             button.clicked.connect(lambda _=False, k=key: self.choose_color(k))
             self.colors[key] = button; colors.addWidget(button)
         style_form.addRow(colors)
-        save = QPushButton('Сохранить пресет'); save.clicked.connect(self.save_preset); style_form.addRow(save)
-        reset = QPushButton('Сбросить стиль'); reset.clicked.connect(self.reset_appearance); style_form.addRow(reset)
-        self.numbered = QCheckBox('Номер эпизода')
-        self.numbered.setToolTip('Показывать номер эпизода отдельным блоком перед названием')
+        save = QPushButton(tr('Сохранить пресет')); save.clicked.connect(self.save_preset); style_form.addRow(save)
+        reset = QPushButton(tr('Сбросить стиль')); reset.clicked.connect(self.reset_appearance); style_form.addRow(reset)
+        self.numbered = QCheckBox(tr('Номер эпизода'))
+        self.numbered.setToolTip(tr('Показывать номер эпизода отдельным блоком перед названием'))
         self.numbered.toggled.connect(lambda value: self.change_style({'numbered': value}))
         geometry.addRow(self.numbered)
-        self.disabled = QCheckBox('Недоступна')
-        self.disabled.setToolTip('Кнопка видна, но исключена из навигации и не запускает действие')
+        self.disabled = QCheckBox(tr('Недоступна'))
+        self.disabled.setToolTip(tr('Кнопка видна, но исключена из навигации и не запускает действие'))
         self.disabled.toggled.connect(lambda value: self.change_style({'disabled': value}))
         style_form.addRow(self.disabled)
-        motion = group('Переходы', 3)
+        motion = group(tr('Переходы'), 3)
         self.animation = QComboBox()
-        for text, value in [('Без анимации', 'none'), ('Сдержанная', 'restrained'), ('Кинематографичная', 'cinematic')]:
+        for text, value in [(tr('Без анимации'), 'none'), (tr('Сдержанная'), 'restrained'), (tr('Кинематографичная'), 'cinematic')]:
             self.animation.addItem(text, value)
         self.animation.currentIndexChanged.connect(self.change_animation); motion.addRow(self.animation)
-        note = QLabel('Экспорт BD-J: статичные состояния. Переходы и последовательное появление доступны в предпросмотре.')
+        note = QLabel(tr('Экспорт BD-J: статичные состояния. Переходы и последовательное появление доступны в предпросмотре.'))
         note.setWordWrap(True); note.setObjectName('hint'); motion.addRow(note)
         self.undo, self.redo = editor.undo_canvas, editor.redo_canvas
-        self.advanced_toggle = QPushButton('Дополнительно'); self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle = QPushButton(tr('Дополнительно')); self.advanced_toggle.setCheckable(True)
         self.advanced_toggle.setObjectName('ghost'); self.section_layouts[2].addWidget(self.advanced_toggle)
         self.advanced = QWidget(); self.advanced_layout = QVBoxLayout(self.advanced); self.advanced_layout.setContentsMargins(0, 0, 0, 0)
         self.advanced.hide(); self.advanced_toggle.toggled.connect(self.advanced.setVisible)
@@ -176,8 +177,8 @@ class ButtonInspector(QWidget):
         design = self.editor.current_design(preview=True)
         elements = self.elements()
         selected = [e for e in elements if e['id'] in self.editor.preview.selected_keys or e['id'] == self.editor.selected_button]
-        self.selection_title.setText('Выбрано кнопок: '+str(len(selected)) if len(selected) > 1 else 'Кнопка эпизода' if selected else 'Кнопки эпизодов')
-        detail = selected[0]['shown'] if len(selected) == 1 else 'Ctrl + щелчок — выбрать несколько' if selected else 'Выберите кнопку или примените настройки ко всей странице.'
+        self.selection_title.setText(tr('Выбрано кнопок: ')+str(len(selected)) if len(selected) > 1 else tr('Кнопка эпизода') if selected else tr('Кнопки эпизодов'))
+        detail = selected[0]['shown'] if len(selected) == 1 else tr('Ctrl + щелчок — выбрать несколько') if selected else tr('Выберите кнопку или примените настройки ко всей странице.')
         self.selection_detail.setText(detail)
         self.tabs.setEnabled(bool(self.targets()))
         self.apply_all_button.setEnabled(len(selected) == 1 and selected[0]['id'] == self.editor.selected_button)
@@ -205,7 +206,7 @@ class ButtonInspector(QWidget):
         self.numbered.setChecked(style.get('numbered', True))
         self.animation.setCurrentIndex(self.animation.findData(design.button_editor.get('animation', 'restrained')))
         self.preset.clear()
-        for text, value in [('Контурный', 'outline'), ('Стеклянный', 'glass'), ('Плашка', 'solid'), ('Минималистичный', 'minimal')]:
+        for text, value in [(tr('Контурный'), 'outline'), (tr('Стеклянный'), 'glass'), (tr('Плашка'), 'solid'), (tr('Минималистичный'), 'minimal')]:
             self.preset.addItem(text, value)
         for name in design.button_editor.get('presets', {}):
             self.preset.addItem(name, 'custom:'+name)
@@ -239,7 +240,7 @@ class ButtonInspector(QWidget):
         self.editor.button_editor = copy.deepcopy(updated.button_editor)
         self.editor.button_styles = copy.deepcopy(updated.button_styles)
         self.editor.refresh()
-        self.editor.caption.setText('Образец применён ко всем кнопкам проекта. Ctrl+Z — отменить.')
+        self.editor.caption.setText(tr('Образец применён ко всем кнопкам проекта.'))
 
     def change_number(self, key, value):
         if self.syncing:
@@ -272,7 +273,7 @@ class ButtonInspector(QWidget):
         targets = self.targets()
         if not targets:
             return
-        color = QColorDialog.getColor(QColor(button_style(self.editor.current_design(preview=True), targets[0])[key]), self, 'Цвет кнопок')
+        color = QColorDialog.getColor(QColor(button_style(self.editor.current_design(preview=True), targets[0])[key]), self, tr('Цвет кнопок'))
         if color.isValid():
             self.change_style({key: color.name()})
 
@@ -280,11 +281,11 @@ class ButtonInspector(QWidget):
         targets = self.targets()
         if not targets:
             return
-        name, ok = QInputDialog.getText(self, 'Сохранить оформление', 'Название пресета (до 60 символов):')
+        name, ok = QInputDialog.getText(self, tr('Сохранить оформление'), tr('Название пресета (до 60 символов):'))
         if ok and name.strip():
             presets = self.editor.button_editor.setdefault('presets', {})
             if len(name.strip()) > 60 or len(presets) >= 100:
-                self.editor.caption.setText('Слишком длинное название или достигнут предел пресетов.'); return
+                self.editor.caption.setText(tr('Слишком длинное название или достигнут предел пресетов.')); return
             presets[name.strip()] = appearance(button_style(self.editor.current_design(preview=True), targets[0]))
             self.editor.refresh()
 
@@ -334,7 +335,7 @@ class ButtonInspector(QWidget):
                 current = self.elements()
                 rects = [check.layout.get(e['id'], list(e['rect'].getRect())) for e in current]
                 if any(overlaps(rect, rects[:i]+rects[i+1:]) for i, rect in enumerate(rects)):
-                    raise ValueError('Сброс размеров приводит к пересечению кнопок. Сначала освободите место.')
+                    raise ValueError(tr('Сброс размеров приводит к пересечению кнопок. Сначала освободите место.'))
             self.editor.refresh()
         except ValueError as exc:
             self.editor.element_layout, self.editor.button_editor, self.editor.button_styles = before
@@ -384,7 +385,7 @@ class ButtonInspector(QWidget):
             rect[2 if key == 'button_width' else 3] = value
             if rect[0]+rect[2] > 1920 or rect[1]+rect[3] > 1080:
                 self.editor.element_layout, self.editor.button_editor = before
-                self.editor.caption.setText('Размер выходит за границы меню.'); self.sync(); return
+                self.editor.caption.setText(tr('Размер выходит за границы меню.')); self.sync(); return
             self.editor.element_layout[element['id']] = rect
         configs = self.editor.button_editor.setdefault('pages', {})
         scopes = list(configs) if self.scope.currentIndex() == 2 else [self.scope_key()]
@@ -409,7 +410,7 @@ class ButtonInspector(QWidget):
             if page_layout(check, self.scope_key())['mode'] == 'free':
                 rects = [self.editor.element_layout.get(e['id'], [e['rect'].x(), e['rect'].y(), e['rect'].width(), e['rect'].height()]) for e in self.elements()]
                 if any(overlaps(rect, rects[:i]+rects[i+1:]) for i, rect in enumerate(rects)):
-                    raise ValueError('Кнопки пересекаются. Уменьшите размер или освободите место.')
+                    raise ValueError(tr('Кнопки пересекаются. Уменьшите размер или освободите место.'))
             self.editor.refresh()
         except ValueError as exc:
             self.editor.element_layout, self.editor.button_editor = before

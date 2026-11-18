@@ -1,4 +1,5 @@
 """Inspect real NAL types: container key-frame flags alone do not prove IDR GOPs."""
+from studio_locale import tr
 import queue
 import re
 import subprocess
@@ -22,7 +23,7 @@ class IDRCheck:
         if self.idr:
             self.last_idr = self.frames
         if self.last_idr is None or self.frames - self.last_idr >= self.fps + .01:
-            raise ValueError('не подтверждены закрытые GOP с IDR не реже одной секунды')
+            raise ValueError(tr('не подтверждены закрытые GOP с IDR не реже одной секунды'))
         self.frames += 1
 
     def nal(self, data):
@@ -30,14 +31,14 @@ class IDRCheck:
             return
         kind = data[0] & 31
         if data[0] & 0x80 or kind in (2,3,4,14,15,19,20,21):
-            raise ValueError('повреждённый или неподдерживаемый расширенный NAL AVC')
+            raise ValueError(tr('повреждённый или неподдерживаемый расширенный NAL AVC'))
         if kind == 9:
             self.finish_picture()
             self.in_picture, self.idr = True, False
             self.has_slice = False
         elif kind in (1, 5):
             if not self.in_picture:
-                raise ValueError('не удалось разделить AVC на кадры')
+                raise ValueError(tr('не удалось разделить AVC на кадры'))
             self.idr |= kind == 5
             self.has_slice = True
 
@@ -54,11 +55,11 @@ class IDRCheck:
             else:
                 self.buffer = self.buffer[last.start():]
         if len(self.buffer) > 20_000_000:
-            raise ValueError('слишком большой или повреждённый NAL')
+            raise ValueError(tr('слишком большой или повреждённый NAL'))
         if final:
             self.finish_picture()
             if self.frames < 2:
-                raise ValueError('AVC не содержит проверяемой последовательности кадров')
+                raise ValueError(tr('AVC не содержит проверяемой последовательности кадров'))
 
 
 def inspect_idr(info, ffmpeg, cancel):
@@ -91,9 +92,9 @@ def inspect_idr(info, ffmpeg, cancel):
     try:
         while True:
             if cancel.is_set():
-                raise RuntimeError('Анализ отменён.')
+                raise RuntimeError(tr('Анализ отменён.'))
             if time.monotonic() - last > 60:
-                raise ValueError('Проверка IDR не отвечает.')
+                raise ValueError(tr('Проверка IDR не отвечает.'))
             try:
                 data = chunks.get(timeout=.1)
             except queue.Empty:
@@ -103,7 +104,7 @@ def inspect_idr(info, ffmpeg, cancel):
             if not data:
                 break
         if proc.wait(timeout=5):
-            raise ValueError('Не удалось проверить IDR потока.')
+            raise ValueError(tr('Не удалось проверить IDR потока.'))
     finally:
         stop.set()
         if proc.poll() is None:

@@ -3,6 +3,7 @@
 Creates chapter-enabled BDMV/ISO with customizable BD-J menus.
 """
 from __future__ import annotations
+from studio_locale import active_language, configure_language, preference, tr
 
 import json
 import os
@@ -43,7 +44,7 @@ from collection_titles import movie_title, normalize_names, validate_title
 from bitrate_advisor import recommend as recommend_bitrate, analyze_bitrate, planned_rate, normalize_rates
 from video_treatment import enhancement_for, project_enhancements
 
-VERSION = '1.5.1'
+VERSION = '1.5.2'
 LOGO = Path(__file__).parent / 'assets/brand/diskforge-logo.png'
 ICON = Path(__file__).parent / 'assets/brand/diskforge.ico'
 
@@ -81,12 +82,12 @@ def timecode(seconds: float) -> str:
 def parse_timecode(code: str) -> float:
     parts = code.strip().split(':')
     if len(parts) != 3:
-        raise ValueError('Формат времени: ЧЧ:ММ:СС.ммм')
+        raise ValueError(tr('Формат времени: ЧЧ:ММ:СС.ммм'))
     import math
     h, m = (int(p) for p in parts[:2])
     s = float(parts[2])
     if not math.isfinite(s) or min(h, m, s) < 0 or m > 59 or s >= 60:
-        raise ValueError('Недопустимое время')
+        raise ValueError(tr('Недопустимое время'))
     return float(h * 3600 + m * 60 + s)
 
 
@@ -113,13 +114,13 @@ class ScanThread(QThread):
         for path in self.paths:
             try:
                 if self.cancel_event.is_set():
-                    self.result.emit(path, None, 'Анализ отменён.')
+                    self.result.emit(path, None, tr('Анализ отменён.'))
                     continue
                 info = probe_media(path, self.probe)
-                self.message.emit('Проверяем потоки: ' + Path(path).name + ' (без декодирования; может потребоваться чтение всего файла)…')
+                self.message.emit(tr('Проверяем потоки: ') + Path(path).name + tr(' (без декодирования; может потребоваться чтение всего файла)…'))
                 report = analyze_copy(info, self.probe, self.ffmpeg, self.cancel_event)
                 info = replace(info, copy_report=report)
-                self.message.emit('Подбираем битрейт видео: ' + Path(path).name)
+                self.message.emit(tr('Подбираем битрейт видео: ') + Path(path).name)
                 analysis = analyze_bitrate(info, self.probe, self.cancel_event)
                 self.result.emit(path, replace(info, video_analysis=analysis), '')
             except Exception as exc:  # user-supplied corrupt media must not crash UI
@@ -168,7 +169,7 @@ class BuildThread(QThread):
         try:
             prepared = []
             selected_modes = []
-            self.timing_changed.emit('Проверка режима обработки', -1)
+            self.timing_changed.emit(tr('Проверка режима обработки'), -1)
             for media, chapters in self.jobs:
                 requested = 'encode' if enhancement_for(self.config, media.path) else self.processing_mode
                 if self.config.get('collection'):
@@ -183,7 +184,7 @@ class BuildThread(QThread):
             if sys.platform == 'darwin':
                 self.nvenc = False
             if self.auto and 'encode' in selected_modes and sys.platform != 'darwin':
-                self.timing_changed.emit('Проверка видеокарты', -1)
+                self.timing_changed.emit(tr('Проверка видеокарты'), -1)
                 self.nvenc = nvenc_available(self.config['ffmpeg'], self.cancel_event, self.message.emit)
             if self.config.get('collection'):
                 from disc_collection import create_collection
@@ -214,8 +215,8 @@ class BuildThread(QThread):
         estimate = BuildEstimate(plans)
         total_duration = sum(m.duration for m, _ in self.jobs)
         done_duration = 0
-        names = {'encode': 'Кодирование видео и звука', 'mux': 'Сборка Blu-ray',
-                 'menu': 'Меню и проверка BDMV', 'iso': 'Создание ISO', 'verify': 'Проверка результата'}
+        names = {'encode': tr('Кодирование видео и звука'), 'mux': tr('Сборка Blu-ray'),
+                 'menu': tr('Меню и проверка BDMV'), 'iso': tr('Создание ISO'), 'verify': tr('Проверка результата')}
         for i, (media, chapters) in enumerate(self.jobs, 1):
             if self.cancel_event.is_set():
                 all_successful = False
@@ -225,7 +226,7 @@ class BuildThread(QThread):
             def progress(value):
                 self.progress_changed.emit(min(99, int((done_duration+media.duration*value/100)/total_duration*100)))
             def timing(stage, fraction):
-                label = ('Копирование потоков' if selected_modes[i-1]=='copy' else 'Копирование видео + AC-3') if stage=='encode' and selected_modes[i-1]!='encode' else names[stage]
+                label = (tr('Копирование потоков') if selected_modes[i-1]=='copy' else tr('Копирование видео + AC-3')) if stage=='encode' and selected_modes[i-1]!='encode' else names[stage]
                 self.timing_changed.emit(f'{i}/{len(self.jobs)} · {label}', estimate.update(i-1, stage, fraction))
             def verification(event):
                 self.verification_changed.emit(event)
@@ -266,6 +267,7 @@ class Window(QMainWindow):
         self.setFont(QApplication.font())
         self.setWindowIcon(QIcon(str(ICON)))
         self.ui_theme = 'graphite'
+        self.ui_language = preference()
         self.setWindowTitle('DiskForge Studio · ' + VERSION)
         self.resize(1380, 850)
         self.setMinimumSize(1040, 680)
@@ -324,9 +326,9 @@ class Window(QMainWindow):
         header.setContentsMargins(20, 12, 20, 12)
         brand = QLabel('DiskForge'); brand.setObjectName('studioBrand')
         header.addWidget(brand)
-        self.project_heading = QLabel('Новый проект'); self.project_heading.setObjectName('studioStatus')
+        self.project_heading = QLabel(tr('Новый проект')); self.project_heading.setObjectName('studioStatus')
         header.addSpacing(14); header.addWidget(self.project_heading); header.addStretch()
-        save_project = QPushButton('Сохранить проект'); save_project.setObjectName('ghost')
+        save_project = QPushButton(tr('Сохранить проект')); save_project.setObjectName('ghost')
         save_project.clicked.connect(self.save_project); header.addWidget(save_project)
         root.addWidget(header_widget)
 
@@ -340,7 +342,7 @@ class Window(QMainWindow):
         left_box = QVBoxLayout(left)
         left_box.setContentsMargins(14, 18, 14, 14)
         left_box.setSpacing(10)
-        self.library_heading = QLabel('ФИЛЬМЫ'); self.library_heading.setObjectName('studioSection')
+        self.library_heading = QLabel(tr('ФИЛЬМЫ')); self.library_heading.setObjectName('studioSection')
         left_box.addWidget(self.library_heading)
         self.movies = MovieList()
         self.movies.setObjectName('studioMovies')
@@ -350,25 +352,25 @@ class Window(QMainWindow):
         self.movies.setTextElideMode(Qt.ElideMiddle)
         self.movies.setDragDropMode(QListWidget.InternalMove)
         self.movies.setDefaultDropAction(Qt.MoveAction)
-        self.movies.setToolTip('Порядок в списке — порядок фильмов в меню диска. Перетаскивайте строки или используйте стрелки.')
+        self.movies.setToolTip(tr('Порядок в списке — порядок фильмов в меню диска. Перетаскивайте строки или используйте стрелки.'))
         self.movies.currentItemChanged.connect(lambda *_: self._select_media())
         self.movies.model().rowsMoved.connect(lambda *_: self._refresh_buttons())
         left_box.addWidget(self.movies, 1)
-        left_box.addWidget(QLabel('Название фильма в меню'))
+        left_box.addWidget(QLabel(tr('Название фильма в меню')))
         self.movie_title_edit = QLineEdit()
         self.movie_title_edit.setMaxLength(80)
         self.movie_title_edit.setClearButtonEnabled(True)
-        self.movie_title_edit.setToolTip('До 80 символов. Очистите поле, чтобы вернуть имя файла. Сам файл не переименовывается.')
+        self.movie_title_edit.setToolTip(tr('До 80 символов. Очистите поле, чтобы вернуть имя файла. Сам файл не переименовывается.'))
         self.movie_title_edit.textEdited.connect(self._rename_movie)
         self.movies.itemDoubleClicked.connect(lambda *_: self._focus_movie_title())
         left_box.addWidget(self.movie_title_edit)
         order_row = QHBoxLayout()
-        order_row.addWidget(QLabel('Порядок'), 1)
+        order_row.addWidget(QLabel(tr('Порядок')), 1)
         self.movie_up = QPushButton()
         self.movie_up.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/arrow-up.svg')))
         self.movie_down = QPushButton()
         self.movie_down.setIcon(QIcon(str(Path(__file__).parent / 'assets/icons/arrow-down.svg')))
-        for button, direction, caption in ((self.movie_up, -1, 'Переместить фильм вверх'), (self.movie_down, 1, 'Переместить фильм вниз')):
+        for button, direction, caption in ((self.movie_up, -1, tr('Переместить фильм вверх')), (self.movie_down, 1, tr('Переместить фильм вниз'))):
             button.setFixedWidth(36)
             button.setToolTip(caption)
             button.setAccessibleName(caption)
@@ -376,21 +378,21 @@ class Window(QMainWindow):
             order_row.addWidget(button)
         left_box.addLayout(order_row)
         line = QHBoxLayout()
-        self.add_button = QPushButton('+ Добавить')
+        self.add_button = QPushButton(tr('+ Добавить'))
         self.add_button.clicked.connect(self.add_media)
-        self.remove_button = QPushButton('Удалить')
+        self.remove_button = QPushButton(tr('Удалить'))
         self.remove_button.clicked.connect(self.remove_media)
         line.addWidget(self.add_button, 1)
         line.addWidget(self.remove_button)
         left_box.addLayout(line)
         self.disc_mode = QComboBox()
-        self.disc_mode.addItems(['Общий диск', 'Отдельные диски'])
+        self.disc_mode.addItems([tr('Общий диск'), tr('Отдельные диски')])
         left_box.addWidget(self.disc_mode)
         self.capacity_bar = QProgressBar()
         self.capacity_bar.setRange(0, 25000)
         self.capacity_bar.setObjectName('capacityMeter')
         self.capacity_bar.setTextVisible(False)
-        self.capacity_summary = QLabel('BD25 · 0 / 25 ГБ')
+        self.capacity_summary = QLabel(tr('BD25 · 0 / 25 ГБ'))
         self.capacity_summary.setObjectName('studioStatus')
         left_box.addWidget(self.capacity_summary)
         left_box.addWidget(self.capacity_bar)
@@ -398,17 +400,17 @@ class Window(QMainWindow):
         self.capacity_label.setWordWrap(True)
         self.capacity_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.capacity_label.hide()
-        capacity_details = QPushButton('Расчёт места'); capacity_details.setObjectName('ghost')
-        capacity_details.clicked.connect(lambda: QMessageBox.information(self, 'Заполнение диска', self.capacity_label.text()))
+        capacity_details = QPushButton(tr('Расчёт места')); capacity_details.setObjectName('ghost')
+        capacity_details.clicked.connect(lambda: QMessageBox.information(self, tr('Заполнение диска'), self.capacity_label.text()))
         left_box.addWidget(capacity_details)
-        self.details = QLabel('Перетащите видео в окно или нажмите «Добавить видео».')
+        self.details = QLabel(tr('Перетащите видео в окно или нажмите «Добавить видео».'))
         self.details.setObjectName('details')
         self.details.setWordWrap(True)
         self.details.setMinimumHeight(0)
         self.details.setMaximumHeight(85)
         self.details.hide()
-        file_details = QPushButton('Сведения о файле'); file_details.setObjectName('ghost')
-        file_details.clicked.connect(lambda: QMessageBox.information(self, 'Выбранный фильм', self.details.text()))
+        file_details = QPushButton(tr('Сведения о файле')); file_details.setObjectName('ghost')
+        file_details.clicked.connect(lambda: QMessageBox.information(self, tr('Выбранный фильм'), self.details.text()))
         left_box.addWidget(file_details)
         splitter.addWidget(left)
 
@@ -420,17 +422,17 @@ class Window(QMainWindow):
         welcome = QWidget(); welcome_layout = QVBoxLayout(welcome)
         welcome_layout.setContentsMargins(50, 40, 50, 40)
         welcome_layout.addStretch()
-        welcome_title = QLabel('Ваша коллекция начинается здесь'); welcome_title.setObjectName('studioHeading'); welcome_title.setWordWrap(True)
+        welcome_title = QLabel(tr('Ваша коллекция начинается здесь')); welcome_title.setObjectName('studioHeading'); welcome_title.setWordWrap(True)
         welcome_layout.addWidget(welcome_title)
-        welcome_hint = QLabel('Добавьте фильмы, выберите дорожки и оформите меню Blu-ray.\nВидео можно перетащить прямо в окно.'); welcome_hint.setObjectName('hint'); welcome_hint.setWordWrap(True)
+        welcome_hint = QLabel(tr('Добавьте фильмы, выберите дорожки и оформите меню Blu-ray.\nВидео можно перетащить прямо в окно.')); welcome_hint.setObjectName('hint'); welcome_hint.setWordWrap(True)
         welcome_layout.addWidget(welcome_hint)
         welcome_actions = QHBoxLayout()
-        self.welcome_add = QPushButton('Добавить видео…'); self.welcome_add.setObjectName('primary'); self.welcome_add.clicked.connect(self.add_media)
+        self.welcome_add = QPushButton(tr('Добавить видео…')); self.welcome_add.setObjectName('primary'); self.welcome_add.clicked.connect(self.add_media)
         welcome_actions.addWidget(self.welcome_add); welcome_actions.addStretch(); welcome_layout.addLayout(welcome_actions)
-        existing = QPushButton('Открыть готовый ISO'); existing.setObjectName('ghost')
+        existing = QPushButton(tr('Открыть готовый ISO')); existing.setObjectName('ghost')
         existing.clicked.connect(lambda: (self.tabs.setCurrentIndex(5), self._studio_update(), self.image_tools.choose()))
         welcome_layout.addWidget(existing, 0, Qt.AlignLeft)
-        early_menu = QPushButton('Оформить меню заранее'); early_menu.setObjectName('ghost')
+        early_menu = QPushButton(tr('Оформить меню заранее')); early_menu.setObjectName('ghost')
         early_menu.clicked.connect(self._open_empty_menu)
         welcome_layout.addWidget(early_menu, 0, Qt.AlignLeft)
         welcome_layout.addStretch()
@@ -444,98 +446,93 @@ class Window(QMainWindow):
         build_tab = QWidget()
         build_box = QVBoxLayout(build_tab)
         build_box.setSpacing(12)
-        profile_box = QGroupBox('Параметры Blu-ray')
+        profile_box = QGroupBox(tr('Параметры Blu-ray'))
         form = QFormLayout(profile_box)
         self.profile = QComboBox()
         self.profile.addItems(list(CAPACITIES))
         self.profile.setCurrentText('BD25')
-        form.addRow('Ёмкость носителя:', self.profile)
+        form.addRow(tr('Ёмкость носителя:'), self.profile)
         self.output_mode = QComboBox()
-        self.output_mode.addItems(['ISO-образ', 'Папка BDMV'])
-        form.addRow('Формат результата:', self.output_mode)
+        self.output_mode.addItems([tr('ISO-образ'), tr('Папка BDMV')])
+        form.addRow(tr('Формат результата:'), self.output_mode)
         self.processing_mode = QComboBox()
-        self.processing_mode.addItems(['Авто — по анализу фильма', 'Без перекодирования видео и звука', 'Копировать видео, обработать звук', 'Перекодировать видео · звук по настройкам'])
-        form.addRow('Обработка фильма:', self.processing_mode)
+        self.processing_mode.addItems([tr('Авто — по анализу фильма'), tr('Без перекодирования видео и звука'), tr('Копировать видео, обработать звук'), tr('Перекодировать видео · звук по настройкам')])
+        form.addRow(tr('Обработка фильма:'), self.processing_mode)
         self.bitrate_policy = QComboBox()
-        self.bitrate_policy.addItem('Авто — отдельно для каждого фильма', 'auto')
-        self.bitrate_policy.addItem('Ручной битрейт', 'manual')
-        form.addRow('Битрейт при перекодировании:', self.bitrate_policy)
+        self.bitrate_policy.addItem(tr('Авто — отдельно для каждого фильма'), 'auto')
+        self.bitrate_policy.addItem(tr('Ручной битрейт'), 'manual')
+        form.addRow(tr('Битрейт при перекодировании:'), self.bitrate_policy)
         self.collection_bitrate = QSpinBox()
         self.collection_bitrate.setRange(5, 28)
         self.collection_bitrate.setValue(12)
-        self.collection_bitrate.setSuffix(' Мбит/с')
-        self.collection_bitrate.setToolTip('Для общего диска при перекодировании. Копируемые потоки сохраняют исходный размер. Битрейт не уменьшается автоматически при добавлении фильмов.')
-        form.addRow(SliderValue(self.collection_bitrate, 'Общий ручной битрейт'))
-        self.custom_bitrate = QCheckBox('Задать битрейт для выбранного фильма')
+        self.collection_bitrate.setSuffix(tr(' Мбит/с'))
+        self.collection_bitrate.setToolTip(tr('Для общего диска при перекодировании. Копируемые потоки сохраняют исходный размер. Битрейт не уменьшается автоматически при добавлении фильмов.'))
+        form.addRow(SliderValue(self.collection_bitrate, tr('Общий ручной битрейт')))
+        self.custom_bitrate = QCheckBox(tr('Задать битрейт для выбранного фильма'))
         self.movie_bitrate = QDoubleSpinBox()
         self.movie_bitrate.setRange(5, 28)
         self.movie_bitrate.setDecimals(1)
         self.movie_bitrate.setSingleStep(.5)
-        self.movie_bitrate.setSuffix(' Мбит/с')
+        self.movie_bitrate.setSuffix(tr(' Мбит/с'))
         form.addRow(SliderValue(self.movie_bitrate, self.custom_bitrate))
-        self.recommendation = QLabel('Добавьте фильм: программа проверит возможность сборки без потери качества.')
+        self.recommendation = QLabel(tr('Добавьте фильм: программа проверит возможность сборки без потери качества.'))
         self.recommendation.setWordWrap(True)
         self.recommendation.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.recommendation.setObjectName('hint')
-        self.apply_recommendation = QPushButton('Применить автоподбор ко всем фильмам')
-        self.apply_recommendation.setToolTip('Копировать совместимое видео, автоматически подобрать битрейт остальных фильмов, сбросить индивидуальные битрейты и выбрать сбалансированное кодирование.')
+        self.apply_recommendation = QPushButton(tr('Применить автоподбор ко всем фильмам'))
+        self.apply_recommendation.setToolTip(tr('Копировать совместимое видео, автоматически подобрать битрейт остальных фильмов, сбросить индивидуальные битрейты и выбрать сбалансированное кодирование.'))
         self.apply_recommendation.clicked.connect(self._use_recommendation)
         form.addRow(self.recommendation)
         form.addRow(self.apply_recommendation)
         self.profile.currentTextChanged.connect(self._update_recommendation)
 
         self.encoder = QComboBox()
-        self.encoder.addItems(['CPU x264 — надёжнее', 'NVIDIA NVENC — быстрее, экспериментально', 'Авто — NVIDIA при наличии, иначе CPU'])
+        self.encoder.addItems([tr('CPU x264 — надёжнее'), tr('NVIDIA NVENC — быстрее, экспериментально'), tr('Авто — NVIDIA при наличии, иначе CPU')])
         self.encoder.setCurrentIndex(2)
-        self.encoder.setToolTip('Используется только при перекодировании видео. При копировании видеокарта не нужна.')
-        form.addRow('Видеокодер:', self.encoder)
+        self.encoder.setToolTip(tr('Используется только при перекодировании видео. При копировании видеокарта не нужна.'))
+        form.addRow(tr('Видеокодер:'), self.encoder)
         self.encode_speed = QComboBox()
-        self.encode_speed.addItems(['Быстро', 'Сбалансированно'])
+        self.encode_speed.addItems([tr('Быстро'), tr('Сбалансированно')])
         self.encode_speed.setCurrentIndex(1)
-        self.encode_speed.setToolTip('Быстро: NVENC p3 / x264 fast. Сбалансированно: p5 / medium — лучше детализация при том же битрейте.')
-        form.addRow('Скорость:', self.encode_speed)
-        self.gpu_frames = QCheckBox('NVDEC + обработка кадров на GPU, если поддерживается')
+        self.encode_speed.setToolTip(tr('Быстро: NVENC p3 / x264 fast. Сбалансированно: p5 / medium — лучше детализация при том же битрейте.'))
+        form.addRow(tr('Скорость:'), self.encode_speed)
+        self.gpu_frames = QCheckBox(tr('NVDEC + обработка кадров на GPU, если поддерживается'))
         self.gpu_frames.setChecked(True)
-        self.gpu_frames.setToolTip('Перед сборкой проверяется реальный файл. При несовместимости фильтры работают на CPU, кодер — NVENC.')
+        self.gpu_frames.setToolTip(tr('Перед сборкой проверяется реальный файл. При несовместимости фильтры работают на CPU, кодер — NVENC.'))
         if sys.platform == 'darwin':
             self.encoder.model().item(1).setEnabled(False)
-            self.encoder.setItemText(2, 'Авто — CPU x264 на Mac')
+            self.encoder.setItemText(2, tr('Авто — CPU x264 на Mac'))
             self.gpu_frames.setEnabled(False)
-            self.gpu_frames.setToolTip('NVIDIA CUDA недоступна на Mac. Используется CPU x264.')
+            self.gpu_frames.setToolTip(tr('NVIDIA CUDA недоступна на Mac. Используется CPU x264.'))
         form.addRow('', self.gpu_frames)
-        self.enhance_video = QCheckBox('Бережное улучшение выбранного фильма · без AI')
-        self.enhance_video.setToolTip('Только для фильма, выбранного слева. Требует его перекодирования. '
-            'Декодирование и фильтры работают на CPU; NVENC можно оставить включённым. Остальные фильмы не меняются.')
+        self.enhance_video = QCheckBox(tr('Бережное улучшение выбранного фильма · без AI'))
+        self.enhance_video.setToolTip(tr('Только для фильма, выбранного слева. Требует его перекодирования. Декодирование и фильтры работают на CPU; NVENC можно оставить включённым. Остальные фильмы не меняются.'))
         form.addRow('', self.enhance_video)
         self.quiet_mode = QComboBox()
-        for caption, rate in [('Выключен · максимальная скорость', 0.0),
-                              ('Тихий · 0,5× длительности видео', 0.5),
-                              ('Тихий · 1× длительности видео', 1.0),
-                              ('Умеренный · 2× длительности видео', 2.0)]:
+        for caption, rate in [(tr('Выключен · максимальная скорость'), 0.0),
+                              (tr('Тихий · 0,5× длительности видео'), 0.5),
+                              (tr('Тихий · 1× длительности видео'), 1.0),
+                              (tr('Умеренный · 2× длительности видео'), 2.0)]:
             self.quiet_mode.addItem(caption, rate)
-        self.quiet_mode.setToolTip('Лимит темпа обработки при перекодировании и в пробах. '
-            '1×: час видео обрабатывается не быстрее примерно часа; 0,5× — двух часов. '
-            'Не ограничивает мощность видеокарты и не гарантирует её температуру. Копирование не замедляется.')
-        form.addRow('Тихий режим:', self.quiet_mode)
+        self.quiet_mode.setToolTip(tr('Лимит темпа обработки при перекодировании и в пробах. 1×: час видео обрабатывается не быстрее примерно часа; 0,5× — двух часов. Не ограничивает мощность видеокарты и не гарантирует её температуру. Копирование не замедляется.'))
+        form.addRow(tr('Тихий режим:'), self.quiet_mode)
         self.enhance_video.toggled.connect(self._treatment_changed)
-        treatment_note = QLabel('Улучшение — только для выбранного фильма; фильтры CPU, кодер выбранный. '
-            'В режиме «Авто» остальные совместимые фильмы копируются без перекодирования. '
-            'Тихий режим общий для всей очереди.')
+        treatment_note = QLabel(tr('Улучшение — только для выбранного фильма; фильтры CPU, кодер выбранный. В режиме «Авто» остальные совместимые фильмы копируются без перекодирования. Тихий режим общий для всей очереди.'))
         treatment_note.setWordWrap(True)
         treatment_note.setObjectName('hint')
         form.addRow('', treatment_note)
-        self.quality_trial_button = QPushButton('Проба качества…')
-        self.quality_trial_button.setToolTip('Закодировать короткую сцену с разными битрейтами, сравнить кадры и применить выбранный битрейт к этому фильму.')
+        self.quality_trial_button = QPushButton(tr('Проба качества…'))
+        self.quality_trial_button.setToolTip(tr('Закодировать короткую сцену с разными битрейтами, сравнить кадры и применить выбранный битрейт к этому фильму.'))
         self.quality_trial_button.clicked.connect(self._quality_trial)
         form.addRow('', self.quality_trial_button)
-        resume_note = QLabel('Завершённые этапы сохраняются автоматически. После ошибки откройте последнюю сборку и нажмите «Создать ISO…».')
+        resume_note = QLabel(tr('Завершённые этапы сохраняются автоматически. После ошибки откройте последнюю сборку и нажмите «Создать ISO…».'))
         resume_note.setWordWrap(True)
         form.addRow('', resume_note)
         build_box.addWidget(profile_box)
-        plan_box = QGroupBox('План диска · оценка после обработки')
+        plan_box = QGroupBox(tr('План диска · оценка после обработки'))
         plan_layout = QVBoxLayout(plan_box)
         self.bitrate_table = QTableWidget(0, 5)
-        self.bitrate_table.setHorizontalHeaderLabels(['Фильм', 'Видео исходника', 'Обработка', 'Видео на диске', 'Потоки, ГБ'])
+        self.bitrate_table.setHorizontalHeaderLabels([tr('Фильм'), tr('Видео исходника'), tr('Обработка'), tr('Видео на диске'), tr('Потоки, ГБ')])
         self.bitrate_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.bitrate_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.bitrate_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -546,18 +543,17 @@ class Window(QMainWindow):
         self.bitrate_table.setMaximumHeight(220)
         self.bitrate_table.itemClicked.connect(lambda item: self._request_movie(self.bitrate_table.item(item.row(), 0).data(Qt.UserRole)))
         plan_layout.addWidget(self.bitrate_table)
-        plan_note = QLabel('Копирование сохраняет видео без потерь. Автобитрейт — оценка для перекодирования, а не гарантия исходного качества. '
-                           'В строках учтены видео, выбранный звук и субтитры; меню и общий резерв добавлены на шкале слева. Добавление фильма не уменьшает битрейт остальных.')
+        plan_note = QLabel(tr('Копирование сохраняет видео без потерь. Автобитрейт — оценка для перекодирования, а не гарантия исходного качества. В строках учтены видео, выбранный звук и субтитры; меню и общий резерв добавлены на шкале слева. Добавление фильма не уменьшает битрейт остальных.'))
         plan_note.setWordWrap(True)
         plan_layout.addWidget(plan_note)
         build_box.insertWidget(0, plan_box)
 
-        path_box = QGroupBox('Инструменты и выходная папка')
+        path_box = QGroupBox(tr('Инструменты и выходная папка'))
         paths = QFormLayout(path_box)
         self.path_fields: dict[str, QLineEdit] = {}
         for key, label in [
             ('ffmpeg', 'ffmpeg:'), ('ffprobe', 'ffprobe:'),
-            ('tsmuxer', 'tsMuxer:'), ('output', 'Готовые диски:'),
+            ('tsmuxer', 'tsMuxer:'), ('output', tr('Готовые диски:')),
         ]:
             edit = QLineEdit()
             self.path_fields[key] = edit
@@ -569,13 +565,11 @@ class Window(QMainWindow):
             row.addWidget(browse)
             paths.addRow(label, row)
         path_box.setVisible(False)
-        tools_toggle = QPushButton('Пути инструментов и папка результата'); tools_toggle.setObjectName('ghost'); tools_toggle.setCheckable(True)
+        tools_toggle = QPushButton(tr('Пути инструментов и папка результата')); tools_toggle.setObjectName('ghost'); tools_toggle.setCheckable(True)
         tools_toggle.toggled.connect(path_box.setVisible)
         build_box.addWidget(tools_toggle)
         build_box.addWidget(path_box)
-        info = QLabel('Совместимое видео можно сохранить. При перекодировании: H.264 1080p 23,976 кадр/с. Обработка каждой аудиодорожки выбирается в разделе «Аудио». '
-                      'Выберите аудио и субтитры в соответствующих разделах. '
-                      'Сначала проверьте ISO на программном проигрывателе и бытовом плеере.')
+        info = QLabel(tr('Совместимое видео можно сохранить. При перекодировании: H.264 1080p 23,976 кадр/с. Обработка каждой аудиодорожки выбирается в разделе «Аудио». Выберите аудио и субтитры в соответствующих разделах. Сначала проверьте ISO на программном проигрывателе и бытовом плеере.'))
         info.setWordWrap(True)
         info.setObjectName('hint')
         build_box.addWidget(info)
@@ -583,30 +577,29 @@ class Window(QMainWindow):
         build_scroll = QScrollArea()
         build_scroll.setWidgetResizable(True)
         build_scroll.setWidget(build_tab)
-        self.tabs.addTab(build_scroll, 'Подготовка')
+        self.tabs.addTab(build_scroll, tr('Подготовка'))
         self.audio_panel = AudioPanel()
         self.audio_panel.selection_changed.connect(self._audio_changed)
         self.audio_panel.policy_changed.connect(self._audio_policy_changed)
-        self.tabs.addTab(self.audio_panel, 'Аудио')
+        self.tabs.addTab(self.audio_panel, tr('Аудио'))
 
         self.subtitle_panel = SubtitlePanel()
         self.subtitle_panel.selection_changed.connect(self._subtitles_changed)
-        self.tabs.addTab(self.subtitle_panel, 'Субтитры')
+        self.tabs.addTab(self.subtitle_panel, tr('Субтитры'))
 
         chapter_tab = QWidget()
         chapter_box = QVBoxLayout(chapter_tab)
-        chapter_help = QLabel('Главы — это закладки внутри одного фильма. Кнопка главы в меню запускает фильм с указанного времени.\n'
-                             'Готовые главы импортируются при анализе. Можно добавить свою главу, изменить время или вернуть главы из файла.')
+        chapter_help = QLabel(tr('Главы — это закладки внутри одного фильма. Кнопка главы в меню запускает фильм с указанного времени.\nГотовые главы импортируются при анализе. Можно добавить свою главу, изменить время или вернуть главы из файла.'))
         chapter_help.setWordWrap(True)
         chapter_box.addWidget(chapter_help)
         self.chapter_movie = QComboBox()
         self.chapter_movie.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.chapter_movie.setMinimumContentsLength(20)
-        self.chapter_movie.setAccessibleName('Фильм, которому принадлежат главы')
+        self.chapter_movie.setAccessibleName(tr('Фильм, которому принадлежат главы'))
         self.chapter_movie.currentIndexChanged.connect(lambda *_: self._request_movie(self.chapter_movie.currentData()))
-        chapter_box.addWidget(QLabel('Главы фильма:'))
+        chapter_box.addWidget(QLabel(tr('Главы фильма:')))
         chapter_box.addWidget(self.chapter_movie)
-        self.chapter_status = QLabel('Сначала добавьте фильм и выберите его слева.')
+        self.chapter_status = QLabel(tr('Сначала добавьте фильм и выберите его слева.'))
         chapter_box.addWidget(self.chapter_status)
         self.chapter_list = ChapterList()
         self.chapter_list.currentItemChanged.connect(self.select_chapter_time)
@@ -614,75 +607,74 @@ class Window(QMainWindow):
         self.chapter_name_delegate = ChapterNameDelegate(self.chapter_list)
         self.chapter_name_delegate.renamed.connect(self.rename_chapter)
         self.chapter_list.setItemDelegate(self.chapter_name_delegate)
-        self.chapter_list.setToolTip('Двойной щелчок или F2 — переименовать главу. Enter — сохранить, Esc — отменить.')
-        self.chapter_list.setAccessibleName('Главы фильма — двойной щелчок для переименования')
+        self.chapter_list.setToolTip(tr('Двойной щелчок или F2 — переименовать главу. Enter — сохранить, Esc — отменить.'))
+        self.chapter_list.setAccessibleName(tr('Главы фильма — двойной щелчок для переименования'))
         chapter_box.addWidget(self.chapter_list, 1)
         chapter_edit = QHBoxLayout()
-        chapter_edit.addWidget(QLabel('Начало (чч:мм:сс.ммм):'))
+        chapter_edit.addWidget(QLabel(tr('Начало (чч:мм:сс.ммм):')))
         self.chapter_time = QLineEdit('00:00:00.000')
         self.chapter_time.setInputMask('00:00:00.000;_')
         self.chapter_time.setMaximumWidth(145)
-        self.chapter_time.setAccessibleName('Время начала главы')
+        self.chapter_time.setAccessibleName(tr('Время начала главы'))
         chapter_edit.addWidget(self.chapter_time)
-        self.add_chapter_button = QPushButton('+ Добавить главу')
+        self.add_chapter_button = QPushButton(tr('+ Добавить главу'))
         self.add_chapter_button.clicked.connect(self.add_chapter)
         chapter_edit.addWidget(self.add_chapter_button)
-        self.edit_chapter_button = QPushButton('Изменить время')
+        self.edit_chapter_button = QPushButton(tr('Изменить время'))
         self.edit_chapter_button.clicked.connect(self.edit_chapter)
         chapter_edit.addWidget(self.edit_chapter_button)
         chapter_box.addLayout(chapter_edit)
         self.auto_interval = QSpinBox()
         self.auto_interval.setRange(1, 60)
         self.auto_interval.setValue(10)
-        self.auto_interval.setSuffix(' мин')
-        self.auto_chapter_button = QPushButton('Разбить по интервалу')
+        self.auto_interval.setSuffix(tr(' мин'))
+        self.auto_chapter_button = QPushButton(tr('Разбить по интервалу'))
         self.auto_chapter_button.clicked.connect(self.auto_chapters)
-        self.delete_chapter_button = QPushButton('Удалить главу')
+        self.delete_chapter_button = QPushButton(tr('Удалить главу'))
         self.delete_chapter_button.clicked.connect(self.remove_chapter)
-        self.chapter_interval_control = SliderValue(self.auto_interval, 'Интервал глав',
+        self.chapter_interval_control = SliderValue(self.auto_interval, tr('Интервал глав'),
             actions=(self.auto_chapter_button, self.delete_chapter_button))
         chapter_box.addWidget(self.chapter_interval_control)
-        self.import_chapters_button = QPushButton('Вернуть главы из файла')
-        self.import_chapters_button.setToolTip('Заменить текущие тайминги главами, найденными при анализе фильма.')
+        self.import_chapters_button = QPushButton(tr('Вернуть главы из файла'))
+        self.import_chapters_button.setToolTip(tr('Заменить текущие тайминги главами, найденными при анализе фильма.'))
         self.import_chapters_button.clicked.connect(self.restore_source_chapters)
         chapter_box.addWidget(self.import_chapters_button)
-        note = QLabel('Глава 1 — начало фильма, 00:00:00. Её нельзя удалить или сдвинуть. '
-                      'Добавленные главы автоматически появляются в меню «Выбор главы». Удаление главы не вырезает видео.')
+        note = QLabel(tr('Глава 1 — начало фильма, 00:00:00. Её нельзя удалить или сдвинуть. Добавленные главы автоматически появляются в меню «Выбор главы». Удаление главы не вырезает видео.'))
         note.setObjectName('hint')
         note.setWordWrap(True)
         chapter_box.addWidget(note)
-        self.tabs.addTab(chapter_tab, 'Главы')
+        self.tabs.addTab(chapter_tab, tr('Главы'))
 
         self.menu_editor = MenuEditor()
         self.menu_editor.movie_requested.connect(self._request_movie)
         self.menu_editor.movie_renamed.connect(self._rename_movie_path)
         self.menu_title = self.menu_editor.title
         self.menu_title.textChanged.connect(self.project_heading.setText)
-        self.tabs.addTab(self.menu_editor, 'Меню')
+        self.tabs.addTab(self.menu_editor, tr('Меню'))
         self.image_tools = ImageTools(self.menu_editor)
         self.image_tools.menu_panel.loading_design.connect(self._detach_chapter_names)
         self.image_tools.menu_panel.edit_requested.connect(lambda: self.tabs.setCurrentWidget(self.menu_editor))
-        self.tabs.addTab(self.image_tools, 'Проверка ISO')
+        self.tabs.addTab(self.image_tools, tr('Проверка ISO'))
 
         self.log_panel = QWidget()
         log_box = QVBoxLayout(self.log_panel); log_box.setContentsMargins(16, 8, 16, 8)
-        logbar = QHBoxLayout(); logbar.addWidget(QLabel('Журнал')); logbar.addStretch()
-        clear = QPushButton('Очистить'); clear.setObjectName('ghost'); clear.clicked.connect(lambda: self.log.clear()); logbar.addWidget(clear)
+        logbar = QHBoxLayout(); logbar.addWidget(QLabel(tr('Журнал'))); logbar.addStretch()
+        clear = QPushButton(tr('Очистить')); clear.setObjectName('ghost'); clear.clicked.connect(lambda: self.log.clear()); logbar.addWidget(clear)
         log_box.addLayout(logbar)
-        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120); self.log.setPlaceholderText('События сборки появятся здесь.')
+        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120); self.log.setPlaceholderText(tr('События сборки появятся здесь.'))
         log_box.addWidget(self.log); self.log_panel.hide(); root.addWidget(self.log_panel)
         # Keep the shared folder field for project compatibility; export edits it.
         self.output_folder = QLineEdit(self); self.output_folder.hide()
-        self.output_folder.setAccessibleName('Папка готового ISO')
+        self.output_folder.setAccessibleName(tr('Папка готового ISO'))
         self.output_folder.textChanged.connect(self.path_fields['output'].setText)
         self.path_fields['output'].textChanged.connect(self.output_folder.setText)
-        self.output_browse = QPushButton('Выбрать папку…', self); self.output_browse.hide()
+        self.output_browse = QPushButton(tr('Выбрать папку…'), self); self.output_browse.hide()
         self.output_browse.clicked.connect(lambda: self._choose_path('output'))
         self.timing_panel = QWidget(); timing_row = QHBoxLayout(self.timing_panel)
         timing_row.setContentsMargins(18, 4, 18, 4)
-        self.elapsed_label = QLabel('Прошло: 00:00:00')
-        self.remaining_label = QLabel('Осталось ≈ —')
-        self.stage_label = QLabel('Ожидание')
+        self.elapsed_label = QLabel(tr('Прошло: 00:00:00'))
+        self.remaining_label = QLabel(tr('Осталось ≈ —'))
+        self.stage_label = QLabel(tr('Ожидание'))
         timing_row.addWidget(self.elapsed_label); timing_row.addWidget(self.remaining_label); timing_row.addStretch(); timing_row.addWidget(self.stage_label)
         self.timing_panel.hide(); root.addWidget(self.timing_panel)
         from verification_panel import VerificationPanel
@@ -696,49 +688,60 @@ class Window(QMainWindow):
             self.gpu_monitor.hide()
         footer_widget = QWidget(); footer_widget.setObjectName('studioFooter')
         footer = QHBoxLayout(footer_widget); footer.setContentsMargins(16, 10, 16, 10)
-        self.studio_status = QLabel('Добавьте фильмы'); self.studio_status.setObjectName('studioStatus')
+        self.studio_status = QLabel(tr('Добавьте фильмы')); self.studio_status.setObjectName('studioStatus')
         footer.addWidget(self.studio_status)
-        self.log_toggle = QPushButton('Журнал'); self.log_toggle.setObjectName('ghost'); self.log_toggle.setCheckable(True)
+        self.log_toggle = QPushButton(tr('Журнал')); self.log_toggle.setObjectName('ghost'); self.log_toggle.setCheckable(True)
         self.log_toggle.toggled.connect(self.log_panel.setVisible); footer.addWidget(self.log_toggle)
         self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setValue(0); self.progress.setMaximumWidth(260); self.progress.hide()
         footer.addWidget(self.progress, 1); footer.addStretch()
-        open_output = QPushButton('Результаты'); open_output.setObjectName('ghost')
+        open_output = QPushButton(tr('Результаты')); open_output.setObjectName('ghost')
         open_output.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path_fields['output'].text())))
         footer.addWidget(open_output)
-        self.cancel_button = QPushButton('Отмена'); self.cancel_button.clicked.connect(self.cancel_build); self.cancel_button.hide(); footer.addWidget(self.cancel_button)
-        self.build_button = QPushButton('Создать ISO…'); self.build_button.setObjectName('primary'); self.build_button.clicked.connect(self.show_export_dialog); footer.addWidget(self.build_button)
+        self.cancel_button = QPushButton(tr('Отмена')); self.cancel_button.clicked.connect(self.cancel_build); self.cancel_button.hide(); footer.addWidget(self.cancel_button)
+        self.build_button = QPushButton(tr('Создать ISO…')); self.build_button.setObjectName('primary'); self.build_button.clicked.connect(self.show_export_dialog); footer.addWidget(self.build_button)
         root.addWidget(footer_widget)
         self.setStatusBar(QStatusBar()); self.statusBar().hide()
         self.output_mode.currentIndexChanged.connect(lambda *_: self._studio_update())
 
-        project = self.menuBar().addMenu('Проект')
-        for text, callback in [('Новый', self.new_project), ('Открыть проект…', self.open_project),
-                               ('Сохранить проект…', self.save_project)]:
+        project = self.menuBar().addMenu(tr('Проект'))
+        for text, callback in [(tr('Новый'), self.new_project), (tr('Открыть проект…'), self.open_project),
+                               (tr('Сохранить проект…'), self.save_project)]:
             action = QAction(text, self)
             action.triggered.connect(callback)
-            action.setShortcut({'Новый': QKeySequence.New, 'Открыть проект…': QKeySequence.Open,
-                                'Сохранить проект…': QKeySequence.Save}[text])
+            action.setShortcut({tr('Новый'): QKeySequence.New, tr('Открыть проект…'): QKeySequence.Open,
+                                tr('Сохранить проект…'): QKeySequence.Save}[text])
             project.addAction(action)
-        theme_menu = self.menuBar().addMenu('Темы')
-        project.addAction('Открыть последнюю сборку', self.open_last_build)
-        project.addAction('Открыть папку кэша этапов', self.open_build_cache)
+        language_menu = self.menuBar().addMenu(tr('Язык'))
+        self.language_group = QActionGroup(self)
+        self.language_group.setExclusive(True)
+        self.language_actions = {}
+        for key, label in [('auto', tr('Как в системе')), ('en', 'English'), ('ru', 'Русский')]:
+            action = language_menu.addAction(label)
+            action.setCheckable(True)
+            self.language_group.addAction(action)
+            self.language_actions[key] = action
+            action.setChecked(key == self.ui_language)
+            action.triggered.connect(lambda checked=False, key=key: self.set_ui_language(key))
+        theme_menu = self.menuBar().addMenu(tr('Темы'))
+        project.addAction(tr('Открыть последнюю сборку'), self.open_last_build)
+        project.addAction(tr('Открыть папку кэша этапов'), self.open_build_cache)
         self.theme_actions = {}
         self.theme_group = QActionGroup(self)
         self.theme_group.setExclusive(True)
-        for label, key in [('Студия · светлая', 'graphite'), ('Студия · тёмная', 'blue')]:
+        for label, key in [(tr('Студия · светлая'), 'graphite'), (tr('Студия · тёмная'), 'blue')]:
             action = QAction(label, self, checkable=True)
             self.theme_group.addAction(action)
             self.theme_actions[key] = action
             theme_menu.addAction(action)
             action.triggered.connect(lambda checked=False, key=key: self.set_theme(key, save=True))
-        help_menu = self.menuBar().addMenu('Справка')
-        about = QAction('О программе', self)
+        help_menu = self.menuBar().addMenu(tr('Справка'))
+        about = QAction(tr('О программе'), self)
         about.triggered.connect(self.about)
         help_menu.addAction(about)
         if sys.platform == 'win32':
-            explorer = self.menuBar().addMenu('Проводник')
-            explorer.addAction('Добавить «Открыть Blu-ray в VLC»', lambda: self.configure_explorer(True))
-            explorer.addAction('Удалить пункт из Проводника', lambda: self.configure_explorer(False))
+            explorer = self.menuBar().addMenu(tr('Проводник'))
+            explorer.addAction(tr('Добавить «Открыть Blu-ray в VLC»'), lambda: self.configure_explorer(True))
+            explorer.addAction(tr('Удалить пункт из Проводника'), lambda: self.configure_explorer(False))
 
     def _open_empty_menu(self):
         self._allow_empty_editor = True
@@ -753,13 +756,13 @@ class Window(QMainWindow):
         count = self.movies.count()
         show_editor = count > 0 or self.tabs.currentIndex() == 5 or getattr(self, '_allow_empty_editor', False)
         self.studio_stack.setCurrentIndex(0 if show_editor else 1)
-        self.library_heading.setText(f'ФИЛЬМЫ  ·  {count}')
-        self.studio_status.setText('Создание диска…' if busy else 'Анализ файлов…' if scanning else getattr(self, '_studio_result', '') or (f'Фильмов: {len(self.media)}' if count else 'Добавьте фильмы'))
+        self.library_heading.setText(tr('ФИЛЬМЫ  ·  {0}', count))
+        self.studio_status.setText(tr('Создание диска…') if busy else tr('Анализ файлов…') if scanning else getattr(self, '_studio_result', '') or (tr('Фильмов: {0}', len(self.media)) if count else tr('Добавьте фильмы')))
         self.welcome_add.setEnabled(not scanning and not busy)
         self.timing_panel.setVisible(busy or self.build_started is not None)
         self.progress.setVisible(busy or self.build_started is not None)
         self.cancel_button.setVisible(busy or scanning)
-        self.build_button.setText('Создать ISO…' if self.output_mode.currentIndex() == 0 else 'Создать BDMV…')
+        self.build_button.setText(tr('Создать ISO…') if self.output_mode.currentIndex() == 0 else tr('Создать BDMV…'))
 
     def show_export_dialog(self):
         if not self.media or not self.build_button.isEnabled():
@@ -777,13 +780,11 @@ class Window(QMainWindow):
         try:
             (install if enabled else uninstall)()
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, 'Проводник', str(exc))
+            QMessageBox.warning(self, tr('Проводник'), str(exc))
             return
-        QMessageBox.information(self, 'Проводник',
-            'Пункт «Открыть Blu-ray в VLC» добавлен для дисков и ISO.\n'
-            'В Windows 11 он может находиться в «Показать дополнительные параметры».\n'
-            'После перемещения папки DiskForge добавьте пункт заново.' if enabled
-            else 'Пункт DiskForge удалён из контекстного меню.')
+        QMessageBox.information(self, tr('Проводник'),
+            tr('Пункт «Открыть Blu-ray в VLC» добавлен для дисков и ISO.\nВ Windows 11 он может находиться в «Показать дополнительные параметры».\nПосле перемещения папки DiskForge добавьте пункт заново.') if enabled
+            else tr('Пункт DiskForge удалён из контекстного меню.'))
 
     def _restore(self) -> None:
         settings = load_settings()
@@ -791,6 +792,19 @@ class Window(QMainWindow):
             if key in self.path_fields:
                 self.path_fields[key].setText(val)
         self.set_theme(settings.get('ui_theme', 'graphite'))
+
+    def set_ui_language(self, key):
+        if key not in self.language_actions or key == self.ui_language:
+            return
+        previous = self.ui_language
+        self.ui_language = key
+        self.language_actions[key].setChecked(True)
+        if not self._save_config():
+            self.ui_language = previous
+            self.language_actions[previous].setChecked(True)
+            QMessageBox.warning(self, tr('Язык'), tr('Не удалось сохранить выбор языка. Проверьте доступ к папке настроек.'))
+            return
+        QMessageBox.information(self, tr('Язык'), tr('Новый язык интерфейса появится при следующем запуске DiskForge.'))
 
     def set_theme(self, key, save=False):
         self.ui_theme = key if key in self.theme_actions else 'graphite'
@@ -803,7 +817,7 @@ class Window(QMainWindow):
             self._save_config()
 
     def _config(self) -> dict[str, str]:
-        return dict({key: edit.text().strip() for key, edit in self.path_fields.items()}, ui_theme=self.ui_theme,
+        return dict({key: edit.text().strip() for key, edit in self.path_fields.items()}, ui_theme=self.ui_theme, ui_language=self.ui_language,
                     video_enhancements=dict(self.video_enhancements), quiet_rate=self.quiet_mode.currentData())
 
     def _requested_mode(self, info):
@@ -834,25 +848,27 @@ class Window(QMainWindow):
         self._update_recommendation()
         self._update_capacity()
 
-    def _save_config(self) -> None:
+    def _save_config(self) -> bool:
         try:
             save_settings(self._config())
         except OSError as exc:
-            self._message('Не удалось сохранить настройки: ' + str(exc))
+            self._message(tr('Не удалось сохранить настройки: ') + str(exc))
+            return False
+        return True
 
     def _choose_path(self, key: str) -> None:
         if key == 'output':
-            path = QFileDialog.getExistingDirectory(self, 'Куда сохранять готовый ISO / BDMV?', self.path_fields['output'].text())
+            path = QFileDialog.getExistingDirectory(self, tr('Куда сохранять готовый ISO / BDMV?'), self.path_fields['output'].text())
         else:
-            path, _ = QFileDialog.getOpenFileName(self, 'Путь к ' + key,
-                          filter=('Все файлы (*)' if sys.platform == 'darwin' else 'Исполняемые файлы (*.exe);;Все файлы (*)'))
+            path, _ = QFileDialog.getOpenFileName(self, tr('Путь к ') + key,
+                          filter=(tr('Все файлы (*)') if sys.platform == 'darwin' else tr('Исполняемые файлы (*.exe);;Все файлы (*)')))
         if path:
             self.path_fields[key].setText(path)
             self._save_config()
 
     def add_media(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, 'Выберите видео', '',
-                    'Видео (*.mkv *.mp4 *.mov *.m2ts *.mts *.ts *.avi);;Все файлы (*)')
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('Выберите видео'), '',
+                    tr('Видео (*.mkv *.mp4 *.mov *.m2ts *.mts *.ts *.avi);;Все файлы (*)'))
         self._queue_scan(paths)
 
     def _queue_scan(self, paths: list[str]) -> None:
@@ -862,7 +878,7 @@ class Window(QMainWindow):
         if not fresh:
             return
         if self.scan_thread and self.scan_thread.isRunning():
-            QMessageBox.information(self, 'Идёт анализ', 'Дождитесь окончания анализа предыдущих файлов.')
+            QMessageBox.information(self, tr('Идёт анализ'), tr('Дождитесь окончания анализа предыдущих файлов.'))
             return
         if self.disc_mode.currentIndex() == 0:
             self.menu_editor.show_catalog()
@@ -879,7 +895,7 @@ class Window(QMainWindow):
         if self.movies.currentRow() < 0:
             self.movies.setCurrentRow(0)
         self._refresh_buttons()
-        self._message(f'Анализируем {len(fresh)} файлов…')
+        self._message(tr('Анализируем {0} файлов…', len(fresh)))
 
     def _scanned(self, path: str, info: MediaInfo | None, error: str) -> None:
         if info:
@@ -907,14 +923,14 @@ class Window(QMainWindow):
             if path not in self.chapters:
                 self.chapters[path] = list(info.source_chapters) or [0.0]
                 if info.source_chapters:
-                    self._message(f'Главы из файла импортированы: {len(info.source_chapters)}. Они доступны в меню диска.')
+                    self._message(tr('Главы из файла импортированы: {0}. Они доступны в меню диска.', len(info.source_chapters)))
             names = self.chapter_names.setdefault(path, {'labels': {}})
             names.setdefault('titles', titles_for_chapters(info, self.chapters[path]))
             for notice in info.chapter_notices:
                 self._message(notice)
             self._message(f'OK: {info.name} — {timecode(info.duration)}; {info.width}×{info.height}')
         else:
-            self._message(f'ОШИБКА {Path(path).name}: {error}')
+            self._message(tr('ОШИБКА {0}: {1}', Path(path).name, error))
         self._select_media()
         self._refresh_buttons()
 
@@ -939,18 +955,18 @@ class Window(QMainWindow):
         self.apply_recommendation.setEnabled(enabled and self._movies_editable())
         self._sync_bitrate_controls()
         if not enabled:
-            self.recommendation.setText('Добавьте фильм для анализа совместимости.')
+            self.recommendation.setText(tr('Добавьте фильм для анализа совместимости.'))
             return
         advice = recommend_bitrate(info, 10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()])
         from disc_capacity import video_mode
         mode = video_mode(info, self._requested_mode(info), 10**18 if self.disc_mode.currentIndex() == 0 else CAPACITIES[self.profile.currentText()])
         if mode == 'encode':
             rate = self._video_rates().get(str(Path(info.path).resolve()))
-            current = f'Текущий план: перекодирование {rate/1e6:g} Мбит/с.' if rate else 'Текущий план: прежний расчёт под ёмкость отдельного диска.'
+            current = tr('Текущий план: перекодирование {0} Мбит/с.', format(rate / 1000000.0, f'g')) if rate else tr('Текущий план: прежний расчёт под ёмкость отдельного диска.')
             if enhancement_for({'video_enhancements': self.video_enhancements}, info.path):
-                current += ' Бережное улучшение включено только для этого фильма.'
+                current += tr(' Бережное улучшение включено только для этого фильма.')
         else:
-            current = 'Текущий план: копировать видео без изменения битрейта; звук — по выбранным настройкам.'
+            current = tr('Текущий план: копировать видео без изменения битрейта; звук — по выбранным настройкам.')
         self.recommendation.setText(advice.explanation + '\n\n' + current)
 
     def _use_recommendation(self):
@@ -1007,16 +1023,16 @@ class Window(QMainWindow):
                 # The dialog is modal: source identity and encoder controls cannot
                 # change behind it. Bind the result to the original film, not a row.
                 if self.media.get(info.path) != info:
-                    self._message('Фильм изменился. Повторите пробу перед применением.')
+                    self._message(tr('Фильм изменился. Повторите пробу перед применением.'))
                     return
                 self.bitrate_overrides[str(Path(info.path).resolve())] = dialog.selected_rate
                 self._bitrate_settings_changed()
-                self._message(f'Проба качества: {info.name} — {dialog.selected_rate/1e6:g} Мбит/с для перекодирования.' +
-                              (' Сейчас выбран режим копирования; исходное видео сохраняется без потерь.' if copying else ''))
+                self._message(tr('Проба качества: {0} — {1} Мбит/с для перекодирования.', info.name, format(dialog.selected_rate / 1000000.0, f'g')) +
+                              (tr(' Сейчас выбран режим копирования; исходное видео сохраняется без потерь.') if copying else ''))
         finally:
             if isinstance(dialog.saved_record, dict):
                 self.quality_records[str(Path(info.path).resolve())] = dialog.saved_record
-                self._message('Результаты проб сохранены в текущем проекте. Сохраните проект, чтобы открыть их позже.')
+                self._message(tr('Результаты проб сохранены в текущем проекте. Сохраните проект, чтобы открыть их позже.'))
             self.quality_dialog = None
             dialog.deleteLater()
 
@@ -1051,13 +1067,13 @@ class Window(QMainWindow):
             mode = budget.titles[0][2]
             name = movie_title(path, self.movie_names)
             rate = rates.get(str(Path(path).resolve()))
-            source = f'{advice.source_bps/1e6:.2f} Мбит/с' if advice.source_bps else 'Неизвестно'
+            source = tr('{0} Мбит/с', format(advice.source_bps / 1000000.0, f'.2f')) if advice.source_bps else tr('Неизвестно')
             if advice.source_method == 'samples':
                 source = '≈ '+source
-            target = f'{rate/1e6:g} Мбит/с' if rate else 'По ёмкости'
+            target = tr('{0} Мбит/с', format(rate / 1000000.0, f'g')) if rate else tr('По ёмкости')
             if mode != 'encode':
-                target = 'Исходное'
-            treatment = 'Улучшение + перекодирование' if enhancement_for({'video_enhancements': self.video_enhancements}, path) else 'Перекодирование' if mode == 'encode' else 'Копия видео'
+                target = tr('Исходное')
+            treatment = tr('Улучшение + перекодирование') if enhancement_for({'video_enhancements': self.video_enhancements}, path) else tr('Перекодирование') if mode == 'encode' else tr('Копия видео')
             rows.append((path, name, source, treatment, target,
                          f'{(budget.video+budget.audio+budget.subtitles)/1e9:.2f}', advice.explanation))
         if getattr(self, '_bitrate_rows', None) == rows:
@@ -1079,7 +1095,7 @@ class Window(QMainWindow):
             path = item.data(Qt.UserRole)
             self.audio_modes[path] = dict(modes)
             self.media[path] = replace(self.media[path], audio_modes=dict(modes))
-            self._message('Обработка аудиодорожек обновлена.')
+            self._message(tr('Обработка аудиодорожек обновлена.'))
 
     def _audio_changed(self, indices):
         path = self._selected_path()
@@ -1089,7 +1105,7 @@ class Window(QMainWindow):
         try:
             self.media[path] = select_tracks(info, indices)
         except ValueError as exc:
-            QMessageBox.warning(self, 'Аудиодорожки', str(exc))
+            QMessageBox.warning(self, tr('Аудиодорожки'), str(exc))
             self.audio_panel.set_media(info)
             return
         self.audio_selections[path] = list(indices)
@@ -1104,7 +1120,7 @@ class Window(QMainWindow):
         try:
             self.media[path] = select_subtitles(info, items)
         except ValueError as exc:
-            QMessageBox.warning(self, 'Субтитры', str(exc))
+            QMessageBox.warning(self, tr('Субтитры'), str(exc))
             self.subtitle_panel.set_media(info)
             return
         self.subtitle_selections[path] = list(items)
@@ -1132,7 +1148,7 @@ class Window(QMainWindow):
         self._chapter_owner = None
         path = self._selected_path()
         self.movie_title_edit.setText(self.movie_names.get(path, ''))
-        self.movie_title_edit.setPlaceholderText(Path(path).stem[:80] if path else 'Выберите фильм')
+        self.movie_title_edit.setPlaceholderText(Path(path).stem[:80] if path else tr('Выберите фильм'))
         info = self.media.get(path or '')
         names = self.chapter_names.get(path, {})
         self.menu_editor.labels = {k: v for k, v in self.menu_editor.labels.items() if not is_chapter_label(k)}
@@ -1145,26 +1161,23 @@ class Window(QMainWindow):
         self._chapter_owner = path if info else None
         self.chapter_list.clear()
         if not info:
-            self.chapter_status.setText('Сначала добавьте фильм и выберите его слева.')
-            self.details.setText('Выберите успешно проанализированный фильм.')
+            self.chapter_status.setText(tr('Сначала добавьте фильм и выберите его слева.'))
+            self.details.setText(tr('Выберите успешно проанализированный фильм.'))
         else:
             self.details.setText(
-                f'{info.name}\n{timecode(info.duration)}  •  {info.size/1e9:.2f} ГБ  •  '
-                f'{info.width}×{info.height}  •  {info.video_codec.upper()}\n'
-                f'Аудиодорожек: {info.audio_tracks}; субтитров: {info.subtitle_tracks}; '
-                f'HDR: {"да (UHD-модуль ещё не готов)" if info.is_hdr else "нет"}'
+                tr('{0}\n{1}  •  {2} ГБ  •  {3}×{4}  •  {5}\nАудиодорожек: {6}; субтитров: {7}; HDR: {8}', info.name, timecode(info.duration), format(info.size / 1000000000.0, f'.2f'), info.width, info.height, info.video_codec.upper(), info.audio_tracks, info.subtitle_tracks, tr('да (UHD-модуль ещё не готов)') if info.is_hdr else tr('нет'))
             )
-            source_note = f'В файле найдено глав: {len(info.source_chapters)}.' if info.source_chapters else 'Готовых глав в файле нет — добавьте их вручную или по интервалу.'
-            self.chapter_status.setText(f'Фильм: {movie_title(path, self.movie_names)} · Длительность: {timecode(info.duration)} · Глав: {len(self.chapters.get(path, [0]))}\n{source_note}')
+            source_note = tr('В файле найдено глав: {0}.', len(info.source_chapters)) if info.source_chapters else tr('Готовых глав в файле нет — добавьте их вручную или по интервалу.')
+            self.chapter_status.setText(tr('Фильм: {0} · Длительность: {1} · Глав: {2}\n{3}', movie_title(path, self.movie_names), timecode(info.duration), len(self.chapters.get(path, [0])), source_note))
             self.chapter_status.setWordWrap(True)
             for index, t in enumerate(self.chapters.get(path, [0.0]), 1):
-                name = self.menu_editor.current_design(preview=True).text(f'chapter:{index-1}') or f'Глава {index}'
-                item = QListWidgetItem(f'{name}   ·   {chapter_timecode(t)}' + ('   ·   Начало фильма' if t == 0 else ''))
+                name = self.menu_editor.current_design(preview=True).text(f'chapter:{index-1}') or tr('Глава {0}', index)
+                item = QListWidgetItem(f'{name}   ·   {chapter_timecode(t)}' + (tr('   ·   Начало фильма') if t == 0 else ''))
                 item.setData(Qt.UserRole, t)
                 item.setData(CHAPTER_NAME_ROLE, name)
                 item.setData(CHAPTER_OWNER_ROLE, path)
                 item.setFlags(item.flags() | Qt.ItemIsEditable)
-                item.setToolTip(f'Фильм: {movie_title(path, self.movie_names)}\n{path}\nНачало сцены: {chapter_timecode(t)}')
+                item.setToolTip(tr('Фильм: {0}\n{1}\nНачало сцены: {2}', movie_title(path, self.movie_names), path, chapter_timecode(t)))
                 self.chapter_list.addItem(item)
         self._update_recommendation()
         self._refresh_buttons()
@@ -1194,9 +1207,9 @@ class Window(QMainWindow):
         try:
             sec = parse_timecode(self.chapter_time.text())
             if sec >= info.duration or sec in self.chapters[path]:
-                raise ValueError('Глава уже существует или находится за концом видео')
+                raise ValueError(tr('Глава уже существует или находится за концом видео'))
         except ValueError as exc:
-            QMessageBox.warning(self, 'Некорректное время', str(exc))
+            QMessageBox.warning(self, tr('Некорректное время'), str(exc))
             return
         self.apply_chapters(path, sorted([*self.chapters[path], sec]))
 
@@ -1223,14 +1236,14 @@ class Window(QMainWindow):
         self.menu_editor.inline_text(f'chapter:{chapter}', name)
         self._save_chapter_names()
         item.setData(CHAPTER_NAME_ROLE, name)
-        item.setText(f'{name}   ·   {chapter_timecode(start)}' + ('   ·   Начало фильма' if start == 0 else ''))
+        item.setText(f'{name}   ·   {chapter_timecode(start)}' + (tr('   ·   Начало фильма') if start == 0 else ''))
 
     def apply_chapters(self, path, new, moved=None):
         try:
             validate_chapters(new, self.media[path].duration)
             self.menu_editor.retime_chapters(self.chapters[path], new, moved)
         except (ValueError, DiscForgeError) as exc:
-            QMessageBox.warning(self, 'Главы', str(exc))
+            QMessageBox.warning(self, tr('Главы'), str(exc))
             return False
         self.chapters[path] = new
         self._select_media()
@@ -1243,16 +1256,16 @@ class Window(QMainWindow):
             return
         old = float(item.data(Qt.UserRole))
         if old == 0:
-            QMessageBox.information(self, 'Начало фильма', 'Первая глава должна оставаться на 00:00:00.')
+            QMessageBox.information(self, tr('Начало фильма'), tr('Первая глава должна оставаться на 00:00:00.'))
             return
         try:
             sec = parse_timecode(self.chapter_time.text())
             if sec == old:
                 return
             if sec >= self.media[path].duration or sec in self.chapters[path]:
-                raise ValueError('Укажите уникальное время внутри фильма.')
+                raise ValueError(tr('Укажите уникальное время внутри фильма.'))
         except ValueError as exc:
-            QMessageBox.warning(self, 'Некорректное время', str(exc))
+            QMessageBox.warning(self, tr('Некорректное время'), str(exc))
             return
         new = sorted(sec if t == old else t for t in self.chapters[path])
         self.apply_chapters(path, new, {old: sec})
@@ -1264,7 +1277,7 @@ class Window(QMainWindow):
             return
         sec = float(item.data(Qt.UserRole))
         if sec == 0:
-            QMessageBox.information(self, 'Начало фильма', 'Главу 00:00:00 удалять нельзя.')
+            QMessageBox.information(self, tr('Начало фильма'), tr('Главу 00:00:00 удалять нельзя.'))
             return
         self.apply_chapters(path, [t for t in self.chapters[path] if t != sec])
 
@@ -1330,11 +1343,10 @@ class Window(QMainWindow):
         info = self.media.get(path)
         if info:
             title = movie_title(path, self.movie_names)
-            self.chapter_status.setText(f'Фильм: {title} · Длительность: {timecode(info.duration)} · Глав: {len(self.chapters.get(path, [0]))}\n'
-                                       'Все главы ниже относятся только к этому фильму. Для другого фильма выберите его выше.')
+            self.chapter_status.setText(tr('Фильм: {0} · Длительность: {1} · Глав: {2}\nВсе главы ниже относятся только к этому фильму. Для другого фильма выберите его выше.', title, timecode(info.duration), len(self.chapters.get(path, [0]))))
             for i in range(self.chapter_list.count()):
                 item = self.chapter_list.item(i)
-                item.setToolTip(f'Фильм: {title}\n{path}\nНачало сцены: {chapter_timecode(item.data(Qt.UserRole))}')
+                item.setToolTip(tr('Фильм: {0}\n{1}\nНачало сцены: {2}', title, path, chapter_timecode(item.data(Qt.UserRole))))
 
     def _move_movie(self, direction):
         row = self.movies.currentRow()
@@ -1404,15 +1416,14 @@ class Window(QMainWindow):
         self.add_button.setEnabled(not scanning and not busy)
         self.remove_button.setEnabled(not scanning and not busy and self.movies.currentItem() is not None)
         self.statusBar().showMessage(
-            f'Файлов: {len(self.media)}  |  Сканирование: {"да" if scanning else "нет"}  |  '
-            f'Сборка: {"идёт" if busy else "нет"}')
+            tr('Файлов: {0}  |  Сканирование: {1}  |  Сборка: {2}', len(self.media), tr('да') if scanning else tr('нет'), tr('идёт') if busy else tr('нет')))
         self._sync_collection()
         self._sync_bitrate_controls()
         self._studio_update()
 
     def _message(self, value: str) -> None:
         self.log.appendPlainText(value)
-        if value.startswith('ОШИБКА'):
+        if value.startswith(tr('ОШИБКА')):
             self.log_toggle.setChecked(True)
 
     def _capacity_budgets(self):
@@ -1437,12 +1448,12 @@ class Window(QMainWindow):
             maximum = CAPACITIES[self.profile.currentText()]//1_000_000
             self.capacity_bar.setMaximum(maximum)
             self.capacity_bar.setValue(min(maximum, round(worst.total/1_000_000)) if worst else 0)
-            self.capacity_bar.setFormat(f'{worst.total/1e9:.2f} / {maximum/1000:g} ГБ' if worst else f'0 / {maximum/1000:g} ГБ')
-            text = worst.explanation() if worst else 'Добавьте фильмы для расчёта заполнения.'
+            self.capacity_bar.setFormat(tr('{0} / {1} ГБ', format(worst.total / 1000000000.0, f'.2f'), format(maximum / 1000, f'g')) if worst else tr('0 / {0} ГБ', format(maximum / 1000, f'g')))
+            text = worst.explanation() if worst else tr('Добавьте фильмы для расчёта заполнения.')
             if self.disc_mode.currentIndex() == 1 and worst:
-                text = 'Отдельные диски · показан самый заполненный\n'+text
+                text = tr('Отдельные диски · показан самый заполненный\n')+text
             if self.scan_thread and self.scan_thread.isRunning():
-                text += '\nАнализ идёт: ещё не проверенные файлы пока не учтены.'
+                text += tr('\nАнализ идёт: ещё не проверенные файлы пока не учтены.')
             self.capacity_label.setText(text)
             self.capacity_summary.setText(self.profile.currentText() + ' · ' + self.capacity_bar.format())
             self.capacity_summary.setToolTip(text)
@@ -1450,20 +1461,20 @@ class Window(QMainWindow):
             self.capacity_label.setStyleSheet('color: '+color)
             fill = '#993f37' if worst and worst.remaining < 0 else '#965b21' if worst and worst.warning else '#805a36'
             self.capacity_bar.setStyleSheet('QProgressBar::chunk { background: '+fill+'; }')
-            self.capacity_bar.setToolTip('\n'.join(f'{name}: ≈ {size/1e9:.2f} ГБ потоков' for b in budgets for name, size, _ in b.titles))
+            self.capacity_bar.setToolTip('\n'.join(tr('{0}: ≈ {1} ГБ потоков', name, format(size / 1000000000.0, f'.2f')) for b in budgets for name, size, _ in b.titles))
         except (ValueError, OSError, DiscForgeError) as exc:
             self.capacity_label.setText(str(exc))
             self.capacity_bar.setValue(0)
-            self.capacity_bar.setFormat('Расчёт недоступен')
+            self.capacity_bar.setFormat(tr('Расчёт недоступен'))
 
     def _build_video_description(self, info, config):
         from disc_capacity import video_mode
         mode = video_mode(info, self._requested_mode(info), 10**18 if config['collection'] else CAPACITIES[self.profile.currentText()])
         if mode != 'encode':
-            return 'копирование видео без потерь; звук по настройкам'
+            return tr('копирование видео без потерь; звук по настройкам')
         rate = config.get('video_rates', {}).get(str(Path(info.path).resolve()))
-        prefix = 'бережное улучшение + ' if enhancement_for(config, info.path) else ''
-        return prefix + (f'перекодирование видео {rate/1e6:g} Мбит/с; возможны потери качества' if rate else 'перекодирование видео с расчётом под ёмкость диска')
+        prefix = tr('бережное улучшение + ') if enhancement_for(config, info.path) else ''
+        return prefix + (tr('перекодирование видео {0} Мбит/с; возможны потери качества', format(rate / 1000000.0, f'g')) if rate else tr('перекодирование видео с расчётом под ёмкость диска'))
 
     def start_build(self, *, confirmed=False) -> None:
         if not self.media:
@@ -1473,7 +1484,7 @@ class Window(QMainWindow):
             for budget in self._capacity_budgets():
                 require_fit(budget)
         except (ValueError, OSError, DiscForgeError) as exc:
-            QMessageBox.warning(self, 'Диск не вмещает выбранные файлы', str(exc))
+            QMessageBox.warning(self, tr('Диск не вмещает выбранные файлы'), str(exc))
             return
         self._save_chapter_names()
         config = self._config()
@@ -1484,7 +1495,7 @@ class Window(QMainWindow):
         config['video_rates'] = self._video_rates()
         self._save_config()
         if not config['output']:
-            QMessageBox.warning(self, 'Выходная папка', 'Укажите выходную папку.')
+            QMessageBox.warning(self, tr('Выходная папка'), tr('Укажите выходную папку.'))
             return
         jobs = []
         for i in range(self.movies.count()):
@@ -1493,30 +1504,30 @@ class Window(QMainWindow):
                 jobs.append((self.media[path], list(self.chapters[path])))
         bad = [info.name for info, _ in jobs if info.is_hdr]
         if bad:
-            QMessageBox.warning(self, 'HDR пока не поддерживается',
-                                'Нельзя создавать обычный BD из HDR без правильного тонмаппинга.\n' + '\n'.join(bad))
+            QMessageBox.warning(self, tr('HDR пока не поддерживается'),
+                                tr('Нельзя создавать обычный BD из HDR без правильного тонмаппинга.\n') + '\n'.join(bad))
             return
         try:
             menu = self.menu_editor.design()
             if config['collection'] and menu is None:
-                raise ValueError('Включите меню: оно нужно для выбора фильма на общем диске.')
+                raise ValueError(tr('Включите меню: оно нужно для выбора фильма на общем диске.'))
         except ValueError as exc:
-            QMessageBox.warning(self, 'Название меню', str(exc))
+            QMessageBox.warning(self, tr('Название меню'), str(exc))
             return
         if not confirmed:
-            response = QMessageBox.question(self, 'Создание Blu-ray',
-                f'Дисков: {1 if config["collection"] else len(jobs)} · Фильмов: {len(jobs)} · {self.profile.currentText()} · {self.output_mode.currentText()}\n'
-                + ('Меню: смотреть фильм и выбирать главы.\n' if menu else 'Без интерактивного меню.\n')
-                + 'Режим: ' + self.processing_mode.currentText() + '\n'
+            response = QMessageBox.question(self, tr('Создание Blu-ray'),
+                tr('Дисков: {0} · Фильмов: {1} · {2} · {3}\n', 1 if config['collection'] else len(jobs), len(jobs), self.profile.currentText(), self.output_mode.currentText())
+                + (tr('Меню: смотреть фильм и выбирать главы.\n') if menu else tr('Без интерактивного меню.\n'))
+                + tr('Режим: ') + self.processing_mode.currentText() + '\n'
                 + '\n'.join(movie_title(info.path, self.movie_names) + ': ' + self._build_video_description(info, config) for info, _ in jobs) + '\n'
-                + 'Выбранные субтитры войдут в ISO отдельными дорожками. Исходники сохраняются.\n\nНачать сборку?',
+                + tr('Выбранные субтитры войдут в ISO отдельными дорожками. Исходники сохраняются.\n\nНачать сборку?'),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
             if response != QMessageBox.Yes:
                 return
         try:
             write_json(Path(config['output']) / '.diskforge-cache/last-project.dfr.json', self._project_data())
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, 'Не удалось сохранить сборку', str(exc))
+            QMessageBox.warning(self, tr('Не удалось сохранить сборку'), str(exc))
             return
         self.progress.setValue(0)
         self.build_thread = BuildThread(jobs, config, self.profile.currentText(),
@@ -1526,7 +1537,7 @@ class Window(QMainWindow):
         self.build_started = time.monotonic()
         self._verification_update(None)
         self.eta_remaining = -1
-        self.stage_label.setText("Подготовка")
+        self.stage_label.setText(tr('Подготовка'))
         self._tick_build_time()
         self.build_clock.start()
         self.gpu_monitor.start()
@@ -1534,9 +1545,9 @@ class Window(QMainWindow):
         self.build_thread.verification_changed.connect(self._verification_update)
         self.build_thread.message.connect(self._message)
         self.build_thread.progress_changed.connect(self.progress.setValue)
-        self.build_thread.item_started.connect(lambda p: self._message('Начинаем: ' + Path(p).name))
+        self.build_thread.item_started.connect(lambda p: self._message(tr('Начинаем: ') + Path(p).name))
         self.build_thread.item_done.connect(self._item_done)
-        self.build_thread.failed.connect(lambda p, err: self._message('ОШИБКА ' + Path(p).name + ': ' + err))
+        self.build_thread.failed.connect(lambda p, err: self._message(tr('ОШИБКА ') + Path(p).name + ': ' + err))
         self.build_thread.finished_all.connect(self._build_finished)
         self.build_thread.finished.connect(self._refresh_buttons)
         self.build_thread.finished.connect(self.gpu_monitor.stop)
@@ -1546,7 +1557,7 @@ class Window(QMainWindow):
 
     def _verification_update(self, event):
         self.verification_panel.update_progress(event)
-        self.progress.setFormat('%p% · проверка ISO' if event and event['scope'] == 'iso-final' else '%p%')
+        self.progress.setFormat(tr('%p% · проверка ISO') if event and event['scope'] == 'iso-final' else '%p%')
 
     def _timing_update(self, stage, remaining):
         self.stage_label.setText(stage)
@@ -1568,19 +1579,19 @@ class Window(QMainWindow):
         if path.is_file():
             self._load_project(str(path))
         else:
-            QMessageBox.information(self, 'Возобновление', 'В выбранной выходной папке пока нет сохранённой сборки.')
+            QMessageBox.information(self, tr('Возобновление'), tr('В выбранной выходной папке пока нет сохранённой сборки.'))
 
     def _tick_build_time(self):
         if self.build_started is None:
             return
         now = time.monotonic()
-        self.elapsed_label.setText('Прошло: ' + timecode(now-self.build_started))
+        self.elapsed_label.setText(tr('Прошло: ') + timecode(now-self.build_started))
         if self.eta_remaining < 0:
-            self.remaining_label.setText('Осталось ≈ рассчитывается…')
+            self.remaining_label.setText(tr('Осталось ≈ рассчитывается…'))
         elif now-self.eta_updated > 15:
-            self.remaining_label.setText('Осталось ≈ уточняется…')
+            self.remaining_label.setText(tr('Осталось ≈ уточняется…'))
         else:
-            self.remaining_label.setText('Осталось ≈ ' + timecode(max(1, self.eta_remaining-(now-self.eta_updated))))
+            self.remaining_label.setText(tr('Осталось ≈ ') + timecode(max(1, self.eta_remaining-(now-self.eta_updated))))
 
     def _build_finished(self, success: bool) -> None:
         self._tick_build_time()
@@ -1588,26 +1599,26 @@ class Window(QMainWindow):
         self.gpu_monitor.stop()
         self.verification_panel.stop(success)
         self.progress.setFormat('%p%')
-        self.stage_label.setText('Готово' if success else 'Остановлено / ошибка')
-        self.remaining_label.setText('Осталось: 00:00:00' if success else 'Осталось: —')
-        self._message('Очередь завершена.' if success else 'Очередь завершилась с ошибками или была отменена.')
-        self._studio_result = 'Готово' if success else 'Сборка остановлена · смотрите журнал'
+        self.stage_label.setText(tr('Готово') if success else tr('Остановлено / ошибка'))
+        self.remaining_label.setText(tr('Осталось: 00:00:00') if success else tr('Осталось: —'))
+        self._message(tr('Очередь завершена.') if success else tr('Очередь завершилась с ошибками или была отменена.'))
+        self._studio_result = tr('Готово') if success else tr('Сборка остановлена · смотрите журнал')
         self.studio_status.setText(self._studio_result)
         if not success:
             self.log_toggle.setChecked(True)
 
     def _item_done(self, path: str, destination: str) -> None:
-        self._message('ГОТОВО: ' + destination)
+        self._message(tr('ГОТОВО: ') + destination)
         if destination.lower().endswith('.iso'):
             self.image_tools.path.setText(destination)
             self.image_tools.profile.setCurrentText(self.build_thread.profile)
 
     def cancel_build(self) -> None:
         if self.build_thread and self.build_thread.isRunning():
-            self._message('Запрошена отмена операции…')
+            self._message(tr('Запрошена отмена операции…'))
             self.build_thread.cancel()
         elif self.scan_thread and self.scan_thread.isRunning():
-            self._message("Запрошена отмена анализа…")
+            self._message(tr('Запрошена отмена анализа…'))
             self.scan_thread.cancel_event.set()
 
     def _project_data(self) -> dict:
@@ -1624,18 +1635,18 @@ class Window(QMainWindow):
                 'encoder': self.encoder.currentIndex(), 'encode_speed': self.encode_speed.currentIndex(), 'processing_mode': MODES[self.processing_mode.currentIndex()], 'output': self.output_folder.text().strip(), 'as_iso': self.output_mode.currentIndex() == 0}
 
     def save_project(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, 'Сохранить проект', 'DiscForge_project.dfr.json',
+        path, _ = QFileDialog.getSaveFileName(self, tr('Сохранить проект'), 'DiscForge_project.dfr.json',
                                              'DiscForge RU (*.dfr.json)')
         if path:
             try:
                 write_json(Path(path), self._project_data())
             except (OSError, ValueError) as exc:
-                QMessageBox.warning(self, 'Ошибка сохранения', str(exc))
+                QMessageBox.warning(self, tr('Ошибка сохранения'), str(exc))
             else:
-                self._message('Проект сохранён: ' + path)
+                self._message(tr('Проект сохранён: ') + path)
 
     def open_project(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, 'Открыть проект', '', 'DiscForge RU (*.dfr.json)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('Открыть проект'), '', 'DiscForge RU (*.dfr.json)')
         if not path:
             return
         self._load_project(path)
@@ -1644,40 +1655,40 @@ class Window(QMainWindow):
         try:
             data = json.loads(Path(path).read_text(encoding='utf-8'))
             if not isinstance(data, dict) or data.get('format_version') != 1 or not isinstance(data.get('files'), list):
-                raise ValueError('Неизвестный формат проекта')
+                raise ValueError(tr('Неизвестный формат проекта'))
             paths = [p for p in data['files'] if isinstance(p, str)]
             raw = data.get('chapters', {})
             if not isinstance(raw, dict):
-                raise ValueError('Неверный раздел глав')
+                raise ValueError(tr('Неверный раздел глав'))
             # Validate everything before discarding the current project.
             profile = data.get('profile', 'BD25')
             if not isinstance(profile, str) or profile not in CAPACITIES:
-                raise ValueError('Неизвестный профиль диска')
-            title = data.get('title', 'Мой Blu-ray')
+                raise ValueError(tr('Неизвестный профиль диска'))
+            title = data.get('title', tr('Мой Blu-ray'))
             menu = data.get('menu', {'enabled': False, 'theme': 'midnight'})
             if not isinstance(menu, dict) or not isinstance(menu.get('enabled'), bool):
-                raise ValueError('Некорректные настройки меню')
+                raise ValueError(tr('Некорректные настройки меню'))
             design = MenuDesign.from_dict(title, menu)
             if design.background:
                 from disc_menu import background_image
                 background_image(design.background)
             audio = data.get('audio', {})
             if not isinstance(audio, dict):
-                raise ValueError('Неверный раздел аудио')
+                raise ValueError(tr('Неверный раздел аудио'))
             loaded_audio = {}
             loaded_modes = data.get('audio_modes', {})
             if (not isinstance(loaded_modes, dict) or any(not isinstance(p, str) or not isinstance(m, dict)
                     or any(not isinstance(k, str) or not k.isdigit() or v not in ('auto', 'copy', 'ac3') for k, v in m.items())
                     for p, m in loaded_modes.items())):
-                raise ValueError('Неверные режимы аудиодорожек')
+                raise ValueError(tr('Неверные режимы аудиодорожек'))
             for p, indices in audio.items():
                 if (not isinstance(p, str) or not isinstance(indices, list) or len(indices) > 32 or
                         any(type(i) is not int or i < 0 for i in indices) or len(indices) != len(set(indices))):
-                    raise ValueError('Неверный выбор аудиодорожек')
+                    raise ValueError(tr('Неверный выбор аудиодорожек'))
                 loaded_audio[str(Path(p).resolve())] = indices
             raw_subtitles = data.get('subtitles', {})
             if not isinstance(raw_subtitles, dict):
-                raise ValueError('Неверный раздел субтитров')
+                raise ValueError(tr('Неверный раздел субтитров'))
             loaded_subtitles = {str(Path(p).resolve()): validate_selection(items) for p, items in raw_subtitles.items()}
             loaded_chapters = {}
             normalized_paths = []
@@ -1688,12 +1699,12 @@ class Window(QMainWindow):
                     continue  # No saved edit: use chapters found by the scanner.
                 v = raw[p]
                 if not isinstance(v, list):
-                    raise ValueError('Неверный список глав')
+                    raise ValueError(tr('Неверный список глав'))
                 validate_chapters(v)
                 loaded_chapters[normalized] = [float(x) for x in v]
             raw_names = data.get('chapter_names', {})
             if not isinstance(raw_names, dict):
-                raise ValueError('Неверный раздел названий глав')
+                raise ValueError(tr('Неверный раздел названий глав'))
             loaded_names = {}
             for p in paths:
                 normalized = str(Path(p).resolve())
@@ -1703,12 +1714,12 @@ class Window(QMainWindow):
                     loaded_names[normalized] = {'labels': {k: v for k, v in design.labels.items() if is_chapter_label(k)}}
                     continue
                 if not isinstance(names, dict) or 'labels' not in names or set(names) - {'titles', 'labels'}:
-                    raise ValueError('Неверные названия глав')
-                checked = MenuDesign('Проверка', chapter_titles=names.get('titles', []), labels=names['labels'])
+                    raise ValueError(tr('Неверные названия глав'))
+                checked = MenuDesign(tr('Проверка'), chapter_titles=names.get('titles', []), labels=names['labels'])
                 if any(not is_chapter_label(k) for k in checked.labels):
-                    raise ValueError('В названиях глав найдены посторонние подписи')
+                    raise ValueError(tr('В названиях глав найдены посторонние подписи'))
                 if normalized in loaded_chapters and len(checked.chapter_titles) > len(loaded_chapters[normalized]):
-                    raise ValueError('Названий больше, чем глав')
+                    raise ValueError(tr('Названий больше, чем глав'))
                 loaded_names[normalized] = {'labels': checked.labels}
                 if 'titles' in names:
                     loaded_names[normalized]['titles'] = checked.chapter_titles
@@ -1719,7 +1730,7 @@ class Window(QMainWindow):
             loaded_quality, skipped_quality = load_records(data.get('quality_trials'), normalized_paths)
             loaded_policy = data.get('bitrate_policy', 'manual')
             if loaded_policy not in ('auto', 'manual'):
-                raise ValueError('Неизвестный режим подбора битрейта.')
+                raise ValueError(tr('Неизвестный режим подбора битрейта.'))
             if not self.new_project():
                 return
             self.menu_editor.apply_design(design)
@@ -1752,16 +1763,16 @@ class Window(QMainWindow):
             self.gpu_frames.setChecked(data.get('gpu_frames', True) is True)
             self.subtitle_selections.update(loaded_subtitles)
             self._queue_scan(normalized_paths)
-            self._message('Проект открыт: ' + str(path))
+            self._message(tr('Проект открыт: ') + str(path))
             if skipped_quality:
-                self._message(f'Повреждённые отчёты проб пропущены: {skipped_quality}. Остальной проект загружен.')
+                self._message(tr('Повреждённые отчёты проб пропущены: {0}. Остальной проект загружен.', skipped_quality))
         except (OSError, ValueError, TypeError, OverflowError, DiscForgeError) as exc:
-            QMessageBox.warning(self, 'Ошибка проекта', str(exc))
+            QMessageBox.warning(self, tr('Ошибка проекта'), str(exc))
 
     def new_project(self) -> bool:
         if ((self.build_thread and self.build_thread.isRunning()) or
                 (self.scan_thread and self.scan_thread.isRunning())):
-            QMessageBox.warning(self, 'Операция выполняется', 'Дождитесь завершения текущей операции.')
+            QMessageBox.warning(self, tr('Операция выполняется'), tr('Дождитесь завершения текущей операции.'))
             return False
         self._chapter_owner = None
         self.movies.clear()
@@ -1783,7 +1794,7 @@ class Window(QMainWindow):
         self.subtitle_selections.clear()
         self.subtitle_panel.external.clear()
         self.chapter_list.clear()
-        self.menu_editor.apply_design(MenuDesign('Моя коллекция Blu-ray'))
+        self.menu_editor.apply_design(MenuDesign(tr('Моя коллекция Blu-ray'), language=active_language()))
         self.menu_editor.enabled.setChecked(True)
         self.enhance_video.setChecked(False)
         self.quiet_mode.setCurrentIndex(0)
@@ -1797,9 +1808,9 @@ class Window(QMainWindow):
 
     def about(self) -> None:
         box = QMessageBox(self)
-        box.setWindowTitle('О DiskForge')
+        box.setWindowTitle(tr('О DiskForge'))
         box.setIconPixmap(QPixmap(str(LOGO)).scaled(192, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        box.setText(f'DiskForge {VERSION} · MIT\n\nBlu-ray ISO, аудио и субтитры с выбором пультом, главы и редактируемое меню BD-J.')
+        box.setText(tr('DiskForge {0} · MIT\n\nBlu-ray ISO, аудио и субтитры с выбором пультом, главы и редактируемое меню BD-J.', VERSION))
         box.exec()
 
     def dragEnterEvent(self, event) -> None:
@@ -1823,9 +1834,8 @@ class Window(QMainWindow):
             event.ignore()
             return
         if self.build_thread and self.build_thread.isRunning():
-            if not self._close_after_build and QMessageBox.question(self, 'Сохранить этапы и выйти?',
-                    'Текущий незавершённый этап будет остановлен. Готовые этапы и проект останутся в выходной папке. '
-                    'После запуска выберите «Проект → Открыть последнюю сборку».',
+            if not self._close_after_build and QMessageBox.question(self, tr('Сохранить этапы и выйти?'),
+                    tr('Текущий незавершённый этап будет остановлен. Готовые этапы и проект останутся в выходной папке. После запуска выберите «Проект → Открыть последнюю сборку».'),
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
                 self._close_after_build = True
                 self.cancel_build()
@@ -1833,7 +1843,7 @@ class Window(QMainWindow):
             return
         if self.image_tools.is_running() or (self.build_thread and self.build_thread.isRunning()) or (
                 self.scan_thread and self.scan_thread.isRunning()):
-            QMessageBox.warning(self, 'Операция выполняется', 'Сначала завершите или отмените текущую операцию.')
+            QMessageBox.warning(self, tr('Операция выполняется'), tr('Сначала завершите или отмените текущую операцию.'))
             event.ignore()
             return
         self._save_config()
@@ -1859,6 +1869,7 @@ def main() -> int:
         smoke_report = Path(sys.argv[2])
         os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     app = QApplication(sys.argv)
+    configure_language(app, 'en' if smoke_report is not None else load_settings().get('ui_language', 'auto'))
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
     if sys.platform != 'darwin':
@@ -1867,7 +1878,7 @@ def main() -> int:
         try:
             if sys.argv[1] == '--open-bluray':
                 if len(sys.argv) != 3:
-                    raise ValueError('Не указан диск Blu-ray или ISO-образ.')
+                    raise ValueError(tr('Не указан диск Blu-ray или ISO-образ.'))
                 from vlc_preview import launch_bluray
                 launch_bluray(sys.argv[2])
             else:
@@ -1875,7 +1886,7 @@ def main() -> int:
                 (install if sys.argv[1] == '--install-explorer' else uninstall)()
             return 0
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(None, 'DiskForge — Blu-ray в VLC', str(exc))
+            QMessageBox.critical(None, tr('DiskForge — Blu-ray в VLC'), str(exc))
             return 1
     w = Window()
     if smoke_report is not None:
@@ -1884,6 +1895,8 @@ def main() -> int:
         app.processEvents()
         resources = Path(__file__).parent
         checks = {'window': w.tabs.count() == 6,
+                  'english_interface': active_language() == 'en' and w.tabs.tabText(3) == 'Chapters'
+                                       and w.menu_editor.current_design().language == 'en',
                   'menu_image': not w.menu_editor.preview.image.isNull(),
                   'xlet': (resources / 'assets/bdj/menu.jar').is_file(),
                   'windows_iso': sys.platform != 'win32' or (resources / 'tools/windows_iso.ps1').is_file()}
@@ -1900,7 +1913,7 @@ def main() -> int:
             checks['private_java'] = jvm.is_file() and (java / 'lib/rt.jar').is_file()
             for tool in ('ffmpeg', 'ffprobe', 'tsmuxer', 'discforge-udf'):
                 checks[tool] = Path(find_binary(tool)).is_file()
-        checks['vlc_button'] = w.image_tools.vlc.text() == 'Проверить ISO в VLC'
+        checks['vlc_button'] = w.image_tools.vlc.text() == tr('Проверить ISO в VLC')
         checks['verification_progress'] = w.verification_panel.isHidden() and not w.verification_panel.timer.isActive()
         checks['iso_menu_update'] = w.image_tools.menu_panel.repair.isEnabled()
         checks['fullscreen_preview'] = w.menu_editor.fullscreen_button.isEnabled()
@@ -1941,7 +1954,7 @@ def main() -> int:
         checks['collection_titles'] = w.movie_title_edit.maxLength() == 80
         checks['collection_order'] = w.movies.dragDropMode() == QListWidget.InternalMove and w.movie_up is not None
         checks['collection_preview'] = hasattr(w.menu_editor, 'context_selector') and callable(w.menu_editor.show_catalog)
-        checks['chapter_movie_selector'] = w.chapter_movie.accessibleName() == 'Фильм, которому принадлежат главы'
+        checks['chapter_movie_selector'] = w.chapter_movie.accessibleName() == tr('Фильм, которому принадлежат главы')
         from PySide6.QtGui import QImage
         logo = QImage(str(LOGO))
         checks['transparent_logo'] = logo.hasAlphaChannel() and logo.pixelColor(0, 0).alpha() == 0

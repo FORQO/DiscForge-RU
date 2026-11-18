@@ -1,4 +1,5 @@
 """Crash-safe, content-addressed stage checkpoints; never trust file timestamps alone."""
+from studio_locale import tr
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ def digest(path, cancel, progress=None):
     with path.open('rb') as stream:
         while True:
             if cancel.is_set():
-                raise RuntimeError('Операция отменена; завершённые этапы сохранены.')
+                raise RuntimeError(tr('Операция отменена; завершённые этапы сохранены.'))
             block = stream.read(4 * 1024 * 1024)
             if not block:
                 break
@@ -29,7 +30,7 @@ def digest(path, cancel, progress=None):
                 progress(read, before.st_size)
     after = path.stat()
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        raise ValueError('Файл изменился во время проверки: ' + str(path))
+        raise ValueError(tr('Файл изменился во время проверки: ') + str(path))
     return {'size': after.st_size, 'sha256': h.hexdigest()}
 
 
@@ -68,14 +69,14 @@ class BuildCache:
         except OSError:
             self.lock.close()
             self.lock = None
-            raise RuntimeError('Этот фильм уже собирается в другом окне DiskForge.')
+            raise RuntimeError(tr('Этот фильм уже собирается в другом окне DiskForge.'))
         try:
             data = json.loads((self.root / 'checkpoint.json').read_text(encoding='utf-8'))
             if data.get('revision') == REVISION and isinstance(data.get('stages'), dict):
                 self.data = data
         except (OSError, ValueError, AttributeError):
             pass
-        self.log('Завершённые этапы сохраняются: ' + str(self.root))
+        self.log(tr('Завершённые этапы сохраняются: ') + str(self.root))
         return self
 
     def __exit__(self, kind, value, traceback):
@@ -87,17 +88,17 @@ class BuildCache:
     def _save(self):
         write_json(self.root / 'checkpoint.json', self.data)
 
-    def _record(self, paths, label='Проверка файлов'):
+    def _record(self, paths, label=tr('Проверка файлов')):
         result, entries = {}, []
         for path in paths:
             path = Path(path).resolve()
             if not path.is_relative_to(self.root.resolve()):
-                raise ValueError('Этап находится за пределами рабочего каталога.')
+                raise ValueError(tr('Этап находится за пределами рабочего каталога.'))
             files = sorted(path.rglob('*')) if path.is_dir() else [path]
             for file in files:
                 if file.is_file():
                     if file.is_symlink() or not file.resolve().is_relative_to(self.root.resolve()):
-                        raise ValueError('Ссылки в рабочем каталоге не поддерживаются.')
+                        raise ValueError(tr('Ссылки в рабочем каталоге не поддерживаются.'))
                     entries.append(file)
         from verification_progress import VerificationProgress
         tracker = VerificationProgress(sum(p.stat().st_size for p in entries), len(entries), self.verification)
@@ -113,14 +114,14 @@ class BuildCache:
         old = self.data['stages'].get(stage)
         if not isinstance(old, dict) or old.get('key') != key(signature):
             return False
-        self.log('Проверяем сохранённый этап: ' + stage + '…')
+        self.log(tr('Проверяем сохранённый этап: ') + stage + '…')
         try:
-            current = self._record(paths, 'Проверка сохранённого этапа: ' + stage)
+            current = self._record(paths, tr('Проверка сохранённого этапа: ') + stage)
             valid = bool(current) and current == old.get('files')
         except (OSError, ValueError):
             valid = False
         if valid:
-            self.log('Возобновление: этап «' + stage + '» уже готов; повторная обработка не нужна.')
+            self.log(tr('Возобновление: этап «') + stage + tr('» уже готов; повторная обработка не нужна.'))
         return valid
 
     def begin(self, stage):
@@ -131,7 +132,7 @@ class BuildCache:
 
     def commit(self, stage, signature, paths, elapsed=None):
         if self.enabled:
-            self.data['stages'][stage] = {'key': key(signature), 'files': self._record(paths, 'Сохранение контрольных сумм: ' + stage),
+            self.data['stages'][stage] = {'key': key(signature), 'files': self._record(paths, tr('Сохранение контрольных сумм: ') + stage),
                                            'seconds': elapsed, 'finished': time.time()}
             self._save()
 

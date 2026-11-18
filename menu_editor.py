@@ -1,4 +1,5 @@
 """Live menu preview, using the same page images as the on-disc Xlet."""
+from studio_locale import active_language, tr
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QIcon
 from pathlib import Path
@@ -67,7 +68,7 @@ class MenuEditor(QWidget):
         self.context_selector = QComboBox()
         self.context_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.context_selector.setMinimumContentsLength(20)
-        self.context_selector.setAccessibleName('Просмотр меню общего диска или фильма')
+        self.context_selector.setAccessibleName(tr('Просмотр меню общего диска или фильма'))
         self.context_selector.currentIndexChanged.connect(self._context_changed)
         self.context_selector.hide()
         canvas_layout.addWidget(self.context_selector)
@@ -82,20 +83,20 @@ class MenuEditor(QWidget):
             button.setCheckable(checkable); button.setChecked(checked)
             (button.toggled if checkable else button.clicked).connect(callback)
             bar.addWidget(button); return button
-        self.undo_canvas = tool('undo', 'Отменить · Ctrl+Z', self.undo_edit)
-        self.redo_canvas = tool('redo', 'Повторить · Ctrl+Shift+Z', self.redo_edit)
+        self.undo_canvas = tool('undo', tr('Отменить · Ctrl+Z'), self.undo_edit)
+        self.redo_canvas = tool('redo', tr('Повторить · Ctrl+Shift+Z'), self.redo_edit)
         bar.addSpacing(6)
-        self.select_canvas = tool('select', 'Выбор и перемещение · V', lambda value: value and self.set_canvas_tool('select'), True, True)
-        self.resize_canvas = tool('resize', 'Изменить размер · R', lambda value: value and self.set_canvas_tool('resize'), True)
+        self.select_canvas = tool('select', tr('Выбор и перемещение · V'), lambda value: value and self.set_canvas_tool('select'), True, True)
+        self.resize_canvas = tool('resize', tr('Изменить размер · R'), lambda value: value and self.set_canvas_tool('resize'), True)
         self.canvas_tools = QButtonGroup(self); self.canvas_tools.addButton(self.select_canvas); self.canvas_tools.addButton(self.resize_canvas)
         bar.addSpacing(6)
-        self.grid_canvas = tool('grid', 'Показать сетку', lambda value: self.set_canvas_overlay('show_grid', value), True)
-        self.guides_canvas = tool('guides', 'Направляющие и безопасная область', lambda value: self.set_canvas_overlay('show_guides', value), True, True)
-        self.snap_canvas = tool('magnet', 'Привязка к сетке и объектам', lambda value: setattr(self.preview, 'snapping', value), True, True)
+        self.grid_canvas = tool('grid', tr('Показать сетку'), lambda value: self.set_canvas_overlay('show_grid', value), True)
+        self.guides_canvas = tool('guides', tr('Направляющие и безопасная область'), lambda value: self.set_canvas_overlay('show_guides', value), True, True)
+        self.snap_canvas = tool('magnet', tr('Привязка к сетке и объектам'), lambda value: setattr(self.preview, 'snapping', value), True, True)
         bar.addStretch()
         self.zoom_combo = QComboBox(); self.zoom_combo.setFixedWidth(92)
-        self.zoom_combo.setAccessibleName('Масштаб холста'); self.zoom_combo.setToolTip('100% — исходные пиксели. Средняя кнопка мыши — перемещение холста.')
-        for text, value in [('Вписать', 0), ('75%', .75), ('100%', 1.0), ('125%', 1.25), ('150%', 1.5), ('200%', 2.0)]:
+        self.zoom_combo.setAccessibleName(tr('Масштаб холста')); self.zoom_combo.setToolTip(tr('100% — исходные пиксели. Средняя кнопка мыши — перемещение холста.'))
+        for text, value in [(tr('Вписать'), 0), ('75%', .75), ('100%', 1.0), ('125%', 1.25), ('150%', 1.5), ('200%', 2.0)]:
             self.zoom_combo.addItem(text, value)
         self.zoom_combo.currentIndexChanged.connect(lambda: self.set_canvas_zoom(self.zoom_combo.currentData()))
         bar.addWidget(self.zoom_combo)
@@ -103,16 +104,16 @@ class MenuEditor(QWidget):
         canvas_layout.addWidget(self.preview, 1)
         remote = QHBoxLayout()
         remote.addStretch()
-        self.back_button = QPushButton('Назад')
+        self.back_button = QPushButton(tr('Назад'))
         self.back_button.clicked.connect(lambda: self.press('back'))
         remote.addWidget(self.back_button)
         self.remote_buttons = {}
-        for caption, key in [('Вверх', 'up'), ('Вниз', 'down'), ('Влево', 'left'), ('Вправо', 'right'),
-                             ('OK', 'enter'), ('Главное меню', 'home')]:
+        for caption, key in [(tr('Вверх'), 'up'), (tr('Вниз'), 'down'), (tr('Влево'), 'left'), (tr('Вправо'), 'right'),
+                             ('OK', 'enter'), (tr('Главное меню'), 'home')]:
             button = QPushButton(caption)
             button.setAccessibleName(caption)
             button.setToolTip(caption)
-            button.setText({'up': '↑', 'down': '↓', 'left': '←', 'right': '→', 'home': 'Меню'}.get(key, caption))
+            button.setText({'up': '↑', 'down': '↓', 'left': '←', 'right': '→', 'home': tr('Меню')}.get(key, caption))
             if key in ('up', 'down', 'left', 'right'):
                 button.setFixedWidth(32)
                 button.setText('')
@@ -131,13 +132,13 @@ class MenuEditor(QWidget):
         self.fullscreen_button.setIconSize(QSize(21, 21))
         self.fullscreen_button.setFixedSize(34, 34)
         self.fullscreen_button.setStyleSheet('padding: 0px;')
-        self.fullscreen_button.setToolTip('На весь экран · F11')
-        self.fullscreen_button.setAccessibleName('На весь экран')
+        self.fullscreen_button.setToolTip(tr('На весь экран · F11'))
+        self.fullscreen_button.setAccessibleName(tr('На весь экран'))
         self.fullscreen_button.clicked.connect(self.show_fullscreen)
         remote.addStretch()
         canvas_layout.addWidget(self.remote_panel)
         toolbar = QHBoxLayout(); toolbar.addStretch()
-        self.preview_mode = QPushButton('Предпросмотр')
+        self.preview_mode = QPushButton(tr('Предпросмотр'))
         self.preview_mode.setCheckable(True)
         self.preview_mode.setObjectName('ghost')
         self.preview_mode.toggled.connect(self.set_preview_mode)
@@ -145,7 +146,7 @@ class MenuEditor(QWidget):
         toolbar.addWidget(self.fullscreen_button)
         toolbar.addStretch()
         canvas_layout.addLayout(toolbar)
-        self.caption = QLabel('Выберите объект · Двойной клик — изменить текст')
+        self.caption = QLabel(tr('Выберите объект · Двойной клик — изменить текст'))
         self.caption.setWordWrap(True)
         self.caption.setObjectName('hint')
         self.caption.setAlignment(Qt.AlignCenter)
@@ -156,7 +157,7 @@ class MenuEditor(QWidget):
 
         self.inspector = QScrollArea()
         self.inspector.setObjectName('menuInspector')
-        self.inspector.setAccessibleName('Настройки меню')
+        self.inspector.setAccessibleName(tr('Настройки меню'))
         self.inspector.setWidgetResizable(True)
         self.inspector.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.inspector.setFrameShape(QFrame.NoFrame)
@@ -173,10 +174,10 @@ class MenuEditor(QWidget):
         self.inspector_tabs.tabBar().setDrawBase(False)
         panel_layout.addWidget(self.inspector_tabs)
         self.inspector_layouts = []
-        for caption in ('Оформление', 'Объект', 'Расстановка'):
+        for caption in (tr('Оформление'), tr('Объект'), tr('Расстановка')):
             page = QWidget(); page_box = QVBoxLayout(page)
             page_box.setContentsMargins(4, 10, 8, 6); page_box.setSpacing(10)
-            if caption == 'Расстановка':
+            if caption == tr('Расстановка'):
                 self.inspector_tabs.addTab(page, caption)
             else:
                 scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
@@ -189,64 +190,65 @@ class MenuEditor(QWidget):
             group = QGroupBox(title)
             group.setMinimumWidth(0)
             box = QVBoxLayout(group); box.setSpacing(8)
-            index = 1 if title == 'Выбранный элемент' else 2 if title == 'Кнопки и выравнивание' else 0
+            index = 1 if title == tr('Выбранный элемент') else 2 if title == tr('Кнопки и выравнивание') else 0
             self.inspector_layouts[index].addWidget(group)
             return box
 
-        general = section('Меню диска')
-        self.enabled = QCheckBox('Интерактивное меню · BD-J')
+        general = section(tr('Меню диска'))
+        self.enabled = QCheckBox(tr('Интерактивное меню · BD-J'))
         self.enabled.setChecked(True)
         general.addWidget(self.enabled)
-        self.title = QLineEdit('Мой Blu-ray')
+        self.title = QLineEdit(tr('Мой Blu-ray'))
         self.title.setMaxLength(80)
-        self.title.setPlaceholderText('Название на обложке меню')
+        self.title.setPlaceholderText(tr('Название на обложке меню'))
         general.addWidget(self.title)
         self.theme = QComboBox()
-        self.theme.addItem('Кино · Янтарь', 'amber')
-        self.theme.addItem('Кино · Сапфир', 'sapphire')
-        self.theme.addItem('Полночь', 'midnight')
-        self.theme.addItem('Графит', 'graphite')
-        self.theme.addItem('Кинотеатр', 'cinema')
+        self.theme.addItem(tr('Кино · Янтарь'), 'amber')
+        self.theme.addItem(tr('Кино · Сапфир'), 'sapphire')
+        self.theme.addItem(tr('Полночь'), 'midnight')
+        self.theme.addItem(tr('Графит'), 'graphite')
+        self.theme.addItem(tr('Кинотеатр'), 'cinema')
         self.theme.setCurrentIndex(self.theme.findData('amber'))
         self.language = QComboBox()
         self.language.addItem('Русский', 'ru')
         self.language.addItem('English', 'en')
+        self.language.setCurrentIndex(self.language.findData(active_language()))
         general_form = QFormLayout()
-        general_form.addRow('Тема', self.theme)
-        general_form.addRow('Язык', self.language)
+        general_form.addRow(tr('Тема'), self.theme)
+        general_form.addRow(tr('Язык меню диска'), self.language)
         general.addLayout(general_form)
 
-        background = section('Фон')
+        background = section(tr('Фон'))
         background_row = QHBoxLayout()
-        choose = QPushButton('Выбрать…')
+        choose = QPushButton(tr('Выбрать…'))
         choose.clicked.connect(self.choose_background)
         background_row.addWidget(choose)
-        clear = QPushButton('Убрать фон')
+        clear = QPushButton(tr('Убрать фон'))
         clear.clicked.connect(self.clear_background)
         background_row.addWidget(clear)
         background.addLayout(background_row)
         self.fit = QComboBox()
-        self.fit.addItem('Заполнить экран', 'cover')
-        self.fit.addItem('Изображение целиком', 'contain')
+        self.fit.addItem(tr('Заполнить экран'), 'cover')
+        self.fit.addItem(tr('Изображение целиком'), 'contain')
         background.addWidget(self.fit)
         self.dim = QSlider(Qt.Horizontal)
         self.dim.setRange(0, 80)
         self.dim.setValue(40)
-        self.dim.setAccessibleName('Затемнение фона')
-        self.dim_label = QLabel('Затемнение: 40%')
+        self.dim.setAccessibleName(tr('Затемнение фона'))
+        self.dim_label = QLabel(tr('Затемнение: 40%'))
         background.addWidget(self.dim_label)
         background.addWidget(self.dim)
 
-        element = section('Выбранный элемент')
+        element = section(tr('Выбранный элемент'))
         self.label_key = QComboBox()
         self.label_key.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.label_key.setMinimumContentsLength(15)
         element.addWidget(self.label_key)
         self.label_value = QLineEdit()
         self.label_value.setMaxLength(120)
-        self.label_value.setPlaceholderText('Своя подпись; пусто — стандартная')
+        self.label_value.setPlaceholderText(tr('Своя подпись; пусто — стандартная'))
         element.addWidget(self.label_value)
-        reset = QPushButton('Сбросить подпись')
+        reset = QPushButton(tr('Сбросить подпись'))
         self.reset_label = reset
         reset.clicked.connect(self.label_value.clear)
         reset.clicked.connect(self.edit_label)
@@ -255,7 +257,7 @@ class MenuEditor(QWidget):
         style_layout = QVBoxLayout(self.style_panel)
         style_layout.setContentsMargins(0, 0, 0, 0)
         self.shape = QComboBox()
-        for text, value in [('Скруглённая', 'rounded'), ('Прямоугольная', 'rectangle'), ('Капсула', 'pill')]:
+        for text, value in [(tr('Скруглённая'), 'rounded'), (tr('Прямоугольная'), 'rectangle'), (tr('Капсула'), 'pill')]:
             self.shape.addItem(text, value)
         self.border_width = QSpinBox()
         self.border_width.setRange(0, 10)
@@ -271,18 +273,18 @@ class MenuEditor(QWidget):
         form = QFormLayout()
         self.style_form = form
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.addRow('Гарнитура', self.font_family)
-        self.font_size_control = SliderValue(self.font_size, 'Размер')
+        form.addRow(tr('Гарнитура'), self.font_family)
+        self.font_size_control = SliderValue(self.font_size, tr('Размер'))
         form.addRow(self.font_size_control)
-        self.bold = QCheckBox('Жирный')
-        self.italic = QCheckBox('Курсив')
+        self.bold = QCheckBox(tr('Жирный'))
+        self.italic = QCheckBox(tr('Курсив'))
         font_row = QHBoxLayout()
         font_row.addWidget(self.bold)
         font_row.addWidget(self.italic)
         form.addRow(font_row)
-        form.addRow('Форма', self.shape)
-        self.border_width_control = SliderValue(self.border_width, 'Обводка')
-        self.opacity_control = SliderValue(self.opacity, 'Заливка')
+        form.addRow(tr('Форма'), self.shape)
+        self.border_width_control = SliderValue(self.border_width, tr('Обводка'))
+        self.opacity_control = SliderValue(self.opacity, tr('Заливка'))
         form.addRow(self.border_width_control)
         form.addRow(self.opacity_control)
         for control in (self.font_size_control, self.border_width_control, self.opacity_control):
@@ -291,19 +293,19 @@ class MenuEditor(QWidget):
         style_layout.addLayout(form)
         colors = QGridLayout()
         self.color_buttons = {}
-        for i, (name, label) in enumerate([('fill', 'Цвет фона'), ('border', 'Обводка'), ('text', 'Текст'), ('highlight', 'Выделение')]):
+        for i, (name, label) in enumerate([('fill', tr('Цвет фона')), ('border', tr('Обводка')), ('text', tr('Текст')), ('highlight', tr('Выделение'))]):
             button = QPushButton(label)
             button.clicked.connect(lambda _=False, k=name: self.choose_color(k))
             self.color_buttons[name] = button
             colors.addWidget(button, i // 2, i % 2)
         style_layout.addLayout(colors)
-        reset_style = QPushButton('Сбросить стиль')
+        reset_style = QPushButton(tr('Сбросить стиль'))
         reset_style.clicked.connect(self.reset_style)
         style_layout.addWidget(reset_style)
         self.action_selector = QComboBox()
         self.action_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.action_selector.setMinimumContentsLength(15)
-        self.action_label = QLabel('Действие кнопки')
+        self.action_label = QLabel(tr('Действие кнопки'))
         style_layout.addWidget(self.action_label)
         style_layout.addWidget(self.action_selector)
         element.addWidget(self.style_panel)
@@ -317,30 +319,30 @@ class MenuEditor(QWidget):
         self.italic.toggled.connect(self.style_changed)
         self.action_selector.currentIndexChanged.connect(self.change_action)
 
-        tools = section('Кнопки и выравнивание')
+        tools = section(tr('Кнопки и выравнивание'))
         from episode_button_editor import ButtonInspector
         self.button_inspector = ButtonInspector(self)
         self.inspector_layouts[2].insertWidget(0, self.button_inspector, 1)
-        add = QPushButton('+ Кнопка'); add.setAccessibleName('Добавить кнопку')
+        add = QPushButton(tr('+ Кнопка')); add.setAccessibleName(tr('Добавить кнопку'))
         add.clicked.connect(self.add_button)
         tools.addWidget(add)
         self.alignment = QComboBox()
-        self.alignment.addItems(['По левому краю', 'По центру меню', 'По правому краю', 'Равные интервалы по вертикали'])
+        self.alignment.addItems([tr('По левому краю'), tr('По центру меню'), tr('По правому краю'), tr('Равные интервалы по вертикали')])
         self.alignment.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.alignment.setMinimumContentsLength(9)
         self.alignment.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         tools.addWidget(self.alignment)
-        align = QPushButton('Выровнять')
+        align = QPushButton(tr('Выровнять'))
         align.clicked.connect(self.align_buttons)
         tools.addWidget(align)
-        self.magnet = QCheckBox('Привязка'); self.magnet.setToolTip('Привязка к сетке и направляющим')
+        self.magnet = QCheckBox(tr('Привязка')); self.magnet.setToolTip(tr('Привязка к сетке и направляющим'))
         self.magnet.setChecked(True)
         tools.addWidget(self.magnet)
-        restore = QPushButton('Восстановить'); restore.setToolTip('Вернуть удалённый элемент')
+        restore = QPushButton(tr('Восстановить')); restore.setToolTip(tr('Вернуть удалённый элемент'))
         restore.clicked.connect(self.restore_button)
         tools.addWidget(restore)
         extra_group = tools.parentWidget()
-        extra_group.setTitle('Другие инструменты')
+        extra_group.setTitle(tr('Другие инструменты'))
         self.inspector_layouts[2].removeWidget(extra_group)
         self.button_inspector.advanced_layout.addWidget(extra_group)
         for i, page_box in enumerate(self.inspector_layouts):
@@ -399,9 +401,9 @@ class MenuEditor(QWidget):
         self.remote_panel.setVisible(enabled)
         self.inspector.setVisible(not enabled)
         self.canvas_toolbar.setVisible(not enabled)
-        self.preview_mode.setText('Редактировать' if enabled else 'Предпросмотр')
+        self.preview_mode.setText(tr('Редактировать') if enabled else tr('Предпросмотр'))
         self.select_button('')
-        self.caption.setText('Стрелки — выбор · Enter — открыть · Backspace — назад' if enabled else 'Выберите объект · Двойной клик — изменить текст')
+        self.caption.setText(tr('Стрелки — выбор · Enter — открыть · Backspace — назад') if enabled else tr('Выберите объект · Двойной клик — изменить текст'))
         self.preview.update()
 
     def finish_numeric_slider(self):
@@ -446,9 +448,9 @@ class MenuEditor(QWidget):
         self.catalog_page = min(self.catalog_page, max(0, (len(items)-1)//5))
         self.context_selector.blockSignals(True)
         self.context_selector.clear()
-        self.context_selector.addItem(f'Общий диск · фильмов: {len(items)}', None)
+        self.context_selector.addItem(tr('Общий диск · фильмов: {0}', len(items)), None)
         for path, name in items:
-            self.context_selector.addItem('Фильм: ' + name, path)
+            self.context_selector.addItem(tr('Фильм: ') + name, path)
             self.context_selector.setItemData(self.context_selector.count()-1, path, Qt.ToolTipRole)
         self.context_selector.setCurrentIndex(0 if self.collection_root else max(0, self.context_selector.findData(selected_path)))
         self.context_selector.blockSignals(False)
@@ -456,7 +458,7 @@ class MenuEditor(QWidget):
         if previous != (self.collection_items, self.collection_enabled, self.movie_path):
             self.select_button('')
             if self.is_catalog():
-                self.caption.setText('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.')
+                self.caption.setText(tr('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.'))
         if previous[1:] != (self.collection_enabled, self.movie_path):
             self.populate_labels()
         if not self.label_value.hasFocus():
@@ -475,7 +477,7 @@ class MenuEditor(QWidget):
         self.page = self.focus = 0
         self.history = []
         self.select_button('')
-        self.caption.setText('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.')
+        self.caption.setText(tr('Кнопки фильмов создаются автоматически. Выберите кнопку и нажмите OK, чтобы открыть меню этого фильма и его главы.'))
         self.context_selector.blockSignals(True)
         self.context_selector.setCurrentIndex(0)
         self.context_selector.blockSignals(False)
@@ -491,7 +493,7 @@ class MenuEditor(QWidget):
         self.history = []
         self.select_button('')
         self.movie_requested.emit(path)
-        self.caption.setText(f'Меню фильма «{self.movie_name}». «Выбор главы» открывает только его сцены; «Назад» — предыдущий уровень меню.')
+        self.caption.setText(tr('Меню фильма «{0}». «Выбор главы» открывает только его сцены; «Назад» — предыдущий уровень меню.', self.movie_name))
         self.populate_labels()
         self.sync_label()
         self.refresh()
@@ -556,13 +558,13 @@ class MenuEditor(QWidget):
         self.refresh()
 
     def choose_background(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Фон меню', '',
-                                             'Изображения (*.png *.jpg *.jpeg *.webp *.bmp)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('Фон меню'), '',
+                                             tr('Изображения (*.png *.jpg *.jpeg *.webp *.bmp)'))
         if path:
             try:
                 self.set_background(path)
             except (OSError, ValueError) as exc:
-                QMessageBox.warning(self, 'Фон меню', str(exc))
+                QMessageBox.warning(self, tr('Фон меню'), str(exc))
 
     def set_background(self, path):
         self.background = import_background(path)
@@ -576,23 +578,23 @@ class MenuEditor(QWidget):
         selected = self.label_key.currentData()
         self.label_key.blockSignals(True)
         self.label_key.clear()
-        for key, name in [('play', 'Смотреть фильм'), ('title', 'Название фильма'), ('chapters', 'Выбор главы'),
-                          ('subtitles', 'Субтитры'), ('sub:0', 'Субтитры: выключить'), ('sub_previous', 'Субтитры: предыдущие'), ('sub_next', 'Субтитры: следующие'), ('sub_back', 'Субтитры: назад'), ('audio', 'Аудио'), ('audio_back', 'Аудио: назад'),
-                          ('audio_previous', 'Аудио: предыдущие дорожки'), ('audio_next', 'Аудио: следующие дорожки'),
-                          ('home', 'Главное меню'), ('previous', 'Предыдущие главы'),
-                          ('next', 'Следующие главы'), ('subtitle', 'Подзаголовок'),
-                          ('brand', 'Верхняя надпись'), ('hint', 'Подсказка внизу')]:
+        for key, name in [('play', tr('Смотреть фильм')), ('title', tr('Название фильма')), ('chapters', tr('Выбор главы')),
+                          ('subtitles', tr('Субтитры')), ('sub:0', tr('Субтитры: выключить')), ('sub_previous', tr('Субтитры: предыдущие')), ('sub_next', tr('Субтитры: следующие')), ('sub_back', tr('Субтитры: назад')), ('audio', tr('Аудио')), ('audio_back', tr('Аудио: назад')),
+                          ('audio_previous', tr('Аудио: предыдущие дорожки')), ('audio_next', tr('Аудио: следующие дорожки')),
+                          ('home', tr('Главное меню')), ('previous', tr('Предыдущие главы')),
+                          ('next', tr('Следующие главы')), ('subtitle', tr('Подзаголовок')),
+                          ('brand', tr('Верхняя надпись')), ('hint', tr('Подсказка внизу'))]:
             if self.is_catalog() and key not in ('title', 'brand', 'hint'):
                 continue
             self.label_key.addItem(name, key)
         for i in range(0 if self.is_catalog() else len(self.chapters)):
-            self.label_key.addItem(f'Название главы {i + 1}', f'chapter:{i}')
+            self.label_key.addItem(tr('Название главы {0}', i + 1), f'chapter:{i}')
         for i in range(0 if self.is_catalog() else len(self.subtitle_tracks)):
-            self.label_key.addItem(f'Название субтитров {i+1}', f'sub:{i+1}')
+            self.label_key.addItem(tr('Название субтитров {0}', i + 1), f'sub:{i+1}')
         for i in range(0 if self.is_catalog() else len(self.audio_tracks)):
-            self.label_key.addItem(f'Название аудиодорожки {i+1}', f'audio:{i+1}')
+            self.label_key.addItem(tr('Название аудиодорожки {0}', i + 1), f'audio:{i+1}')
         for i, button in enumerate([] if self.is_catalog() else self.custom_buttons):
-            self.label_key.addItem(f'Своя кнопка {i+1}', button['id'])
+            self.label_key.addItem(tr('Своя кнопка {0}', i + 1), button['id'])
         self.label_key.setCurrentIndex(max(0, self.label_key.findData(selected)))
         self.label_key.blockSignals(False)
         self.sync_label()
@@ -604,7 +606,7 @@ class MenuEditor(QWidget):
         self.label_value.setMaxLength(80 if key == 'title' else 120)
         if key == 'title':
             self.label_value.setText(self.movie_name if self.collection_enabled and not self.collection_root else self.title.text())
-            self.label_value.setPlaceholderText('Название фильма')
+            self.label_value.setPlaceholderText(tr('Название фильма'))
             return
         lang = self.language.currentData()
         self.label_value.setText(self.labels.get(lang + ':' + key, ''))
@@ -614,7 +616,7 @@ class MenuEditor(QWidget):
         if self.label_key.currentData() is None:
             return
         if self.label_key.currentData() == 'title':
-            self.inline_text('title', self.label_value.text().strip() or 'Мой Blu-ray')
+            self.inline_text('title', self.label_value.text().strip() or tr('Мой Blu-ray'))
             return
         key = self.language.currentData() + ':' + self.label_key.currentData()
         value = self.label_value.text().strip()
@@ -662,7 +664,7 @@ class MenuEditor(QWidget):
 
     def refresh(self, *_):
         design = self.display_design()
-        self.dim_label.setText(f'Затемнение: {self.dim.value()}%')
+        self.dim_label.setText(tr('Затемнение: {0}%', self.dim.value()))
         if self.is_catalog():
             design, entries = catalog_page(design, [name for _, name in self.collection_items], self.catalog_page)
             self.focus = min(self.focus, max(0, len(entries)-1))
@@ -772,25 +774,25 @@ class MenuEditor(QWidget):
             kind, value = action.split(':')
             if kind == 'page':
                 if int(value) >= len(pages(self.chapters, self.current_design(preview=True))):
-                    self.caption.setText('Страница больше не существует. Выберите другое действие кнопки.')
+                    self.caption.setText(tr('Страница больше не существует. Выберите другое действие кнопки.'))
                     return
                 self.history.append((self.page, self.focus))
                 self.page, self.focus = int(value), 0
                 self.select_button('')
             elif kind == 'sub':
                 from disc_audio import track_label
-                self.caption.setText('Субтитры: ' + ('выключены' if value == '0' else track_label(self.subtitle_tracks[int(value)-1], int(value), self.language.currentData())))
+                self.caption.setText(tr('Субтитры: ') + (tr('выключены') if value == '0' else track_label(self.subtitle_tracks[int(value)-1], int(value), self.language.currentData())))
                 self.page = self.focus = 0
                 self.select_button('')
             elif kind == 'audio':
                 from disc_audio import track_label
-                self.caption.setText('На плеере будет выбрана дорожка: ' + track_label(self.audio_tracks[int(value)-1], int(value), self.language.currentData()))
+                self.caption.setText(tr('На плеере будет выбрана дорожка: ') + track_label(self.audio_tracks[int(value)-1], int(value), self.language.currentData()))
                 self.page = self.focus = 0
                 self.select_button('')
             else:
                 owner = f' «{self.movie_name}»' if self.collection_enabled else ''
-                name = self.display_design().text(f'chapter:{value}') or f'Глава {int(value)+1}'
-                self.caption.setText(f'На плеере начнётся воспроизведение главы {int(value)+1}: {name} · фильм{owner} · с {self.chapters[int(value)]:g} с.')
+                name = self.display_design().text(f'chapter:{value}') or tr('Глава {0}', int(value) + 1)
+                self.caption.setText(tr('На плеере начнётся воспроизведение главы {0}: {1} · фильм{2} · с {3} с.', int(value) + 1, name, owner, format(self.chapters[int(value)], f'g')))
         self.refresh()
 
     def inline_text(self, key, value):
@@ -833,11 +835,11 @@ class MenuEditor(QWidget):
         if key.startswith('catalog:'):
             self.style_panel.setEnabled(False)
             self.label_value.setEnabled(False)
-            self.caption.setText('Кнопка фильма · Размеры, стиль и сетка — в «Расстановке». Ctrl + щелчок — выбрать несколько; двойной клик — переименовать.')
+            self.caption.setText(tr('Кнопка фильма · Размеры, стиль и сетка — в «Расстановке». Ctrl + щелчок — выбрать несколько; двойной клик — переименовать.'))
             return
         if key == 'logo':
             self.style_panel.setEnabled(False)
-            self.caption.setText('Логотип · перетащите или измените размер. Del — удалить, «Вернуть удалённый элемент» — восстановить.')
+            self.caption.setText(tr('Логотип · перетащите или измените размер. Del — удалить, «Вернуть удалённый элемент» — восстановить.'))
             return
         if not key:
             return
@@ -909,7 +911,7 @@ class MenuEditor(QWidget):
             return
         is_text = self.selected_button.startswith('text:')
         style = text_style(self.current_design(preview=True), self.selected_button[5:]) if is_text else button_style(self.current_design(preview=True), self.selected_button)
-        color = QColorDialog.getColor(QColor(style[name]), self, 'Цвет элемента')
+        color = QColorDialog.getColor(QColor(style[name]), self, tr('Цвет элемента'))
         if color.isValid():
             target = self.text_styles.setdefault(self.selected_button[5:], {}) if is_text else self.button_styles.setdefault(self.selected_button, {})
             target[name] = color.name()
@@ -926,13 +928,13 @@ class MenuEditor(QWidget):
 
     def delete_button(self):
         if self.selected_button.startswith('catalog:'):
-            self.caption.setText('Чтобы убрать фильм и его кнопку с общего диска, выберите этот фильм в списке слева и нажмите «Удалить».')
+            self.caption.setText(tr('Чтобы убрать фильм и его кнопку с общего диска, выберите этот фильм в списке слева и нажмите «Удалить».'))
             return
         if self.selected_button == 'logo':
             self.logo_visible = False
             self.deleted_history.append('logo')
             self.select_button('')
-            self.caption.setText('Логотип удалён со всех страниц меню. Его можно вернуть вместе с положением и размером.')
+            self.caption.setText(tr('Логотип удалён со всех страниц меню. Его можно вернуть вместе с положением и размером.'))
             self.refresh()
             return
         if self.selected_button.startswith('text:'):
@@ -941,14 +943,14 @@ class MenuEditor(QWidget):
                 self.hidden_text.append(key)
                 self.deleted_history.append(self.selected_button)
                 self.select_button('')
-                self.caption.setText('Текст удалён. Его можно вернуть вместе с оформлением.')
+                self.caption.setText(tr('Текст удалён. Его можно вернуть вместе с оформлением.'))
                 self.refresh()
             return
         if self.selected_button and not self.selected_button.startswith('text:') and self.selected_button not in self.hidden_buttons:
             self.hidden_buttons.append(self.selected_button)
             self.deleted_history.append(self.selected_button)
             self.select_button('')
-            self.caption.setText('Кнопка удалена. «Вернуть удалённую кнопку» восстанавливает её вместе со стилем.')
+            self.caption.setText(tr('Кнопка удалена. «Вернуть удалённую кнопку» восстанавливает её вместе со стилем.'))
             self.refresh()
 
     def restore_button(self):
@@ -995,7 +997,7 @@ class MenuEditor(QWidget):
         if key != 'logo' and not key.startswith('text:'):
             others = [[e['rect'].x(), e['rect'].y(), e['rect'].width(), e['rect'].height()] for e in self.preview.elements if e['button'] and e['id'] != key]
             if overlaps(rect, others):
-                self.caption.setText('Положение занято другой кнопкой.'); return
+                self.caption.setText(tr('Положение занято другой кнопкой.')); return
         self.element_layout[key] = list(rect)
         if font_size and key.startswith('text:'):
             self.text_styles.setdefault(key[5:], {})['font_size'] = font_size
@@ -1029,13 +1031,13 @@ class MenuEditor(QWidget):
     def add_button(self):
         self.preview.commit_edit()
         if self.is_catalog():
-            self.caption.setText('Кнопки фильмов добавляются автоматически: нажмите «Добавить видео» слева. Свои кнопки можно добавлять в меню конкретного фильма.')
+            self.caption.setText(tr('Кнопки фильмов добавляются автоматически: нажмите «Добавить видео» слева. Свои кнопки можно добавлять в меню конкретного фильма.'))
             return
         if len(self.custom_buttons) >= 500:
-            self.caption.setText('Достигнут предел дополнительных кнопок проекта (500).')
+            self.caption.setText(tr('Достигнут предел дополнительных кнопок проекта (500).'))
             return
         if len(pages(self.chapters, self.current_design(preview=True))[self.page]) >= 16:
-            self.caption.setText('На странице уже 16 кнопок. Удалите лишнюю перед добавлением.')
+            self.caption.setText(tr('На странице уже 16 кнопок. Удалите лишнюю перед добавлением.'))
             return
         key = 'custom:'+uuid.uuid4().hex[:12]
         self.custom_buttons.append(dict(id=key, page=self.page, action='play:0'))
@@ -1054,22 +1056,22 @@ class MenuEditor(QWidget):
         self.element_layout[key] = [rect.x(), rect.y(), rect.width(), rect.height()]
         self.populate_labels()
         self.preview_selection(key)
-        self.caption.setText('Кнопка добавлена. Выберите действие, измените подпись и перетащите на нужное место.')
+        self.caption.setText(tr('Кнопка добавлена. Выберите действие, измените подпись и перетащите на нужное место.'))
 
     def populate_actions(self):
         self.action_selector.blockSignals(True)
         self.action_selector.clear()
-        self.action_selector.addItem('Смотреть с начала', 'play:0')
+        self.action_selector.addItem(tr('Смотреть с начала'), 'play:0')
         for i, sec in enumerate(self.chapters[1:], 1):
-            self.action_selector.addItem(f'Глава {i+1} · {int(sec)//3600:02}:{int(sec)%3600//60:02}:{int(sec)%60:02}', f'play:{i}')
+            self.action_selector.addItem(tr('Глава {0} · {1}:{2}:{3}', i + 1, format(int(sec) // 3600, f'02'), format(int(sec) % 3600 // 60, f'02'), format(int(sec) % 60, f'02')), f'play:{i}')
         for page in range(len(pages(self.chapters, self.current_design(preview=True)))):
             from disc_menu import audio_page_start
             first = audio_page_start(self.chapters)
-            name = 'Главное меню' if page == 0 else f'Аудио · страница {page-first+1}' if page >= first else f'Страница глав {page}'
+            name = tr('Главное меню') if page == 0 else tr('Аудио · страница {0}', page - first + 1) if page >= first else tr('Страница глав {0}', page)
             from disc_menu import subtitle_page_start
             sub_first = subtitle_page_start(self.chapters, self.current_design(preview=True))
             if page >= sub_first:
-                name = f'Субтитры · страница {page-sub_first+1}'
+                name = tr('Субтитры · страница {0}', page - sub_first + 1)
             self.action_selector.addItem(name, f'page:{page}')
         custom = next((b for b in self.custom_buttons if b['id'] == self.selected_button), None)
         self.action_selector.setEnabled(custom is not None)
@@ -1085,7 +1087,7 @@ class MenuEditor(QWidget):
 
     def align_buttons(self):
         if self.is_catalog():
-            self.caption.setText('Кнопки общего диска выровнены автоматически. Их порядок задаётся списком фильмов слева.')
+            self.caption.setText(tr('Кнопки общего диска выровнены автоматически. Их порядок задаётся списком фильмов слева.'))
             return
         elements = [e for e in self.preview.elements if e['button']]
         if not elements:
@@ -1095,7 +1097,7 @@ class MenuEditor(QWidget):
             elements.sort(key=lambda e: e['rect'].y())
             total = sum(e['rect'].height() for e in elements)
             if total > 1040:
-                self.caption.setText('Кнопки не помещаются по высоте. Сначала уменьшите их размер.')
+                self.caption.setText(tr('Кнопки не помещаются по высоте. Сначала уменьшите их размер.'))
                 return
             gap = min(30, (1040-total)/max(1, len(elements)-1))
             y = (1080-total-gap*(len(elements)-1))/2

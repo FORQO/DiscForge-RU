@@ -1,4 +1,5 @@
 """Studio numeric controls: a precise value above a matching range slider."""
+from studio_locale import tr
 from PySide6.QtCore import Qt, QEvent, QTime
 from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QSlider, QSpinBox,
                               QDoubleSpinBox, QTimeEdit, QSizePolicy, QStyle, QStyleOptionSpinBox)
@@ -129,7 +130,7 @@ class SliderValue(QWidget):
         layout.addWidget(self.slider, 1, 0, 1, 2 + len(self.actions))
         title = self.label.text().replace('&', '').rstrip(':')
         self.slider.setAccessibleName(title)
-        number.setAccessibleName(title + ' — значение')
+        number.setAccessibleName(title + tr(' — значение'))
         self.slider.setToolTip(number.toolTip())
         self._syncing = False
         number.slider_control = self

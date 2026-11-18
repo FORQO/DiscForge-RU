@@ -1,4 +1,5 @@
 """Conservative, versioned frame treatment and best-effort input pacing."""
+from studio_locale import tr
 VERSION = 'gentle-1'
 QUIET_RATES = (0.0, 0.5, 1.0, 2.0)
 
@@ -21,14 +22,14 @@ def project_enhancements(data, paths):
     values = data['video_enhancements']
     if (not isinstance(values, dict) or any(not isinstance(path, str) or type(flag) is not bool
                                           for path, flag in values.items())):
-        raise ValueError('Неверные настройки улучшения фильмов.')
+        raise ValueError(tr('Неверные настройки улучшения фильмов.'))
     return {str(Path(path).resolve()): True for path, flag in values.items()
             if flag and str(Path(path).resolve()) in allowed}
 
 
 def validate(enhance=False, quiet_rate=0.0):
     if type(enhance) is not bool or type(quiet_rate) not in (int, float) or quiet_rate not in QUIET_RATES:
-        raise ValueError('Неверные настройки улучшения или тихого режима.')
+        raise ValueError(tr('Неверные настройки улучшения или тихого режима.'))
 
 
 def frame_filter():
@@ -57,8 +58,6 @@ def pace(command, quiet_rate=0.0):
 def describe(enhance, quiet_rate, log):
     validate(enhance, quiet_rate)
     if enhance:
-        log('Бережное улучшение: мягкое шумоподавление → Lanczos → лёгкая резкость. '
-            'Фильтры и декодирование — CPU; выбранный видеокодер сохраняется. Это не AI.')
+        log(tr('Бережное улучшение: мягкое шумоподавление → Lanczos → лёгкая резкость. Фильтры и декодирование — CPU; выбранный видеокодер сохраняется. Это не AI.'))
     if quiet_rate:
-        log(f'Тихий режим: темп чтения до {quiet_rate:g}×. Сборка будет дольше; '
-            'это ограничение скорости, а не гарантированный процент загрузки или температуры GPU.')
+        log(tr('Тихий режим: темп чтения до {0}×. Сборка будет дольше; это ограничение скорости, а не гарантированный процент загрузки или температуры GPU.', format(quiet_rate, f'g')))

@@ -1,4 +1,5 @@
 """Shared catalog pages for the editor and the authored disc."""
+from studio_locale import tr
 from dataclasses import replace
 from episode_buttons import ordered_entries
 
@@ -13,9 +14,9 @@ class CatalogEntries(list):
 def catalog_page(design, titles, page=0, targets=None):
     count = max(1, (len(titles)+4)//5)
     if not 0 <= page < count:
-        raise ValueError('Страница коллекции не существует.')
+        raise ValueError(tr('Страница коллекции не существует.'))
     if targets is not None and len(targets) != len(titles):
-        raise ValueError('Для каждого фильма нужна страница меню.')
+        raise ValueError(tr('Для каждого фильма нужна страница меню.'))
     entries = [(titles[i], f'page:{targets[i]}' if targets is not None else f'movie:{i}')
                for i in range(page*5, min(len(titles), page*5+5))]
     keys = [f'catalog:movie:{i}' for i in range(page*5, min(len(titles), page*5+5))]

@@ -1,6 +1,8 @@
-# Документация DiskForge Studio 1.5.0
+# Документация DiskForge Studio 1.5.2
 
-- [Интерфейс Studio и актуальные скриншоты](STUDIO.md).
+[English guide and current Windows and macOS screenshots](STUDIO_EN.md) · [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md)
+
+- [Интерфейс Studio на русском](STUDIO.md).
 - [Обновлённая студия меню: карточки стилей, инструменты и миниатюры](STUDIO_DESIGN.md).
 - [Запуск Windows Studio](WINDOWS_STUDIO.md) · [Запуск macOS Studio](MACOS.md).
 

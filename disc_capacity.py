@@ -3,6 +3,7 @@
 This is a planning estimate, not a promise about VBR encoders or PGS rendering.
 The authored folder and final ISO must also pass a strict byte-size gate.
 """
+from studio_locale import tr
 from dataclasses import dataclass
 import math
 from pathlib import Path
@@ -32,13 +33,13 @@ class Budget:
         return self.total >= self.capacity * .9
 
     def explanation(self):
-        parts = (f'Оценка: {self.total/1e9:.2f} / {self.capacity/1e9:g} ГБ. '
-                 + (f'Не хватает {-self.remaining/1e9:.2f} ГБ.' if self.remaining < 0 else f'Свободно ≈ {self.remaining/1e9:.2f} ГБ.')
-                 + f'\nВидео {self.video/1e9:.2f} · звук {self.audio/1e9:.2f} · субтитры {self.subtitles/1e9:.2f} · меню и запас {self.overhead/1e9:.2f} ГБ.')
+        parts = (tr('Оценка: {0} / {1} ГБ. ', format(self.total / 1000000000.0, f'.2f'), format(self.capacity / 1000000000.0, f'g'))
+                 + (tr('Не хватает {0} ГБ.', format(-self.remaining / 1000000000.0, f'.2f')) if self.remaining < 0 else tr('Свободно ≈ {0} ГБ.', format(self.remaining / 1000000000.0, f'.2f')))
+                 + tr('\nВидео {0} · звук {1} · субтитры {2} · меню и запас {3} ГБ.', format(self.video / 1000000000.0, f'.2f'), format(self.audio / 1000000000.0, f'.2f'), format(self.subtitles / 1000000000.0, f'.2f'), format(self.overhead / 1000000000.0, f'.2f')))
         if self.remaining < 0:
-            parts += '\nСборка запрещена: уберите фильм/дорожки, выберите BD50 или явно уменьшите битрейт перекодирования.'
+            parts += tr('\nСборка запрещена: уберите фильм/дорожки, выберите BD50 или явно уменьшите битрейт перекодирования.')
         elif self.warning:
-            parts += '\nМеста осталось мало. Фактический размер будет проверен перед сохранением.'
+            parts += tr('\nМеста осталось мало. Фактический размер будет проверен перед сохранением.')
         return parts
 
 
@@ -67,7 +68,7 @@ def estimate(items, profile, mode='auto', *, collection=False, bitrate=12_000_00
             if rate is None:
                 rate = bitrate if collection else bitrate_plan(info.duration, profile, len(selected_tracks(info)))
             if type(rate) is not int or not 5_000_000 <= rate <= 28_000_000:
-                raise ValueError('Битрейт видео должен быть от 5 до 28 Мбит/с.')
+                raise ValueError(tr('Битрейт видео должен быть от 5 до 28 Мбит/с.'))
             v = math.ceil(info.duration * rate / 8)
         else:
             v = info.copy_report.video_bytes if info.copy_report and info.copy_report.video_bytes else info.size
@@ -101,4 +102,4 @@ def estimate(items, profile, mode='auto', *, collection=False, bitrate=12_000_00
 
 def require_fit(budget):
     if budget.remaining < 0:
-        raise ValueError(budget.explanation() + '\n\n' + '\n'.join(f'{name}: ≈ {size/1e9:.2f} ГБ потоков' for name, size, _ in budget.titles))
+        raise ValueError(budget.explanation() + '\n\n' + '\n'.join(tr('{0}: ≈ {1} ГБ потоков', name, format(size / 1000000000.0, f'.2f')) for name, size, _ in budget.titles))

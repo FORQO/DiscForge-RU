@@ -3,6 +3,7 @@
 This module has no GUI dependencies and is independently unit-testable.
 """
 from __future__ import annotations
+from studio_locale import tr
 
 import json
 import math
@@ -76,20 +77,20 @@ def _run_probe(path: str, ffprobe: str = 'ffprobe') -> dict:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
                            errors='replace', timeout=45, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     except FileNotFoundError as e:
-        raise DiscForgeError('Не найден ffprobe. Укажите путь к ffprobe в настройках.') from e
+        raise DiscForgeError(tr('Не найден ffprobe. Укажите путь к ffprobe в настройках.')) from e
     except subprocess.TimeoutExpired as e:
-        raise DiscForgeError('ffprobe не ответил за 45 секунд.') from e
+        raise DiscForgeError(tr('ffprobe не ответил за 45 секунд.')) from e
     if p.returncode != 0:
-        raise DiscForgeError('Ошибка анализа файла: ' + p.stderr[-400:])
+        raise DiscForgeError(tr('Ошибка анализа файла: ') + p.stderr[-400:])
     try:
         return json.loads(p.stdout)
     except ValueError as e:
-        raise DiscForgeError('ffprobe вернул некорректный JSON.') from e
+        raise DiscForgeError(tr('ffprobe вернул некорректный JSON.')) from e
 
 
 def parse_probe(path: str, data: dict) -> MediaInfo:
     if not isinstance(data, dict) or not isinstance(data.get('streams'), list):
-        raise DiscForgeError('ffprobe вернул некорректные данные о потоках.')
+        raise DiscForgeError(tr('ffprobe вернул некорректные данные о потоках.'))
     streams = [s for s in data['streams'] if isinstance(s, dict)]
     videos = [s for s in streams if s.get('codec_type') == 'video' and not (
         s.get('disposition', {}).get('attached_pic') if isinstance(s.get('disposition'), dict) else False
@@ -97,38 +98,38 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
     audios = [s for s in streams if s.get('codec_type') == 'audio']
     subs = [s for s in streams if s.get('codec_type') == 'subtitle']
     if not videos:
-        raise DiscForgeError('В файле не обнаружен видеопоток.')
+        raise DiscForgeError(tr('В файле не обнаружен видеопоток.'))
     v = videos[0]
     fmt = data.get('format') or {}
     if not isinstance(fmt, dict):
-        raise DiscForgeError('ffprobe вернул некорректные данные о файле.')
+        raise DiscForgeError(tr('ffprobe вернул некорректные данные о файле.'))
     try:
         duration = float(fmt.get('duration') or v.get('duration') or 0)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise DiscForgeError('Не удалось определить длительность фильма.') from exc
+        raise DiscForgeError(tr('Не удалось определить длительность фильма.')) from exc
     if not math.isfinite(duration) or duration <= 0:
-        raise DiscForgeError('Не удалось определить длительность фильма.')
+        raise DiscForgeError(tr('Не удалось определить длительность фильма.'))
     a = audios[0] if audios else {}
     def nonnegative_int(value: object, label: str) -> int:
         try:
             result = int(value or 0)
         except (TypeError, ValueError, OverflowError) as exc:
-            raise DiscForgeError(f'ffprobe вернул некорректное значение: {label}.') from exc
+            raise DiscForgeError(tr('ffprobe вернул некорректное значение: {0}.', label)) from exc
         if result < 0:
-            raise DiscForgeError(f'ffprobe вернул некорректное значение: {label}.')
+            raise DiscForgeError(tr('ffprobe вернул некорректное значение: {0}.', label))
         return result
 
     from source_chapters import import_chapter_metadata
     source_chapters, source_chapter_titles, chapter_notices = import_chapter_metadata(data.get('chapters'), duration)
     return MediaInfo(
         path=path, duration=duration,
-        size=nonnegative_int(fmt.get('size') or (os.path.getsize(path) if os.path.isfile(path) else 0), 'размер'),
+        size=nonnegative_int(fmt.get('size') or (os.path.getsize(path) if os.path.isfile(path) else 0), tr('размер')),
         video_codec=str(v.get('codec_name') or '?'),
-        width=nonnegative_int(v.get('width'), 'ширина'), height=nonnegative_int(v.get('height'), 'высота'),
+        width=nonnegative_int(v.get('width'), tr('ширина')), height=nonnegative_int(v.get('height'), tr('высота')),
         video_fps=str(v.get('avg_frame_rate') or v.get('r_frame_rate') or '?'),
         video_color_transfer=str(v.get('color_transfer') or '').lower(),
-        audio_codec=str(a.get('codec_name') or 'нет'),
-        audio_channels=nonnegative_int(a.get('channels'), 'аудиоканалы'),
+        audio_codec=str(a.get('codec_name') or tr('нет')),
+        audio_channels=nonnegative_int(a.get('channels'), tr('аудиоканалы')),
         audio_tracks=len(audios), subtitle_tracks=len(subs),
         video_details=dict(v), audio_details=dict(a),
         audio_streams=tuple(dict(s) for s in audios),
@@ -144,16 +145,16 @@ def probe_media(path: str, ffprobe: str = 'ffprobe') -> MediaInfo:
 
 def bitrate_plan(duration: float, profile: str, has_audio: bool) -> int:
     if profile not in CAPACITIES:
-        raise DiscForgeError('Неизвестный профиль диска: ' + profile)
+        raise DiscForgeError(tr('Неизвестный профиль диска: ') + profile)
     if not math.isfinite(duration) or duration <= 0:
-        raise DiscForgeError('Некорректная длительность.')
+        raise DiscForgeError(tr('Некорректная длительность.'))
     # Leave 7% spare room for transport stream mux overhead, filesystem, menus and rate fluctuations.
     room = CAPACITIES[profile] * 0.93
     audio_bps = 640_000 * int(has_audio)
     video_bps = int(room * 8 / duration - audio_bps)
     video_bps = min(video_bps, 28_000_000, 44_000_000-audio_bps)  # keep within conservative BD encoding bounds
     if video_bps < 5_000_000:
-        raise DiscForgeError('Фильм слишком длинный для выбранного диска при минимальном качестве 5 Мбит/с.')
+        raise DiscForgeError(tr('Фильм слишком длинный для выбранного диска при минимальном качестве 5 Мбит/с.'))
     return video_bps
 
 
@@ -201,14 +202,14 @@ def make_encode_command(ffmpeg, info, video, audio, bitrate, nvenc, fast=False, 
 def prepare_processing(info, mode, profile, ffprobe, ffmpeg, cancel, log):
     from smart_copy import analyze_copy, choose_mode, signature, MODES
     if mode not in MODES:
-        raise DiscForgeError('Неизвестный режим обработки.')
+        raise DiscForgeError(tr('Неизвестный режим обработки.'))
     report = info.copy_report
     if report is not None and report.signature != signature(info.path, cancel):
-        raise DiscForgeError('Исходник изменился после анализа. Удалите его из очереди и добавьте заново.')
+        raise DiscForgeError(tr('Исходник изменился после анализа. Удалите его из очереди и добавьте заново.'))
     if mode == 'encode':
-        return info, 'encode', 'Выбрано перекодирование видео; звук — по настройкам дорожек.'
+        return info, 'encode', tr('Выбрано перекодирование видео; звук — по настройкам дорожек.')
     if report is None:
-        log('Проверяем возможность копирования потоков без перекодирования…')
+        log(tr('Проверяем возможность копирования потоков без перекодирования…'))
         info = replace(probe_media(info.path, ffprobe), selected_audio=info.selected_audio,
                        selected_subtitles=info.selected_subtitles, audio_modes=info.audio_modes)
         report = analyze_copy(info, ffprobe, ffmpeg, cancel)
@@ -251,18 +252,18 @@ def nvenc_available(ffmpeg, cancel, log):
     timer.start()
     try:
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         class Cancellation:
             def is_set(self): return cancel.is_set() or probe_cancel.is_set()
             def wait(self, seconds):
                 cancel.wait(seconds)
                 return self.is_set()
-        run_command(command, 'Проверка NVIDIA NVENC', 0, 1, 1, Cancellation(), log, lambda _: None)
+        run_command(command, tr('Проверка NVIDIA NVENC'), 0, 1, 1, Cancellation(), log, lambda _: None)
         return True
     except DiscForgeError as exc:
         if cancel.is_set():
             raise
-        log('NVENC недоступен; выбран CPU x264. ' + str(exc))
+        log(tr('NVENC недоступен; выбран CPU x264. ') + str(exc))
         return False
     finally:
         timer.cancel()
@@ -270,20 +271,20 @@ def nvenc_available(ffmpeg, cancel, log):
 
 def validate_chapters(chapters: Sequence[float], duration: float | None = None) -> None:
     if not chapters:
-        raise DiscForgeError('Главы должны начинаться с отметки 00:00:00.')
+        raise DiscForgeError(tr('Главы должны начинаться с отметки 00:00:00.'))
     try:
         valid = all(not isinstance(t, bool) and isinstance(t, (int, float)) and
                     math.isfinite(t) and t >= 0 for t in chapters)
     except OverflowError:
         valid = False
     if not valid:
-        raise DiscForgeError('В списке глав есть недопустимая отметка.')
+        raise DiscForgeError(tr('В списке глав есть недопустимая отметка.'))
     if chapters[0] != 0:
-        raise DiscForgeError('Главы должны начинаться с отметки 00:00:00.')
+        raise DiscForgeError(tr('Главы должны начинаться с отметки 00:00:00.'))
     if any(b <= a for a, b in zip(chapters, chapters[1:])):
-        raise DiscForgeError('Отметки глав должны идти по возрастанию.')
+        raise DiscForgeError(tr('Отметки глав должны идти по возрастанию.'))
     if duration is not None and chapters[-1] >= duration:
-        raise DiscForgeError('Отметка главы должна быть меньше длительности фильма.')
+        raise DiscForgeError(tr('Отметка главы должна быть меньше длительности фильма.'))
 
 
 def write_meta(path: Path, video: Path, audio: Path | None,
@@ -337,10 +338,10 @@ def unique_target(root: Path, stem: str, iso: bool) -> Path:
 
 def _require_binary(binary: str, label: str) -> None:
     if not binary:
-        raise DiscForgeError('Не указан путь к ' + label)
+        raise DiscForgeError(tr('Не указан путь к ') + label)
     if Path(binary).is_file() or shutil.which(binary):
         return
-    raise DiscForgeError(f'Не найден {label}: {binary}. Проверьте настройки.')
+    raise DiscForgeError(tr('Не найден {0}: {1}. Проверьте настройки.', label, binary))
 
 
 def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
@@ -348,13 +349,13 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                 log: Callable[[str], None], progress: Callable[[int], None], *, cwd=None) -> None:
     log(f'{stage}...')
     if cancel.is_set():
-        raise DiscForgeError('Операция отменена пользователем.')
+        raise DiscForgeError(tr('Операция отменена пользователем.'))
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors='replace', bufsize=1, creationflags=creationflags, cwd=cwd)
     except OSError as e:
-        raise DiscForgeError(f'Не удаётся запустить {Path(cmd[0]).name}: {e}') from e
+        raise DiscForgeError(tr('Не удаётся запустить {0}: {1}', Path(cmd[0]).name, e)) from e
     errors = []
     output: queue.SimpleQueue[str | None] = queue.SimpleQueue()
     def read_output() -> None:
@@ -375,7 +376,7 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-                raise DiscForgeError('Операция отменена пользователем.')
+                raise DiscForgeError(tr('Операция отменена пользователем.'))
             try:
                 raw = output.get(timeout=0.1)
             except queue.Empty:
@@ -396,12 +397,12 @@ def run_command(cmd: list[str], stage: str, pct_start: int, pct_width: int,
                     errors.pop(0)
         while proc.poll() is None:
             if cancel.wait(0.1):
-                raise DiscForgeError('Операция отменена пользователем.')
+                raise DiscForgeError(tr('Операция отменена пользователем.'))
         returncode = proc.returncode
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         if returncode != 0:
-            raise DiscForgeError(f'{stage} завершён с ошибкой (код {returncode}): ' + '\n'.join(errors[-5:]))
+            raise DiscForgeError(tr('{0} завершён с ошибкой (код {1}): ', stage, returncode) + '\n'.join(errors[-5:]))
         progress(pct_start + pct_width)
     finally:
         if proc.poll() is None:
@@ -418,14 +419,14 @@ def run_tsmuxer(tsmuxer: str, meta: Path, destination: Path, cancel: threading.E
                  log: Callable[[str], None], progress=None) -> None:
     """Run tsMuxer with cancellation and bounded stderr capture."""
     if cancel.is_set():
-        raise DiscForgeError('Операция отменена пользователем.')
+        raise DiscForgeError(tr('Операция отменена пользователем.'))
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         proc = subprocess.Popen([tsmuxer, str(meta), str(destination)],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors='replace', creationflags=creationflags)
     except OSError as exc:
-        raise DiscForgeError(f'Не удалось запустить tsMuxer: {exc}') from exc
+        raise DiscForgeError(tr('Не удалось запустить tsMuxer: {0}', exc)) from exc
     lines: list[str] = []
     def read_output() -> None:
         assert proc.stdout is not None
@@ -449,15 +450,15 @@ def run_tsmuxer(tsmuxer: str, meta: Path, destination: Path, cancel: threading.E
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-                raise DiscForgeError('Операция отменена пользователем.')
+                raise DiscForgeError(tr('Операция отменена пользователем.'))
         reader.join(timeout=2)
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         if proc.returncode:
-            raise DiscForgeError('tsMuxer завершился с ошибкой: ' + '\n'.join(lines[-12:]))
+            raise DiscForgeError(tr('tsMuxer завершился с ошибкой: ') + '\n'.join(lines[-12:]))
         if progress:
             progress(1.0)
-        log('tsMuxer: структура создана.')
+        log(tr('tsMuxer: структура создана.'))
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -483,10 +484,10 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     validate_treatment(enhance, quiet_rate)
     if enhance:
         if processing_mode in ('copy', 'video_copy'):
-            raise DiscForgeError('Улучшение меняет кадры и требует перекодирования. Выберите режим перекодирования или отключите улучшение.')
+            raise DiscForgeError(tr('Улучшение меняет кадры и требует перекодирования. Выберите режим перекодирования или отключите улучшение.'))
         processing_mode = 'encode'
     if not Path(info.path).is_file():
-        raise DiscForgeError('Исходный файл не найден.')
+        raise DiscForgeError(tr('Исходный файл не найден.'))
     if info.selected_audio is not None:
         try:
             info = select_tracks(info, info.selected_audio)
@@ -498,31 +499,31 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     resilient = resilient or any(t.get('codec_name') == 'truehd' for t in selected_tracks(info))
     if menu is not None:
         if not isinstance(menu, MenuDesign):
-            raise DiscForgeError('Некорректное меню проекта.')
+            raise DiscForgeError(tr('Некорректное меню проекта.'))
         from disc_audio import menu_tracks
         menu = replace(menu, audio_tracks=menu_tracks(info), subtitle_tracks=menu_subtitles(info))
     info, selected_mode, recommendation = prepare_processing(info, processing_mode, profile, ffprobe, ffmpeg, cancel, log)
     log(recommendation)
     copying = selected_mode != 'encode'
     if info.is_hdr:
-        raise DiscForgeError('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.')
+        raise DiscForgeError(tr('HDR10/HLG пока не обрабатывается. Для этого файла нужен будущий UHD-модуль.'))
     if cancel.is_set():
-        raise DiscForgeError('Операция отменена пользователем.')
+        raise DiscForgeError(tr('Операция отменена пользователем.'))
     if chapters is None and info.source_chapters:
         chapters = list(info.source_chapters)
     if chapters is not None:
         validate_chapters(chapters, info.duration)
     if menu is not None:
         if not isinstance(menu, MenuDesign):
-            raise DiscForgeError('Некорректное меню проекта.')
+            raise DiscForgeError(tr('Некорректное меню проекта.'))
         if menu.background:
             from disc_menu import background_image
             background_image(menu.background)
         if iso and os.name != 'nt' and sys.platform != 'darwin':
-            raise DiscForgeError('ISO с меню пока доступен на Windows. Выберите папку BDMV.')
+            raise DiscForgeError(tr('ISO с меню пока доступен на Windows. Выберите папку BDMV.'))
         chapters = list(chapters) if chapters is not None else [0.0] + list(range(600, int(info.duration), 600))
         if len(chapters) > 999:
-            raise DiscForgeError('Меню поддерживает не более 999 глав.')
+            raise DiscForgeError(tr('Меню поддерживает не более 999 глав.'))
         if not menu.chapter_titles:
             from source_chapters import titles_for_chapters
             menu = replace(menu, chapter_titles=titles_for_chapters(info, chapters))
@@ -532,14 +533,14 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
     _require_binary(tsmuxer, 'tsMuxeR')
     tracks = selected_tracks(info)
     if len(tracks) > 32:
-        raise DiscForgeError('Blu-ray поддерживает не более 32 выбранных аудиодорожек.')
+        raise DiscForgeError(tr('Blu-ray поддерживает не более 32 выбранных аудиодорожек.'))
     bitrate = int(info.copy_report.video_bytes*8/info.duration) if copying else video_bitrate if video_bitrate is not None else bitrate_plan(info.duration, profile, len(tracks))
     if video_bitrate is not None and not copying:
         if type(video_bitrate) is not int or not 5_000_000 <= video_bitrate <= 28_000_000:
-            raise DiscForgeError('Битрейт видео должен быть от 5 до 28 Мбит/с.')
+            raise DiscForgeError(tr('Битрейт видео должен быть от 5 до 28 Мбит/с.'))
         bitrate = video_bitrate
     if keep_authored and (iso or not resilient):
-        raise DiscForgeError('Внутренняя сборка коллекции требует папку BDMV и кэш.')
+        raise DiscForgeError(tr('Внутренняя сборка коллекции требует папку BDMV и кэш.'))
     root = Path(output_root).expanduser()
     root.mkdir(parents=True, exist_ok=True)
     estimated_stream = info.duration * (bitrate + 640_000 * len(tracks)) / 8 * 1.08
@@ -551,14 +552,14 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         # Reserve room for the new output; tool errors still leave checkpoints intact.
         required = int(estimated_stream) + 256_000_000
     if shutil.disk_usage(root).free < required:
-        raise DiscForgeError(f'Недостаточно места для сборки. Освободите примерно {required/1e9:.1f} ГБ в выходной папке.')
+        raise DiscForgeError(tr('Недостаточно места для сборки. Освободите примерно {0} ГБ в выходной папке.', format(required / 1000000000.0, f'.1f')))
     target = unique_target(root, info.name, iso)
-    log(f'Профиль: {profile}, видео: {bitrate/1e6:.1f} Мбит/с, выход: {target}')
-    log('Меню BD-J: перед записью проверьте воспроизведение на вашем плеере.' if menu else 'Диск без интерактивного меню.')
+    log(tr('Профиль: {0}, видео: {1} Мбит/с, выход: {2}', profile, format(bitrate / 1000000.0, f'.1f'), target))
+    log(tr('Меню BD-J: перед записью проверьте воспроизведение на вашем плеере.') if menu else tr('Диск без интерактивного меню.'))
     if not copying:
-        log('Предупреждение: кадры будут приведены к 23,976 fps; конвертация может повлиять на плавность.')
+        log(tr('Предупреждение: кадры будут приведены к 23,976 fps; конвертация может повлиять на плавность.'))
     else:
-        log('Видео копируется без изменения изображения и частоты кадров. ' + ('Решение по каждой аудиодорожке будет показано отдельно.' if resilient else 'Совместимый звук копируется, остальные выбранные дорожки преобразуются в AC-3.'))
+        log(tr('Видео копируется без изменения изображения и частоты кадров. ') + (tr('Решение по каждой аудиодорожке будет показано отдельно.') if resilient else tr('Совместимый звук копируется, остальные выбранные дорожки преобразуются в AC-3.')))
     from build_cache import BuildCache, digest
     from settings import write_json
     with BuildCache(root, info.path, cancel, log, enabled=resilient, verification=verification) as cache, pending_image(target) as pending_iso:
@@ -566,7 +567,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         source_stat = Path(info.path).stat()
         source_key = None
         if resilient:
-            log('Проверяем SHA-256 исходника и инструментов для безопасного возобновления…')
+            log(tr('Проверяем SHA-256 исходника и инструментов для безопасного возобновления…'))
             source_key = digest(info.path, cancel)
         tools_key = {name: digest(shutil.which(path) or path, cancel) for name, path in
                      [('ffmpeg', ffmpeg), ('tsmuxer', tsmuxer), ('ffprobe', ffprobe)]} if resilient else {}
@@ -575,13 +576,13 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                             for i, t in enumerate(info.selected_subtitles)]
         subtitle_key = [source_key, tools_key, list(info.selected_subtitles),
                         [digest(t['path'], cancel) for t in info.selected_subtitles if t['source'] == 'external']]
-        if not cache.reusable('субтитры', subtitle_key, [p for p, _ in subtitle_outputs]):
-            cache.begin('субтитры')
+        if not cache.reusable(tr('субтитры'), subtitle_key, [p for p, _ in subtitle_outputs]):
+            cache.begin(tr('субтитры'))
             subtitle_outputs = prepare_subtitles(info, work, ffmpeg, cancel, log, run_command)
             if subtitle_outputs:
-                cache.commit('субтитры', subtitle_key, [p for p, _ in subtitle_outputs])
+                cache.commit(tr('субтитры'), subtitle_key, [p for p, _ in subtitle_outputs])
         if subtitle_outputs:
-            log(f'Субтитров: {len(subtitle_outputs)}. Отдельные дорожки PGS, без наложения на видео.')
+            log(tr('Субтитров: {0}. Отдельные дорожки PGS, без наложения на видео.', len(subtitle_outputs)))
         video = work / 'video.h264'
         audio = [(work / f'audio_{i}.ac3', stream) for i, stream in enumerate(tracks)]
         if copying and not resilient:
@@ -593,25 +594,25 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             from audio_pipeline import scan_audio, plan_audio
             checks_path = work / 'audio-checks.json'
             checks_key = [source_key, tools_key['ffprobe'], info.selected_audio, 2]
-            if cache.reusable('анализ аудио', checks_key, [checks_path]):
+            if cache.reusable(tr('анализ аудио'), checks_key, [checks_path]):
                 checks = {int(k): v for k, v in json.loads(checks_path.read_text(encoding='utf-8')).items()}
             else:
-                cache.begin('анализ аудио')
-                log('Проверяем пакеты и синхронизацию выбранных аудиодорожек…')
+                cache.begin(tr('анализ аудио'))
+                log(tr('Проверяем пакеты и синхронизацию выбранных аудиодорожек…'))
                 checks = scan_audio(info, ffprobe, cancel)
                 write_json(checks_path, checks)
-                cache.commit('анализ аудио', checks_key, [checks_path])
+                cache.commit(tr('анализ аудио'), checks_key, [checks_path])
             audio = plan_audio(info, checks, work, log)
             sound_bps = sum(s['output_bitrate'] for _, s in audio)
             if copying and info.copy_report.video_max_bps + sound_bps > 44_000_000:
-                raise DiscForgeError('Суммарный битрейт видео и выбранного звука превышает 44 Мбит/с. Выберите AC-3 для крупных дорожек или перекодирование видео.')
+                raise DiscForgeError(tr('Суммарный битрейт видео и выбранного звука превышает 44 Мбит/с. Выберите AC-3 для крупных дорожек или перекодирование видео.'))
             if not copying:
                 average_sound = sum(s.get('output_average_bitrate', s['output_bitrate']) for _, s in audio)
                 bitrate = min(bitrate, 44_000_000-sound_bps, int(CAPACITIES[profile]*.93*8/info.duration-average_sound))
                 if video_bitrate is not None and bitrate != video_bitrate:
-                    raise DiscForgeError(f'Выбранные аудиодорожки ограничивают видео до {bitrate/1e6:.2f} Мбит/с. Уменьшите битрейт общего диска или измените выбор звука; качество автоматически не снижалось.')
+                    raise DiscForgeError(tr('Выбранные аудиодорожки ограничивают видео до {0} Мбит/с. Уменьшите битрейт общего диска или измените выбор звука; качество автоматически не снижалось.', format(bitrate / 1000000.0, f'.2f')))
                 if bitrate < 5_000_000:
-                    raise DiscForgeError('Выбранные звуковые дорожки не оставляют места для видео. Выберите AC-3 или BD50.')
+                    raise DiscForgeError(tr('Выбранные звуковые дорожки не оставляют места для видео. Выберите AC-3 или BD50.'))
         meta = work / 'project.meta'
         def report(stage, fraction):
             if verification:
@@ -620,7 +621,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                 observer(stage, fraction)
         report('encode', 0)
         if not copying:
-            log('Видеокодер: ' + ('NVIDIA NVENC' if nvenc else 'CPU x264') + (' · быстрый режим' if fast else ' · сбалансированный режим'))
+            log(tr('Видеокодер: ') + ('NVIDIA NVENC' if nvenc else 'CPU x264') + (tr(' · быстрый режим') if fast else tr(' · сбалансированный режим')))
             describe_treatment(enhance, quiet_rate, log)
         def encoded(value):
             progress(value)
@@ -636,9 +637,9 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             if s.get('output_codec') == 'truehd':
                 encoded_paths.extend(truehd_paths(p))
         encode_start = time.monotonic()
-        reused_encode = cache.reusable('видео и аудио', encode_key, encoded_paths)
+        reused_encode = cache.reusable(tr('видео и аудио'), encode_key, encoded_paths)
         if not reused_encode:
-            cache.begin('видео и аудио')
+            cache.begin(tr('видео и аудио'))
             command = make_copy_command(ffmpeg, info, video, audio if not resilient else [], selected_mode == 'video_copy') if copying else make_encode_command(ffmpeg, info, video, audio if not resilient else [], bitrate, nvenc, fast, enhance=enhance, quiet_rate=quiet_rate)
             if resilient:
                 if not copying:
@@ -650,26 +651,26 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                 from audio_pipeline import append_audio
                 command = append_audio(command, audio, info)
             run_command(command,
-                    ('Копирование видео + AC-3' if selected_mode == 'video_copy' else 'Копирование потоков') if copying else ('Кодирование видео и звука' if audio else 'Кодирование видео'),
+                    (tr('Копирование видео + AC-3') if selected_mode == 'video_copy' else tr('Копирование потоков')) if copying else (tr('Кодирование видео и звука') if audio else tr('Кодирование видео')),
                     0, 90, info.duration, cancel, log, encoded)
             for p, s in audio:
                 if s.get('output_codec') == 'truehd':
-                    log('Подготавливаем TrueHD/Atmos для Blu-ray без изменения основного потока…')
+                    log(tr('Подготавливаем TrueHD/Atmos для Blu-ray без изменения основного потока…'))
                     interleave(p, cancel)
             current_stat = Path(info.path).stat()
             if (source_stat.st_size, source_stat.st_mtime_ns) != (current_stat.st_size, current_stat.st_mtime_ns):
-                raise DiscForgeError('Исходник изменился во время обработки. Этап не сохранён.')
+                raise DiscForgeError(tr('Исходник изменился во время обработки. Этап не сохранён.'))
             if resilient:
-                log('Видео и звук подготовлены. Проверяем SHA-256 готовых потоков и сохраняем этап; GPU больше не требуется…')
-            cache.commit('видео и аудио', encode_key, encoded_paths, time.monotonic()-encode_start)
+                log(tr('Видео и звук подготовлены. Проверяем SHA-256 готовых потоков и сохраняем этап; GPU больше не требуется…'))
+            cache.commit(tr('видео и аудио'), encode_key, encoded_paths, time.monotonic()-encode_start)
         encoded(90)
         report('encode', 1)
         if copying and signature_changed(info, cancel):
-            raise DiscForgeError('Файл изменился при копировании. Сборка остановлена.')
+            raise DiscForgeError(tr('Файл изменился при копировании. Сборка остановлена.'))
         write_meta(meta, video, audio, chapters, fps=info.copy_report.fps if copying else '23.976',
                    subtitles=subtitle_outputs, width=info.width if copying else 1920, height=info.height if copying else 1080)
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         # Author to an intermediate output first; move to destination only on success.
         author_target = pending_iso if iso and menu is None and not resilient else work / 'disc'
         authored_key = [encode_key, list(chapters) if chapters is not None else None, menu.to_dict() if menu else None,
@@ -681,15 +682,15 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         from disc_menu import theme_background_path
         if menu and not menu.background and theme_background_path(menu.theme):
             authored_key.append(digest(theme_background_path(menu.theme), cancel))
-        reused_disc = cache.reusable('диск и меню', authored_key, [author_target])
-        log('Формирование структуры Blu-ray через tsMuxer...')
+        reused_disc = cache.reusable(tr('диск и меню'), authored_key, [author_target])
+        log(tr('Формирование структуры Blu-ray через tsMuxer...'))
         report('mux', 0)
         if not reused_disc:
-            cache.begin('диск и меню')
+            cache.begin(tr('диск и меню'))
             if resilient and author_target.exists():
                 # Only this fixed child of the verified cache directory is removed.
                 if author_target.resolve() != (cache.root.resolve() / 'disc'):
-                    raise DiscForgeError('Некорректный рабочий каталог диска.')
+                    raise DiscForgeError(tr('Некорректный рабочий каталог диска.'))
                 shutil.rmtree(author_target)
             if observer:
                 run_tsmuxer(tsmuxer, meta, author_target, cancel, log,
@@ -699,11 +700,11 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         report('mux', 1)
         report('menu', 0)
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         if not author_target.exists():
-            raise DiscForgeError('tsMuxer не создал выходной файл/папку.')
+            raise DiscForgeError(tr('tsMuxer не создал выходной файл/папку.'))
         if menu is not None:
-            log('Создаём интерактивное меню BD-J…')
+            log(tr('Создаём интерактивное меню BD-J…'))
             from disc_audio import bind_tracks, menu_tracks
             menu = bind_tracks(menu, author_target / 'BDMV/PLAYLIST/00000.mpls', menu_tracks(info))
             from disc_audio import bind_subtitles
@@ -716,15 +717,15 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         else:
             size = sum(f.stat().st_size for f in author_target.rglob('*') if f.is_file())
             if not (author_target / 'BDMV').is_dir():
-                raise DiscForgeError('tsMuxer не создал каталог BDMV.')
+                raise DiscForgeError(tr('tsMuxer не создал каталог BDMV.'))
         if size > CAPACITIES[profile]:
-            raise DiscForgeError(f'Размер результата {size / 1e9:.2f} ГБ превышает {profile}. Файлы болванки не затронуты.')
+            raise DiscForgeError(tr('Размер результата {0} ГБ превышает {1}. Файлы болванки не затронуты.', format(size / 1000000000.0, f'.2f'), profile))
         # Validate the authored folder before packaging and before publishing.
         if not iso or menu is not None or resilient:
             bdmv_report = inspect_bdmv(author_target, profile)
             if not bdmv_report.structurally_valid:
-                raise DiscForgeError('Проверка BDMV не пройдена: ' + '; '.join(bdmv_report.errors[:8]))
-            log('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.')
+                raise DiscForgeError(tr('Проверка BDMV не пройдена: ') + '; '.join(bdmv_report.errors[:8]))
+            log(tr('Структурная проверка BDMV пройдена; совместимость с плеером не подтверждена.'))
         validation = None
         if resilient:
             from disc_verify import verify_disc
@@ -735,7 +736,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
             validation['reused_encode'] = reused_encode
             validation['reused_disc'] = reused_disc
             if not reused_disc:
-                cache.commit('диск и меню', authored_key, [author_target])
+                cache.commit(tr('диск и меню'), authored_key, [author_target])
         if keep_authored:
             write_json(work / 'collection-title-verification.json', validation)
             return author_target
@@ -752,7 +753,7 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
                            progress=lambda f: (progress(94+5*f), report('iso', f)))
                 preliminary = inspect_iso(image, profile)
                 if not preliminary.valid:
-                    raise DiscForgeError('Созданный ISO не прошёл UDF-проверку: ' + '; '.join(preliminary.errors[:8]))
+                    raise DiscForgeError(tr('Созданный ISO не прошёл UDF-проверку: ') + '; '.join(preliminary.errors[:8]))
                 cache.commit('ISO', image_key, [image])
             report('iso', 1)
             author_target = image
@@ -761,44 +762,39 @@ def create_bluray(info: MediaInfo, profile: str, output_root: str,
         if iso:
             iso_report = inspect_iso(author_target, profile)
             if not iso_report.valid:
-                raise DiscForgeError('Проверка ISO UDF 2.50 не пройдена: ' + '; '.join(iso_report.errors[:8]))
-            log('Метаданные UDF 2.50 проверены; воспроизведение требует отдельного теста.')
+                raise DiscForgeError(tr('Проверка ISO UDF 2.50 не пройдена: ') + '; '.join(iso_report.errors[:8]))
+            log(tr('Метаданные UDF 2.50 проверены; воспроизведение требует отдельного теста.'))
         if resilient:
             if iso:
                 from disc_verify import verify_image_payload
                 from verification_progress import VerificationProgress
                 tracker = VerificationProgress(sum(f['size'] for f in validation['files'].values()) + size,
                                                len(validation['files']) + 1, verification, scope='iso-final')
-                log('Проверяем содержимое ISO: подключаем только для чтения и сверяем SHA-256…')
+                log(tr('Проверяем содержимое ISO: подключаем только для чтения и сверяем SHA-256…'))
                 try:
                     verify_image_payload(author_target, validation['files'], cancel, tracker)
                 except ValueError:
                     cache.begin('ISO')
                     raise
-                validation['iso'] = tracker.digest(author_target, cancel, '2/2 · Контрольная сумма ISO')
+                validation['iso'] = tracker.digest(author_target, cancel, tr('2/2 · Контрольная сумма ISO'))
                 validation['iso_payload_verified'] = True
                 tracker.finish()
             report_file = target.with_name(target.name + '.verification.json')
             write_json(report_file, validation)
-            summary = ('DiskForge — отчёт проверки\n\n'
-                       'Проверки структуры и связей пройдены.\n'
-                       f'Режим видео: {selected_mode}\n'
-                       f'Аудиодорожки: {len(audio)} · Субтитры: {len(subtitle_outputs)} · Главы: {validation["chapters"]}\n'
-                       f'Повторно использованы видео/аудио: {"да" if reused_encode else "нет"}\n'
-                       f'Повторно использованы диск/меню: {"да" if reused_disc else "нет"}\n'
-                       + (f'TrueHD/Atmos: {len(validation["lossless_truehd"])} дорожек побитно сверены с исходником; совместимый AC-3 проверен.\n' if validation.get('lossless_truehd') else '')
-                       + ('Содержимое ISO сверено с файлами BDMV по SHA-256.\nSHA-256 ISO: ' + validation['iso']['sha256'] + '\n' if iso else '')
-                       + '\nПолный список контрольных сумм: ' + report_file.name
-                       + '\nВоспроизведение и работа пульта на бытовом проигрывателе этим тестом не проверяются.\n')
+            summary = (tr('DiskForge — отчёт проверки\n\nПроверки структуры и связей пройдены.\nРежим видео: {0}\nАудиодорожки: {1} · Субтитры: {2} · Главы: {3}\nПовторно использованы видео/аудио: {4}\nПовторно использованы диск/меню: {5}\n', selected_mode, len(audio), len(subtitle_outputs), validation['chapters'], tr('да') if reused_encode else tr('нет'), tr('да') if reused_disc else tr('нет'))
+                       + (tr('TrueHD/Atmos: {0} дорожек побитно сверены с исходником; совместимый AC-3 проверен.\n', len(validation['lossless_truehd'])) if validation.get('lossless_truehd') else '')
+                       + (tr('Содержимое ISO сверено с файлами BDMV по SHA-256.\nSHA-256 ISO: ') + validation['iso']['sha256'] + '\n' if iso else '')
+                       + tr('\nПолный список контрольных сумм: ') + report_file.name
+                       + tr('\nВоспроизведение и работа пульта на бытовом проигрывателе этим тестом не проверяются.\n'))
             target.with_name(target.name + '.verification.txt').write_text(summary, encoding='utf-8-sig')
-            log('Отчёт проверки: ' + str(report_file))
+            log(tr('Отчёт проверки: ') + str(report_file))
         if cancel.is_set():
-            raise DiscForgeError('Операция отменена пользователем.')
+            raise DiscForgeError(tr('Операция отменена пользователем.'))
         shutil.move(str(author_target), str(target))
         if resilient:
             # Keep expensive intermediates for later edits and retries; explicit UI cleanup is available.
-            log('Кэш этапов сохранён. Его можно удалить после проверки готового диска.')
+            log(tr('Кэш этапов сохранён. Его можно удалить после проверки готового диска.'))
         report('verify', 1)
         progress(100)
-        log(f'Готово: {target} ({size/1e9:.2f} ГБ).')
+        log(tr('Готово: {0} ({1} ГБ).', target, format(size / 1000000000.0, f'.2f')))
         return target

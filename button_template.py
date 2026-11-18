@@ -1,4 +1,5 @@
 """Apply one visual button sample to the project without changing its actions."""
+from studio_locale import tr
 import copy
 import math
 from dataclasses import replace
@@ -31,7 +32,7 @@ def _fit_layout(config, width, height, count, preferred):
                       y=max(0, min(config['y'], 960-total_h)))
         arrange_rects(list(range(count)), [[0, 0, width, height]]*count, result)
         return result
-    raise ValueError('С такими размерами образца все кнопки не помещаются. Уменьшите ширину или высоту выбранной кнопки и повторите применение.')
+    raise ValueError(tr('С такими размерами образца все кнопки не помещаются. Уменьшите ширину или высоту выбранной кнопки и повторите применение.'))
 
 
 def project_button_template(design, source_key, source_rect, current_rects, scope, chapters, titles=()):

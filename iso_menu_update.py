@@ -1,4 +1,5 @@
 """Menu-only update: read-only mount, overlay metadata, one ISO copy, no codecs."""
+from studio_locale import tr
 from contextlib import contextmanager
 import hashlib
 import json
@@ -27,9 +28,7 @@ def powershell(code, iso):
     if result.returncode:
         message = result.stderr.decode('utf-8', errors='replace')[-1600:]
         if 'ISO_MOUNT_VOLUME_TIMEOUT' in message:
-            raise RuntimeError('Windows не предоставила доступ к тому ISO за 15 секунд. '
-                               'Образ не изменён. Повторите подключение; при сборке готовые этапы остаются в кэше. '
-                               'Эта ошибка подключения сама по себе не означает повреждение образа.')
+            raise RuntimeError(tr('Windows не предоставила доступ к тому ISO за 15 секунд. Образ не изменён. Повторите подключение; при сборке готовые этапы остаются в кэше. Эта ошибка подключения сама по себе не означает повреждение образа.'))
         raise RuntimeError(message)
     return result.stdout.decode('utf-8-sig').strip()
 
@@ -78,7 +77,7 @@ def mounted_iso(iso):
             yield root
         return
     if sys.platform != 'win32':
-        raise RuntimeError('Обновление ISO доступно в Windows и macOS.')
+        raise RuntimeError(tr('Обновление ISO доступно в Windows и macOS.'))
     data = json.loads(powershell(mount_script(), iso))
     try:
         yield Path(data['root'])
@@ -91,30 +90,30 @@ def chapter_positions(playlist):
     with playlist.open('rb') as stream:
         data = stream.read(16 * 1024 * 1024 + 1)
     if not 40 <= len(data) <= 16 * 1024 * 1024 or data[:8] not in (b'MPLS0100', b'MPLS0200'):
-        raise ValueError('Некорректный плейлист.')
+        raise ValueError(tr('Некорректный плейлист.'))
     def u16(at): return int.from_bytes(data[at:at+2], 'big')
     def u32(at): return int.from_bytes(data[at:at+4], 'big')
     play, marks = u32(8), u32(12)
     if play < 40 or play+10 > len(data) or marks < play+10 or marks+6 > len(data):
-        raise ValueError('Некорректные разделы плейлиста.')
+        raise ValueError(tr('Некорректные разделы плейлиста.'))
     intervals, elapsed, cursor = [], 0, play+10
     for _ in range(u16(play+6)):
         end = cursor+2+u16(cursor)
         if end > len(data) or end <= cursor+32:
-            raise ValueError('Некорректный PlayItem.')
+            raise ValueError(tr('Некорректный PlayItem.'))
         start, stop = u32(cursor+14), u32(cursor+18)
         intervals.append((start, elapsed))
         elapsed += stop-start
         cursor = end
     count = u16(marks+4)
     if not 1 <= count <= 999 or marks+6+14*count > len(data):
-        raise ValueError('Некорректный список глав.')
+        raise ValueError(tr('Некорректный список глав.'))
     chapters = []
     for i in range(count):
         at = marks+6+14*i
         ref = u16(at+2)
         if ref >= len(intervals):
-            raise ValueError('Некорректная ссылка главы.')
+            raise ValueError(tr('Некорректная ссылка главы.'))
         start, elapsed = intervals[ref]
         chapters.append((elapsed+u32(at+4)-start)/45000)
     if abs(chapters[0]) <= 2:
@@ -126,38 +125,38 @@ def chapter_positions(playlist):
 def open_menu(root):
     playlists = list((root / 'BDMV/PLAYLIST').glob('*.mpls'))
     if len(playlists) != 1 or playlists[0].name != '00000.mpls':
-        raise ValueError('Прямое обновление меню ISO поддерживает один фильм (плейлист 00000). Для коллекции откройте сохранённый проект и соберите ISO снова: подготовленные видео и звук будут взяты из проверенного кэша.')
+        raise ValueError(tr('Прямое обновление меню ISO поддерживает один фильм (плейлист 00000). Для коллекции откройте сохранённый проект и соберите ISO снова: подготовленные видео и звук будут взяты из проверенного кэша.'))
     chapters = chapter_positions(playlists[0])
     path = root / 'BDMV/JAR/00000.jar'
     if not path.is_file() or path.stat().st_size > 256 * 1024 * 1024:
-        raise ValueError('В ISO не найдено поддерживаемое меню DiscForge.')
+        raise ValueError(tr('В ISO не найдено поддерживаемое меню DiscForge.'))
     with zipfile.ZipFile(path) as jar:
         names = jar.namelist()
         if 'discforge-collection.json' in names:
-            raise ValueError('Для изменения меню коллекции откройте сохранённый проект и соберите ISO снова. Проверенный кэш видео и звука будет использован повторно.')
+            raise ValueError(tr('Для изменения меню коллекции откройте сохранённый проект и соберите ISO снова. Проверенный кэш видео и звука будет использован повторно.'))
         if (len(names) != len(set(names)) or 'DiscForgeXlet.class' not in names or 'menu.properties' not in names
                 or sum(i.file_size for i in jar.infolist()) > 512 * 1024 * 1024
                 or any(i.file_size > 32 * 1024 * 1024 for i in jar.infolist())):
-            raise ValueError('Неподдерживаемый или слишком большой архив меню.')
+            raise ValueError(tr('Неподдерживаемый или слишком большой архив меню.'))
         props = dict(line.split('=', 1) for line in jar.read('menu.properties').decode('ascii').splitlines() if '=' in line)
         if props.get('playlist') != '00000':
-            raise ValueError('Неподдерживаемый плейлист меню.')
+            raise ValueError(tr('Неподдерживаемый плейлист меню.'))
         count = int(props['pages'])
         if not 1 <= count <= 256:
-            raise ValueError('Некорректное количество страниц.')
+            raise ValueError(tr('Некорректное количество страниц.'))
         from disc_audio import playlist_tracks, playlist_subtitles
         tracks = playlist_tracks(playlists[0])
         captions = playlist_subtitles(playlists[0])
         sub_count = int(props.get('subtitle.count', '0'))
         if sub_count and (sub_count != len(captions) or not 1 <= int(props.get('subtitle.page', '0')) < count):
-            raise ValueError('Субтитры меню не совпадают с плейлистом.')
+            raise ValueError(tr('Субтитры меню не совпадают с плейлистом.'))
         audio_count = int(props.get('audio.count', '0'))
         if audio_count and (audio_count != len(tracks) or not 1 <= int(props.get('audio.page', '0')) < count):
-            raise ValueError('Аудиодорожки меню не совпадают с плейлистом.')
+            raise ValueError(tr('Аудиодорожки меню не совпадают с плейлистом.'))
         for page in range(count):
             n = int(props[f'page.{page}.count'])
             if not 0 <= n <= 16:
-                raise ValueError('Некорректное количество кнопок.')
+                raise ValueError(tr('Некорректное количество кнопок.'))
             for i in range(n):
                 action = props[f'page.{page}.{i}']
                 match = re.fullmatch(r'(page|play|audio|sub):(\d+)', action)
@@ -165,16 +164,16 @@ def open_menu(root):
                 if match and match[1] == 'audio':
                     limit = len(tracks)+1
                     if int(match[2]) == 0:
-                        raise ValueError('Некорректная аудиодорожка.')
+                        raise ValueError(tr('Некорректная аудиодорожка.'))
                 if match and match[1] == 'sub':
                     limit = len(captions)+1
                 if not match or int(match[2]) >= limit:
-                    raise ValueError('Некорректное действие кнопки.')
+                    raise ValueError(tr('Некорректное действие кнопки.'))
         design = None
         if 'discforge-design.json' in names:
             document = json.loads(jar.read('discforge-design.json'))
             if document.get('version') != 1:
-                raise ValueError('Неподдерживаемая версия настроек меню.')
+                raise ValueError(tr('Неподдерживаемая версия настроек меню.'))
             raw = document['design']
             design = MenuDesign.from_dict(raw['title'], raw)
             from disc_audio import bind_tracks, bind_subtitles
@@ -202,29 +201,29 @@ def repair_menu(root, overlay, props, cancel):
             output.writestr(name, engine.read(name))
         for page in range(int(props['pages'])):
             if cancel.is_set():
-                raise RuntimeError('Операция отменена.')
+                raise RuntimeError(tr('Операция отменена.'))
             buffer = QBuffer()
             buffer.setData(QByteArray(source.read(f'page{page}.png')))
             buffer.open(QIODevice.ReadOnly)
             reader = QImageReader(buffer, b'PNG')
             if reader.size().width() != 1920 or reader.size().height() != 1080:
-                raise ValueError('Неподдерживаемый размер страницы меню.')
+                raise ValueError(tr('Неподдерживаемый размер страницы меню.'))
             base = reader.read()
             if base.isNull():
-                raise ValueError('Не удалось прочитать страницу меню.')
+                raise ValueError(tr('Не удалось прочитать страницу меню.'))
             for i in range(int(props[f'page.{page}.count'])):
                 key = f'page.{page}.{i}'
                 x,y,w,h = [int(props[key+'.'+field]) for field in ('x','y','w','h')]
                 radius = int(props.get(key+'.radius', '12'))
                 color = '#'+props.get(key+'.highlight', '73d8ed')
                 if min(x,y) < 0 or min(w,h) < 32 or x+w > 1920 or y+h > 1080 or not 0 <= radius <= h//2 or not re.fullmatch('#[0-9a-fA-F]{6}', color):
-                    raise ValueError('Некорректная геометрия или цвет кнопки.')
+                    raise ValueError(tr('Некорректная геометрия или цвет кнопки.'))
                 element = dict(rect=[x,y,w,h], style=dict(shape='pill' if radius > 12 else 'rounded' if radius else 'rectangle', highlight=color))
                 patch,x,y = focus_patch(base, element)
                 buffer = QBuffer()
                 buffer.open(QIODevice.WriteOnly)
                 if not patch.save(buffer, 'PNG'):
-                    raise ValueError('Не удалось нарисовать выделение.')
+                    raise ValueError(tr('Не удалось нарисовать выделение.'))
                 name = f'focus{page}_{i}.png'
                 output.writestr(name, bytes(buffer.data()))
                 props.update({key+'.focus':name, key+'.focusX':str(x), key+'.focusY':str(y)})
@@ -242,25 +241,25 @@ def repair_menu(root, overlay, props, cancel):
 def update_iso(source, destination, design, cancel, log=lambda _: None, progress=lambda _: None):
     source, destination = Path(source).resolve(), Path(destination).resolve()
     if source == destination or destination.exists():
-        raise ValueError('Выберите новое имя ISO. Исходный образ не перезаписывается.')
+        raise ValueError(tr('Выберите новое имя ISO. Исходный образ не перезаписывается.'))
     if not source.is_file() or source.suffix.lower() != '.iso':
-        raise ValueError('Выберите существующий ISO.')
+        raise ValueError(tr('Выберите существующий ISO.'))
     size = source.stat().st_size
     profile = 'BD25' if size <= CAPACITIES['BD25'] else 'BD50'
     report = inspect(source, profile)
     if not report.valid:
-        raise ValueError('Исходный ISO не прошёл проверку UDF 2.50: '+ '; '.join(report.errors))
+        raise ValueError(tr('Исходный ISO не прошёл проверку UDF 2.50: ')+ '; '.join(report.errors))
     if shutil.disk_usage(destination.parent).free < size + 128 * 1024 * 1024:
-        raise ValueError('Недостаточно места для обновлённого ISO. Требуется размер исходного образа плюс 128 МБ.')
+        raise ValueError(tr('Недостаточно места для обновлённого ISO. Требуется размер исходного образа плюс 128 МБ.'))
     if cancel.is_set():
-        raise RuntimeError('Операция отменена.')
+        raise RuntimeError(tr('Операция отменена.'))
     with tempfile.TemporaryDirectory(prefix='DiscForge_menu_', dir=destination.parent) as temp, pending_image(destination) as pending:
         overlay = Path(temp) / 'overlay'
         overlay.mkdir()
-        log('Подключаем исходный ISO только для чтения…')
+        log(tr('Подключаем исходный ISO только для чтения…'))
         with mounted_iso(source) as root:
             chapters, props, _ = open_menu(root)
-            log('Обновляем только меню. Видео, звук и тайминги глав сохраняются.')
+            log(tr('Обновляем только меню. Видео, звук и тайминги глав сохраняются.'))
             if design is None:
                 repair_menu(root, overlay, props, cancel)
             else:
@@ -270,13 +269,13 @@ def update_iso(source, destination, design, cancel, log=lambda _: None, progress
                 from disc_audio import bind_tracks, bind_subtitles
                 design = bind_subtitles(bind_tracks(design, playlist), playlist)
                 install_menu(overlay, design, chapters)
-            log('Копируем содержимое в новый ISO без перекодирования и повторного мультиплексирования…')
+            log(tr('Копируем содержимое в новый ISO без перекодирования и повторного мультиплексирования…'))
             create_iso(root, pending, CAPACITIES[profile], cancel, log, progress, overlay=overlay)
             if cancel.is_set():
-                raise RuntimeError('Операция отменена.')
+                raise RuntimeError(tr('Операция отменена.'))
             report = inspect(pending, profile)
             if not report.valid:
-                raise ValueError('Обновлённый ISO не прошёл проверку: '+ '; '.join(report.errors))
+                raise ValueError(tr('Обновлённый ISO не прошёл проверку: ')+ '; '.join(report.errors))
         # Windows rename does not replace an existing destination, including a race.
         if destination.exists():
             raise FileExistsError(destination)
@@ -284,5 +283,5 @@ def update_iso(source, destination, design, cancel, log=lambda _: None, progress
             os.link(pending, destination)
         else:
             pending.rename(destination)
-    log('Готово: '+str(destination))
+    log(tr('Готово: ')+str(destination))
     return destination

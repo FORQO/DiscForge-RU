@@ -1,12 +1,14 @@
-# DiskForge Studio 1.5.1 — Windows 10/11 x64
+# DiskForge Studio 1.5.2 — Windows 10/11 x64
+
+Extract the entire Windows ZIP and launch `DiscForge_RU.exe`. Choose **Language → English** and restart the application. Studio remembers the setting. [English guide and screenshots](STUDIO_EN.md)
 
 Интерфейс Studio теперь доступен в Windows: большая область меню, библиотека фильмов слева и свойства справа. Вкладки «Оформление», «Объект» и «Расстановка», светлая и тёмная темы, отдельный режим предпросмотра с пультом под изображением. Журнал свёрнут по умолчанию и раскрывается при ошибке; параметры ISO/BDMV, BD25/BD50 и папка результата выбираются в отдельном окне.
 
-Изменения и результаты проверок: [Studio 1.5.1](RELEASE_STUDIO_1.5.1.md). Физическая проверка диска на **GIEC G2805 прошла успешно**; результат подтверждён автором проекта.
+Изменения и результаты проверок: [Studio 1.5.2](RELEASE_STUDIO_1.5.2.md). Физическая проверка диска на **GIEC G2805 прошла успешно**; результат подтверждён автором проекта.
 
 ## Скачать и запустить
 
-1. Скачайте `DiskForge-Studio-1.5.1-Windows-x64.zip` и распакуйте весь архив.
+1. Скачайте `DiskForge-Studio-1.5.2-Windows-x64.zip` и распакуйте весь архив.
 2. Откройте папку `DiscForge_RU` и запустите `DiscForge_RU.exe`.
 3. Добавьте фильмы, выберите дорожки и главы, оформите меню и нажмите «Создать ISO…».
 
@@ -18,6 +20,6 @@ Python, Qt, FFmpeg, ffprobe, tsMuxer и Java входят в комплект. V
 
 Публикация выполняется после полного набора тестов Windows и Linux/Python 3.11–3.13, сборки EXE и самопроверки упакованного приложения. В `verification-Windows.json` общего релиза (локально — `verification.json`) — результаты самопроверки, в `SHA256SUMS.txt` — контрольная сумма ZIP.
 
-Windows-сборка не имеет цифровой подписи. Авторинг ориентирован на Full HD Blu-ray; запись болванок из интерфейса пока отсутствует. Подробности успешной физической проверки и дальнейшие испытания: [матрица проигрывателей](PLAYER_TEST_MATRIX.md).
+Windows-сборка не имеет цифровой подписи. Авторинг ориентирован на Full HD Blu-ray; для записи ISO приложение передаёт образ системному средству записи Windows. Подробности успешной физической проверки и дальнейшие испытания: [матрица проигрывателей](PLAYER_TEST_MATRIX.md).
 
-[Версия для macOS Apple Silicon](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.1-studio).
+[Версия для macOS Apple Silicon](https://github.com/FORQO/DiscForge-RU/releases/tag/v1.5.2-studio).

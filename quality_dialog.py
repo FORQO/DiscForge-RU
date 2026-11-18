@@ -1,4 +1,5 @@
 """Video-only trial encoder and synchronized, full-resolution comparison viewer."""
+from studio_locale import tr
 from pathlib import Path
 import subprocess
 import tempfile
@@ -97,7 +98,7 @@ class FrameWorker(QThread):
                     if not data:
                         break
                     if len(data) != size:
-                        raise RuntimeError('Декодер вернул неполный кадр.')
+                        raise RuntimeError(tr('Декодер вернул неполный кадр.'))
                     started = time.monotonic()
                     image = QImage(data, WIDTH*2, HEIGHT, WIDTH*2*3, QImage.Format_RGB888).copy()
                     self.ack.clear()
@@ -112,7 +113,7 @@ class FrameWorker(QThread):
                     code = process.wait(timeout=10)
                     if code or not count:
                         errors.seek(0)
-                        raise RuntimeError('Не удалось показать сравнение. '+errors.read(2000).decode('utf-8', 'replace'))
+                        raise RuntimeError(tr('Не удалось показать сравнение. ')+errors.read(2000).decode('utf-8', 'replace'))
         except Exception as exc:
             if not self.cancel.is_set():
                 self.failed.emit(str(exc))
@@ -168,22 +169,19 @@ class QualityDialog(QDialog):
         self.close_pending = False
         self.saved_record = saved_record
         self.restoring = False
-        self.setWindowTitle('Проба качества · '+info.name)
+        self.setWindowTitle(tr('Проба качества · ')+info.name)
         self.resize(1320, 880)
         self.setMinimumSize(900, 700)
         root = QVBoxLayout(self)
-        title = QLabel('Подберите битрейт по качеству сложных сцен')
+        title = QLabel(tr('Подберите битрейт по качеству сложных сцен'))
         title.setStyleSheet('font-size: 18px; font-weight: 600;')
         root.addWidget(title)
-        note = QLabel('Автоматический режим просматривает до 24 фрагментов и выбирает сцены с движением, деталями и тенями. '
-                      'Общий битрейт должен пройти проверку каждой сцены. Это выборочная оценка, не гарантия качества всего фильма.')
+        note = QLabel(tr('Автоматический режим просматривает до 24 фрагментов и выбирает сцены с движением, деталями и тенями. Общий битрейт должен пройти проверку каждой сцены. Это выборочная оценка, не гарантия качества всего фильма.'))
         note.setWordWrap(True)
         root.addWidget(note)
-        treatment = QLabel(('Бережное улучшение включено: CPU-фильтры + выбранный кодер. '
-            'VMAF/SSIM оценивают потери сжатия ПОСЛЕ обработки, а не пользу улучшения. '
-            'Само улучшение оценивайте по сравнению до/после в движении. ' if self.enhance else 'Улучшение выключено. ') +
-            (f'Тихий режим: {self.quiet_rate:g}×, пробы будут создаваться медленнее.' if self.quiet_rate else 'Тихий режим выключен.') +
-            ' Эти настройки меняются в разделе «Подготовка».')
+        treatment = QLabel((tr('Бережное улучшение включено: CPU-фильтры + выбранный кодер. VMAF/SSIM оценивают потери сжатия ПОСЛЕ обработки, а не пользу улучшения. Само улучшение оценивайте по сравнению до/после в движении. ') if self.enhance else tr('Улучшение выключено. ')) +
+            (tr('Тихий режим: {0}×, пробы будут создаваться медленнее.', format(self.quiet_rate, f'g')) if self.quiet_rate else tr('Тихий режим выключен.')) +
+            tr(' Эти настройки меняются в разделе «Подготовка».'))
         treatment.setWordWrap(True)
         root.addWidget(treatment)
         self.controls = QWidget()
@@ -192,20 +190,18 @@ class QualityDialog(QDialog):
         controls_layout.setSizeConstraint(QLayout.SetMinimumSize)
         mode_row = QHBoxLayout()
         self.mode = QComboBox()
-        self.mode.addItems(['Автоматически · сложные сцены', 'Вручную · один фрагмент'])
+        self.mode.addItems([tr('Автоматически · сложные сцены'), tr('Вручную · один фрагмент')])
         mode_row.addWidget(self.mode, 1)
         self.scene_count = QSpinBox()
         self.scene_count.setRange(2, 5)
         self.scene_count.setValue(3)
         self.scene_preset = QComboBox()
-        self.scene_preset.addItems(['Выбрать сцену…', 'Начало · 15%', 'Середина · 50%', 'Конец · 85%'])
+        self.scene_preset.addItems([tr('Выбрать сцену…'), tr('Начало · 15%'), tr('Середина · 50%'), tr('Конец · 85%')])
         self.scene_preset.activated.connect(self._scene)
         mode_row.addWidget(self.scene_preset)
-        self.retry_rates = QCheckBox('Автоподбор, если пробы не подошли')
+        self.retry_rates = QCheckBox(tr('Автоподбор, если пробы не подошли'))
         self.retry_rates.setChecked(True)
-        self.retry_rates.setToolTip('До 8 дополнительных раундов на тех же сценах. '
-            'После подходящего результата — уточнение с шагом до 0,5 Мбит/с. '
-            'Предел — 28 Мбит/с или меньше с учётом звука. Старые пробы не кодируются заново.')
+        self.retry_rates.setToolTip(tr('До 8 дополнительных раундов на тех же сценах. После подходящего результата — уточнение с шагом до 0,5 Мбит/с. Предел — 28 Мбит/с или меньше с учётом звука. Старые пробы не кодируются заново.'))
         mode_row.addWidget(self.retry_rates)
         mode_row.addStretch()
         controls_layout.addLayout(mode_row)
@@ -220,9 +216,9 @@ class QualityDialog(QDialog):
         self.duration = QSpinBox()
         self.duration.setRange(1, 30)
         self.duration.setValue(min(10, max(1, int(info.duration))))
-        self.duration.setSuffix(' с')
-        for column, (label, number) in enumerate((('Количество сцен', self.scene_count),
-                                                 ('Начало', self.start), ('Длина', self.duration))):
+        self.duration.setSuffix(tr(' с'))
+        for column, (label, number) in enumerate(((tr('Количество сцен'), self.scene_count),
+                                                 (tr('Начало'), self.start), (tr('Длина'), self.duration))):
             parameters.addWidget(SliderValue(number, label), 0, column)
             parameters.setColumnStretch(column, 1)
         self.rates = []
@@ -234,7 +230,7 @@ class QualityDialog(QDialog):
             spin.setValue(value/1e6)
             spin.valueChanged.connect(self._refresh_apply)
             self.rates.append(spin)
-            parameters.addWidget(SliderValue(spin, f'Проба {column + 1} · Мбит/с'), 1, column)
+            parameters.addWidget(SliderValue(spin, tr('Проба {0} · Мбит/с', column + 1)), 1, column)
         self.start.timeChanged.connect(self._refresh_apply)
         self.duration.valueChanged.connect(self._refresh_apply)
         self.mode.currentIndexChanged.connect(self._mode_changed)
@@ -248,14 +244,13 @@ class QualityDialog(QDialog):
         self.controls_scroll.setMaximumHeight(230)
         self.controls_scroll.setWidget(self.controls)
         root.addWidget(self.controls_scroll)
-        encoding = ['CPU x264', 'NVIDIA NVENC', 'Авто: NVIDIA / CPU'][encoder]
-        root.addWidget(QLabel(f'Настройки сборки: {encoding} · {"быстро" if fast else "сбалансированно"}. '
-                              'Проба содержит только видео, без звука, субтитров и меню.'))
+        encoding = ['CPU x264', 'NVIDIA NVENC', tr('Авто: NVIDIA / CPU')][encoder]
+        root.addWidget(QLabel(tr('Настройки сборки: {0} · {1}. Проба содержит только видео, без звука, субтитров и меню.', encoding, tr('быстро') if fast else tr('сбалансированно'))))
         actions = QHBoxLayout()
-        self.encode = QPushButton('Создать пробы')
+        self.encode = QPushButton(tr('Создать пробы'))
         self.encode.clicked.connect(self._begin)
         actions.addWidget(self.encode)
-        self.cancel_button = QPushButton('Остановить')
+        self.cancel_button = QPushButton(tr('Остановить'))
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._cancel)
         actions.addWidget(self.cancel_button)
@@ -264,23 +259,23 @@ class QualityDialog(QDialog):
         actions.addWidget(self.progress, 1)
         root.addLayout(actions)
         scene_row = QHBoxLayout()
-        scene_row.addWidget(QLabel('Просмотр сцены:'))
+        scene_row.addWidget(QLabel(tr('Просмотр сцены:')))
         self.scene_results = QComboBox()
         self.scene_results.setEnabled(False)
         self.scene_results.currentIndexChanged.connect(self._result_scene_changed)
         scene_row.addWidget(self.scene_results, 1)
-        self.weak_scene = QPushButton('Самая слабая сцена')
-        self.weak_scene.setToolTip('Открыть сцену и кадр с худшей оценкой для выбранного битрейта.')
+        self.weak_scene = QPushButton(tr('Самая слабая сцена'))
+        self.weak_scene.setToolTip(tr('Открыть сцену и кадр с худшей оценкой для выбранного битрейта.'))
         self.weak_scene.setEnabled(False)
         self.weak_scene.clicked.connect(self._weak_scene)
         scene_row.addWidget(self.weak_scene)
         root.addLayout(scene_row)
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(['Битрейт видео', 'Размер пробы', 'Видео фильма',
-                                              'VMAF · среднее / P5', 'SSIM · среднее / P5', 'Кодирование', 'Оценка'])
-        self.table.horizontalHeaderItem(2).setToolTip('Приблизительный размер видео всего фильма по целевому битрейту; без аудио, субтитров и меню.')
-        self.table.horizontalHeaderItem(3).setToolTip('Баллы VMAF, не процент сохранённого качества. P5 — нижний 5-й процентиль кадров. Чем выше, тем лучше.')
-        self.table.horizontalHeaderItem(4).setToolTip('SSIM от −1 до 1. P5 — нижний 5-й процентиль. В подсказке строки есть минимум и номер худшего кадра.')
+        self.table.setHorizontalHeaderLabels([tr('Битрейт видео'), tr('Размер пробы'), tr('Видео фильма'),
+                                              tr('VMAF · среднее / P5'), tr('SSIM · среднее / P5'), tr('Кодирование'), tr('Оценка')])
+        self.table.horizontalHeaderItem(2).setToolTip(tr('Приблизительный размер видео всего фильма по целевому битрейту; без аудио, субтитров и меню.'))
+        self.table.horizontalHeaderItem(3).setToolTip(tr('Баллы VMAF, не процент сохранённого качества. P5 — нижний 5-й процентиль кадров. Чем выше, тем лучше.'))
+        self.table.horizontalHeaderItem(4).setToolTip(tr('SSIM от −1 до 1. P5 — нижний 5-й процентиль. В подсказке строки есть минимум и номер худшего кадра.'))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -290,33 +285,29 @@ class QualityDialog(QDialog):
         self.table.itemSelectionChanged.connect(self._variant_changed)
         root.addWidget(self.table)
         recommendation_row = QHBoxLayout()
-        self.advice_label = QLabel('После кодирования программа автоматически оценит VMAF и SSIM для всех кадров пробы.')
+        self.advice_label = QLabel(tr('После кодирования программа автоматически оценит VMAF и SSIM для всех кадров пробы.'))
         self.advice_label.setWordWrap(True)
         self.advice_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.advice_label.setToolTip('Пороги DiskForge: VMAF среднее ≥ 95, P5 ≥ 90, минимум ≥ 85; '
-            'SSIM среднее ≥ 0,990, P5 ≥ 0,970, минимум ≥ 0,950. '
-            'Среди прошедших — минимальный битрейт с отставанием от лучших средних/P5 не более 1/2 баллов VMAF. '
-            'Это эвристика для выбранного фрагмента, не гарантия отсутствия потерь.')
+        self.advice_label.setToolTip(tr('Пороги DiskForge: VMAF среднее ≥ 95, P5 ≥ 90, минимум ≥ 85; SSIM среднее ≥ 0,990, P5 ≥ 0,970, минимум ≥ 0,950. Среди прошедших — минимальный битрейт с отставанием от лучших средних/P5 не более 1/2 баллов VMAF. Это эвристика для выбранного фрагмента, не гарантия отсутствия потерь.'))
         recommendation_row.addWidget(self.advice_label, 1)
-        self.pick_recommended = QPushButton('Выбрать рекомендацию')
+        self.pick_recommended = QPushButton(tr('Выбрать рекомендацию'))
         self.pick_recommended.setEnabled(False)
         self.pick_recommended.clicked.connect(self._select_recommended)
         recommendation_row.addWidget(self.pick_recommended)
         root.addLayout(recommendation_row)
-        self.archive_note = QLabel('Оценки восстановлены из проекта. Временные видеопробы не сохраняются; '
-            'для просмотра кадров создайте новые пробы. Битрейт можно применить без нового подбора.')
+        self.archive_note = QLabel(tr('Оценки восстановлены из проекта. Временные видеопробы не сохраняются; для просмотра кадров создайте новые пробы. Битрейт можно применить без нового подбора.'))
         self.archive_note.setWordWrap(True)
         self.archive_note.hide()
         root.addWidget(self.archive_note)
         labels = QHBoxLayout()
-        self.reference_label = QLabel('Исходник в формате диска · без потерь')
+        self.reference_label = QLabel(tr('Исходник в формате диска · без потерь'))
         labels.addWidget(self.reference_label, 1)
-        self.variant_label = QLabel('Выберите готовый вариант')
+        self.variant_label = QLabel(tr('Выберите готовый вариант'))
         labels.addWidget(self.variant_label, 1)
         root.addLayout(labels)
         self.comparison_mode = QComboBox()
-        self.comparison_mode.addItems(['До / после улучшения · без потерь от кодера',
-                                      'До / готовая проба', 'После улучшения / готовая проба · потери сжатия'])
+        self.comparison_mode.addItems([tr('До / после улучшения · без потерь от кодера'),
+                                      tr('До / готовая проба'), tr('После улучшения / готовая проба · потери сжатия')])
         self.comparison_mode.setVisible(self.enhance)
         self.comparison_mode.currentIndexChanged.connect(self._variant_changed)
         root.addWidget(self.comparison_mode)
@@ -331,34 +322,34 @@ class QualityDialog(QDialog):
         transport = QHBoxLayout()
         self.play = QPushButton('▶')
         self.play.setCheckable(True)
-        self.play.setToolTip('Синхронное воспроизведение без звука; скорость зависит от декодирования')
+        self.play.setToolTip(tr('Синхронное воспроизведение без звука; скорость зависит от декодирования'))
         self.play.toggled.connect(self._play_changed)
         transport.addWidget(self.play)
         self.previous, self.next = QPushButton('‹'), QPushButton('›')
-        self.previous.setToolTip('Предыдущий кадр')
-        self.next.setToolTip('Следующий кадр')
+        self.previous.setToolTip(tr('Предыдущий кадр'))
+        self.next.setToolTip(tr('Следующий кадр'))
         self.previous.clicked.connect(lambda: self._step(-1))
         self.next.clicked.connect(lambda: self._step(1))
         transport.addWidget(self.previous)
         transport.addWidget(self.next)
-        self.worst = QPushButton('Слабый кадр')
-        self.worst.setToolTip('Перейти к кадру с минимальным VMAF выбранной пробы; при отсутствии VMAF — с минимальным SSIM.')
+        self.worst = QPushButton(tr('Слабый кадр'))
+        self.worst.setToolTip(tr('Перейти к кадру с минимальным VMAF выбранной пробы; при отсутствии VMAF — с минимальным SSIM.'))
         self.worst.clicked.connect(self._worst_frame)
         transport.addWidget(self.worst)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, 0)
         self.slider.valueChanged.connect(self._seek)
         transport.addWidget(self.slider, 1)
-        self.frame_label = QLabel('Кадр —')
+        self.frame_label = QLabel(tr('Кадр —'))
         self.frame_label.setMinimumWidth(175)
         transport.addWidget(self.frame_label)
         self.zoom = QComboBox()
-        self.zoom.addItems(['Вписать', '100% · детали'])
-        self.zoom.setToolTip('В масштабе 100% перетаскивайте изображение: обе стороны перемещаются вместе.')
+        self.zoom.addItems([tr('Вписать'), tr('100% · детали')])
+        self.zoom.setToolTip(tr('В масштабе 100% перетаскивайте изображение: обе стороны перемещаются вместе.'))
         self.zoom.currentIndexChanged.connect(self._zoom)
         transport.addWidget(self.zoom)
         root.addLayout(transport)
-        self.status = QLabel('Пробы временные: при закрытии окна они удаляются. Исходный фильм не изменяется.')
+        self.status = QLabel(tr('Пробы временные: при закрытии окна они удаляются. Исходный фильм не изменяется.'))
         self.status.setWordWrap(True)
         root.addWidget(self.status)
         self.log = QPlainTextEdit()
@@ -367,17 +358,16 @@ class QualityDialog(QDialog):
         self.log.setMaximumBlockCount(100)
         root.addWidget(self.log)
         bottom = QHBoxLayout()
-        footnote = QLabel(('Сейчас видео копируется без потерь. Выбранный битрейт будет сохранён для режима перекодирования. '
+        footnote = QLabel((tr('Сейчас видео копируется без потерь. Выбранный битрейт будет сохранён для режима перекодирования. ')
                           if copying else '') +
-                         'Размер всего фильма рассчитан по целевому битрейту; это оценка видео, не размер ISO. '
-                         'Звук, субтитры и меню учитываются на общей шкале диска после применения.')
+                         tr('Размер всего фильма рассчитан по целевому битрейту; это оценка видео, не размер ISO. Звук, субтитры и меню учитываются на общей шкале диска после применения.'))
         footnote.setWordWrap(True)
         bottom.addWidget(footnote, 1)
-        self.apply_button = QPushButton('Применить битрейт к фильму')
+        self.apply_button = QPushButton(tr('Применить битрейт к фильму'))
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self._apply)
         bottom.addWidget(self.apply_button)
-        close = QPushButton('Закрыть')
+        close = QPushButton(tr('Закрыть'))
         close.clicked.connect(self.reject)
         bottom.addWidget(close)
         root.addLayout(bottom)
@@ -398,7 +388,7 @@ class QualityDialog(QDialog):
             record = validate_record(self.saved_record)
             data = record['plan']
             if (data['encoder'], data['fast'], data['gpu_frames'], data['enhance'], data['quiet_rate']) != (self.encoder, self.fast, self.gpu_frames, self.enhance, self.quiet_rate):
-                raise ValueError('Настройки кодера изменились. Для актуальных оценок создайте новые пробы.')
+                raise ValueError(tr('Настройки кодера изменились. Для актуальных оценок создайте новые пробы.'))
             self.mode.setCurrentIndex(0 if data['automatic'] else 1)
             self.start.setTime(QTime(0, 0).addSecs(int(data['start'])))
             self.duration.setValue(int(data['seconds']))
@@ -409,13 +399,13 @@ class QualityDialog(QDialog):
             self.result_plan = self._plan()
             self.result_plan.validate(self.info)
         except (ValueError, TypeError, KeyError, OSError) as exc:
-            self.status.setText('Сохранённые пробы устарели: '+str(exc))
+            self.status.setText(tr('Сохранённые пробы устарели: ')+str(exc))
             return
         self.restoring = True
         self.controls.setEnabled(False)
         self.encode.setEnabled(False)
         self.cancel_button.setEnabled(True)
-        self.status.setText('Проверяем сохранённые результаты…')
+        self.status.setText(tr('Проверяем сохранённые результаты…'))
         self.worker = RestoreWorker(self.info, self.result_plan, self.config, record, self)
         self.worker.message.connect(self._message)
         self.worker.progress.connect(self.progress.setValue)
@@ -466,7 +456,7 @@ class QualityDialog(QDialog):
             self._cleanup()
             self.temporary = tempfile.TemporaryDirectory(prefix='DiskForge-trial-', dir=output)
         except (ValueError, OSError, RuntimeError) as exc:
-            QMessageBox.warning(self, 'Не удалось начать пробу', str(exc))
+            QMessageBox.warning(self, tr('Не удалось начать пробу'), str(exc))
             return
         self.result = None
         self.restoring = False
@@ -486,13 +476,13 @@ class QualityDialog(QDialog):
         self._enable_view(False)
         self.apply_button.setEnabled(False)
         self.pick_recommended.setEnabled(False)
-        self.advice_label.setText('Кодирование, затем автоматическая оценка всех кадров: VMAF и SSIM…')
+        self.advice_label.setText(tr('Кодирование, затем автоматическая оценка всех кадров: VMAF и SSIM…'))
         self.controls.setEnabled(False)
         self.encode.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress.setValue(0)
         self.log.clear()
-        self.status.setText('Подготавливаем пробу…')
+        self.status.setText(tr('Подготавливаем пробу…'))
         self.worker = TrialWorker(self.info, plan, self.config, self.temporary.name, self)
         self.worker.message.connect(self._message)
         self.worker.progress.connect(self.progress.setValue)
@@ -505,7 +495,7 @@ class QualityDialog(QDialog):
         if self._busy():
             self.worker.cancel.set()
             self.cancel_button.setEnabled(False)
-            self.status.setText('Останавливаем обработку…')
+            self.status.setText(tr('Останавливаем обработку…'))
 
     def _message(self, message):
         self.log.appendPlainText(message)
@@ -525,8 +515,8 @@ class QualityDialog(QDialog):
         self.scene_results.clear()
         scenes = result.get('scenes', [result])
         for i, scene in enumerate(scenes):
-            self.scene_results.addItem(f"{i+1}. {timecode(scene.get('start', 0))} · {scene['duration']:.1f} с · "
-                + scene.get('selection', {}).get('reason', 'выбрана вручную'))
+            self.scene_results.addItem(tr('{0}. {1} · {2} с · ', i + 1, timecode(scene.get('start', 0)), format(scene['duration'], f'.1f'))
+                + scene.get('selection', {}).get('reason', tr('выбрана вручную')))
         self.scene_results.setCurrentIndex(0)
         self.scene_results.blockSignals(False)
         self.scene_results.setEnabled(len(scenes) > 1)
@@ -541,34 +531,34 @@ class QualityDialog(QDialog):
         self.result = result
         advice = result.get('recommendation', {})
         recommended = advice.get('bitrate')
-        self.table.horizontalHeaderItem(6).setText('Итог по сценам' if self.batch_result else 'Оценка')
-        self.advice_label.setText(advice.get('explanation', 'Метрики для этой пробы не рассчитаны. Сравните её вручную.'))
+        self.table.horizontalHeaderItem(6).setText(tr('Итог по сценам') if self.batch_result else tr('Оценка'))
+        self.advice_label.setText(advice.get('explanation', tr('Метрики для этой пробы не рассчитаны. Сравните её вручную.')))
         self.table.blockSignals(True)
         self.table.clearSelection()
         self.table.setRowCount(len(result['variants']))
         for row, variant in enumerate(result['variants']):
             quality = variant.get('quality', {})
             metric_text = lambda name, digits: (f"{quality[name]['mean']:.{digits}f} / {quality[name]['p5']:.{digits}f}"
-                                               if quality.get(name) else 'Недоступно')
-            label = 'Рекомендуется' if variant['bitrate'] == recommended else (
-                'Проходит пороги' if variant['bitrate'] in advice.get('eligible', []) else
-                ('Не во всех сценах' if self.batch_result else 'Не проходит'))
+                                               if quality.get(name) else tr('Недоступно'))
+            label = tr('Рекомендуется') if variant['bitrate'] == recommended else (
+                tr('Проходит пороги') if variant['bitrate'] in advice.get('eligible', []) else
+                (tr('Не во всех сценах') if self.batch_result else tr('Не проходит')))
             if advice.get('status') == 'provisional' and variant['bitrate'] == recommended:
-                label = 'Предварительно'
+                label = tr('Предварительно')
             if advice.get('status') == 'unavailable' or not advice:
-                label = 'Нет оценки'
-            values = (f"{variant['bitrate']/1e6:g} Мбит/с", f"{variant['bytes']/1e6:.2f} МБ",
-                      f"{variant['film_video_bytes']/1e9:.2f} ГБ", metric_text('vmaf', 2),
-                      metric_text('ssim', 4), f"{variant['seconds']:.1f} с", label)
+                label = tr('Нет оценки')
+            values = (tr('{0} Мбит/с', format(variant['bitrate'] / 1000000.0, f'g')), tr('{0} МБ', format(variant['bytes'] / 1000000.0, f'.2f')),
+                      tr('{0} ГБ', format(variant['film_video_bytes'] / 1000000000.0, f'.2f')), metric_text('vmaf', 2),
+                      metric_text('ssim', 4), tr('{0} с', format(variant['seconds'], f'.1f')), label)
             details = [advice.get('explanation', '')]
             if self.batch_result and advice.get('per_scene'):
                 local_advice = advice['per_scene'][self.scene_results.currentIndex()]
-                details.append('Открытая сцена: '+('проходит пороги и сравнение с лучшими пробами.'
-                    if variant['bitrate'] in local_advice['eligible'] else 'не проходит критерии.'))
+                details.append(tr('Открытая сцена: ')+(tr('проходит пороги и сравнение с лучшими пробами.')
+                    if variant['bitrate'] in local_advice['eligible'] else tr('не проходит критерии.')))
             for method in ('vmaf', 'ssim'):
                 if quality.get(method):
                     m = quality[method]
-                    details.append(f"{method.upper()}: минимум {m['minimum']:.4f}, кадр {m['worst_frame']+1}, оценено {m['frames']} кадров.")
+                    details.append(tr('{0}: минимум {1}, кадр {2}, оценено {3} кадров.', method.upper(), format(m['minimum'], f'.4f'), m['worst_frame'] + 1, m['frames']))
             details.extend(quality.get('warnings', []))
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -584,8 +574,7 @@ class QualityDialog(QDialog):
         self.slider.setRange(0, result['frames']-1)
         self.slider.setValue(0)
         self.slider.blockSignals(False)
-        self.status.setText(f"{result['encoder']} · {result['preset']} · {result['duration']:.2f} с. "
-                            'Метрики в таблице — для открытой сцены; рекомендация — для всей проверки.')
+        self.status.setText(tr('{0} · {1} · {2} с. Метрики в таблице — для открытой сцены; рекомендация — для всей проверки.', result['encoder'], result['preset'], format(result['duration'], f'.2f')))
         preferred = preferred or recommended or advice.get('best_bitrate')
         self.table.selectRow(next((i for i, v in enumerate(result['variants']) if v['bitrate'] == preferred), 0))
 
@@ -621,9 +610,9 @@ class QualityDialog(QDialog):
     def _failed(self, error):
         self.result = None
         self.batch_result = None
-        self.advice_label.setText('Оценка не завершена. Для рекомендации повторите пробу.')
-        self.status.setText('Проверка отменена.' if self.worker.cancel.is_set() else
-                           ('Сохранённые пробы не применены: ' if self.restoring else 'Ошибка: ')+error)
+        self.advice_label.setText(tr('Оценка не завершена. Для рекомендации повторите пробу.'))
+        self.status.setText(tr('Проверка отменена.') if self.worker.cancel.is_set() else
+                           (tr('Сохранённые пробы не применены: ') if self.restoring else tr('Ошибка: '))+error)
         self.log.appendPlainText(error)
 
     def _finished(self):
@@ -643,7 +632,7 @@ class QualityDialog(QDialog):
         self.weak_scene.setEnabled(bool(self.batch_result and self.batch_result['recommendation'].get('method')
                                        and self.result and not self.result.get('archived')))
         if self.result and self._plan() != self.result_plan:
-            self.status.setText('Параметры изменены. Создайте новые пробы перед применением; на экране — предыдущая проба.')
+            self.status.setText(tr('Параметры изменены. Создайте новые пробы перед применением; на экране — предыдущая проба.'))
 
     def _select_recommended(self):
         self._refresh_apply()
@@ -672,7 +661,7 @@ class QualityDialog(QDialog):
         self._pause()
         self._enable_view(not self.result.get('archived'))
         variant = self.result['variants'][self.table.currentRow()]
-        self.variant_label.setText(f"Результат · {variant['bitrate']/1e6:g} Мбит/с")
+        self.variant_label.setText(tr('Результат · {0} Мбит/с', format(variant['bitrate'] / 1000000.0, f'g')))
         self._refresh_apply()
         self._show_frame()
 
@@ -687,7 +676,7 @@ class QualityDialog(QDialog):
         if self.frame_worker:
             self.frame_worker.stop()
             if not self.frame_worker.wait(5000):
-                raise RuntimeError('Декодер ещё останавливается. Повторите действие через несколько секунд.')
+                raise RuntimeError(tr('Декодер ещё останавливается. Повторите действие через несколько секунд.'))
             self.frame_worker.deleteLater()
             self.frame_worker = None
 
@@ -699,15 +688,15 @@ class QualityDialog(QDialog):
             variant = self.result['variants'][self.table.currentRow()]
             frame = self.slider.value()
             reference, after = self.result['reference'], variant['path']
-            self.reference_label.setText('Исходник в формате диска · без потерь')
-            self.variant_label.setText(f"Готовая проба · {variant['bitrate']/1e6:g} Мбит/с")
+            self.reference_label.setText(tr('Исходник в формате диска · без потерь'))
+            self.variant_label.setText(tr('Готовая проба · {0} Мбит/с', format(variant['bitrate'] / 1000000.0, f'g')))
             if self.result.get('enhance'):
                 mode = self.comparison_mode.currentIndex()
                 reference = self.result['before'] if mode in (0, 1) else self.result['reference']
                 after = self.result['reference'] if mode == 0 else variant['path']
-                self.reference_label.setText('До улучшения · обычное масштабирование' if mode in (0, 1) else 'После улучшения · без потерь от кодера')
+                self.reference_label.setText(tr('До улучшения · обычное масштабирование') if mode in (0, 1) else tr('После улучшения · без потерь от кодера'))
                 if mode == 0:
-                    self.variant_label.setText('После улучшения · без потерь от кодера')
+                    self.variant_label.setText(tr('После улучшения · без потерь от кодера'))
             command = comparison_command(self.config['ffmpeg'], reference, after, frame, self.play.isChecked())
             worker = self.frame_worker = FrameWorker(command, frame, self.play.isChecked(), self)
             worker.frame_ready.connect(lambda image, index, w=worker: self._frame(w, image, index))
@@ -726,7 +715,7 @@ class QualityDialog(QDialog):
                 self.slider.blockSignals(True)
                 self.slider.setValue(index)
                 self.slider.blockSignals(False)
-                self.frame_label.setText(f'Кадр {index+1}/{self.result["frames"]} · {index/FPS:.2f} с')
+                self.frame_label.setText(tr('Кадр {0}/{1} · {2} с', index + 1, self.result['frames'], format(index / FPS, f'.2f')))
         finally:
             worker.ack.set()
 
@@ -771,7 +760,7 @@ class QualityDialog(QDialog):
             self._stop_frames()
             self._cleanup()
         except (ValueError, OSError, RuntimeError) as exc:
-            QMessageBox.warning(self, 'Проба устарела или недоступна', str(exc))
+            QMessageBox.warning(self, tr('Проба устарела или недоступна'), str(exc))
             return
         self.selected_rate = self.result['variants'][self.table.currentRow()]['bitrate']
         if isinstance(self.saved_record, dict):

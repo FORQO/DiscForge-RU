@@ -3,6 +3,7 @@
 Only one-clip playlists produced by our tsMuxer pipeline are accepted. Streams
 are never rewritten. Playlist clip IDs and their backup copies are rebound.
 """
+from studio_locale import tr
 from dataclasses import replace
 from pathlib import Path
 import json
@@ -17,10 +18,10 @@ import zipfile
 def rebind_playlist(payload, clip):
     data = bytearray(payload)
     if len(data) < 40 or data[:8] != b'MPLS0200' or not re.fullmatch(r'\d{5}', clip):
-        raise ValueError('Неподдерживаемый плейлист коллекции.')
+        raise ValueError(tr('Неподдерживаемый плейлист коллекции.'))
     start = struct.unpack_from('>I', data, 8)[0]
     if start < 40 or start+12 > len(data):
-        raise ValueError('Повреждённый заголовок плейлиста.')
+        raise ValueError(tr('Повреждённый заголовок плейлиста.'))
     length = struct.unpack_from('>I', data, start)[0]
     count, subpaths = struct.unpack_from('>HH', data, start+6)
     item = start+10
@@ -28,7 +29,7 @@ def rebind_playlist(payload, clip):
     if (count != 1 or subpaths or item_size < 32 or item+2+item_size > start+4+length
             or start+4+length > len(data) or data[item+2:item+11] != b'00000M2TS'
             or data[item+12] & 0x10):
-        raise ValueError('Коллекция поддерживает только один клип без дополнительных ракурсов на фильм.')
+        raise ValueError(tr('Коллекция поддерживает только один клип без дополнительных ракурсов на фильм.'))
     data[item+2:item+7] = clip.encode('ascii')
     return bytes(data)
 
@@ -38,7 +39,7 @@ def _png(image):
     buffer = QBuffer()
     buffer.open(QIODevice.WriteOnly)
     if not image.save(buffer, 'PNG'):
-        raise ValueError('Не удалось сохранить изображение меню.')
+        raise ValueError(tr('Не удалось сохранить изображение меню.'))
     return bytes(buffer.data())
 
 
@@ -125,12 +126,12 @@ def validate_menu(root, props, offsets, configs):
         names = set(jar.namelist())
         for page in range(int(props['pages'])):
             if f'page{page}.png' not in names:
-                raise ValueError('Отсутствует страница коллекции.')
+                raise ValueError(tr('Отсутствует страница коллекции.'))
             movie = props.get(f'page.{page}.movie')
             for i in range(int(props[f'page.{page}.count'])):
                 key = f'page.{page}.{i}'
                 if props[key+'.focus'] not in names:
-                    raise ValueError('Отсутствует выделение кнопки.')
+                    raise ValueError(tr('Отсутствует выделение кнопки.'))
                 kind, value = props[key].split(':')
                 number = int(value)
                 if kind == 'page':
@@ -148,7 +149,7 @@ def validate_menu(root, props, offsets, configs):
                 else:
                     valid = False
                 if not valid:
-                    raise ValueError('Некорректная ссылка кнопки коллекции: '+props[key])
+                    raise ValueError(tr('Некорректная ссылка кнопки коллекции: ')+props[key])
 
 
 def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progress, menu_for,
@@ -162,7 +163,7 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
     from tools.iso_udf_preflight import inspect as inspect_iso
     from settings import write_json
     if not jobs or len(jobs) > 99:
-        raise ValueError('На общем диске поддерживается от 1 до 99 фильмов.')
+        raise ValueError(tr('На общем диске поддерживается от 1 до 99 фильмов.'))
     from collection_titles import normalize_names, movie_title
     names = normalize_names(config.get('movie_names', {}), [media.path for media, _ in jobs])
     titles = [movie_title(media.path, names) for media, _ in jobs]
@@ -170,7 +171,7 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
     rates = normalize_rates(config.get('video_rates', {}), [media.path for media, _ in jobs])
     modes = modes or ['auto']*len(jobs)
     if len(modes) != len(jobs) or any(mode not in ('auto', 'copy', 'video_copy', 'encode') for mode in modes):
-        raise ValueError('Режим обработки должен быть задан для каждого фильма.')
+        raise ValueError(tr('Режим обработки должен быть задан для каждого фильма.'))
     from video_treatment import enhancement_for
     modes = ['encode' if enhancement_for(config, media.path) else mode for (media, _), mode in zip(jobs, modes)]
     budgets = [estimate([job], profile, mode, collection=True, bitrate=bitrate, rates=rates) for job, mode in zip(jobs, modes)]
@@ -182,24 +183,24 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
     root = Path(config['output'])
     root.mkdir(parents=True, exist_ok=True)
     if shutil.disk_usage(root).free < budget.total*3:
-        raise ValueError(f'Для временных потоков и результата требуется до {budget.total*3/1e9:.1f} ГБ свободного места на рабочем диске.')
+        raise ValueError(tr('Для временных потоков и результата требуется до {0} ГБ свободного места на рабочем диске.', format(budget.total * 3 / 1000000000.0, f'.1f')))
     sources = []
     reports = []
     design = menu_for(*jobs[0])
     if design is None:
-        raise ValueError('Для общего диска включите интерактивное меню выбора фильма.')
+        raise ValueError(tr('Для общего диска включите интерактивное меню выбора фильма.'))
     for i, ((media, chapters), mode) in enumerate(zip(jobs, modes)):
-        log(f'Коллекция: фильм {i+1}/{len(jobs)} · {media.name}')
+        log(tr('Коллекция: фильм {0}/{1} · {2}', i + 1, len(jobs), media.name))
         film_design = replace(menu_for(media, chapters), title=titles[i])
         source = create_bluray(media, profile, str(root), config['ffmpeg'], config['tsmuxer'], False, nvenc,
             cancel, log, lambda v: progress((i+v/100)*85/len(jobs)), chapters=chapters, menu=film_design,
             fast=fast, processing_mode=mode, ffprobe=config.get('ffprobe', 'ffprobe'), resilient=True,
             gpu_frames=config.get('gpu_frames', True), verification=verification, video_bitrate=rates.get(str(Path(media.path).resolve()), bitrate), keep_authored=True,
             enhance=enhancement_for(config, media.path), quiet_rate=config.get('quiet_rate', 0.0),
-            observer=(lambda stage, fraction: timing(f'Фильм {i+1}/{len(jobs)} · {stage}', -1)) if timing else None)
+            observer=(lambda stage, fraction: timing(tr('Фильм {0}/{1} · {2}', i + 1, len(jobs), stage), -1)) if timing else None)
         sources.append(source)
         reports.append(json.loads((source.parent/'collection-title-verification.json').read_text(encoding='utf-8')))
-    target = unique_target(root, design.title or 'Коллекция', as_iso)
+    target = unique_target(root, design.title or tr('Коллекция'), as_iso)
     with tempfile.TemporaryDirectory(prefix='.collection-', dir=root) as temp, pending_image(target) as pending:
         combined = Path(temp)/'disc'
         combined.mkdir()
@@ -210,7 +211,7 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
             shutil.copyfile(sources[0]/relative, dest)
         for i, source in enumerate(sources):
             if cancel.is_set():
-                raise ValueError('Сборка отменена.')
+                raise ValueError(tr('Сборка отменена.'))
             stem = f'{i:05}'
             for directory, suffix in (('STREAM', '.m2ts'), ('CLIPINF', '.clpi'), ('PLAYLIST', '.mpls')):
                 original = source/f'BDMV/{directory}/00000{suffix}'
@@ -224,12 +225,12 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
                         os.link(original, dest)
                     except OSError:
                         if shutil.disk_usage(combined).free < original.stat().st_size+budget.total:
-                            raise ValueError('Файловая система не поддерживает быстрые ссылки. Недостаточно места для копии фильма и ISO.')
-                        log('Копируем подготовленный фильм: файловая система не поддерживает жёсткие ссылки.')
+                            raise ValueError(tr('Файловая система не поддерживает быстрые ссылки. Недостаточно места для копии фильма и ISO.'))
+                        log(tr('Копируем подготовленный фильм: файловая система не поддерживает жёсткие ссылки.'))
                         with original.open('rb') as src, dest.open('xb') as dst:
                             while block := src.read(4*1024*1024):
                                 if cancel.is_set():
-                                    raise ValueError('Сборка отменена.')
+                                    raise ValueError(tr('Сборка отменена.'))
                                 dst.write(block)
                 else:
                     shutil.copyfile(original, dest)
@@ -240,36 +241,36 @@ def create_collection(jobs, config, profile, as_iso, nvenc, cancel, log, progres
         merge_menu(combined, sources, design, titles)
         checked = inspect(combined, profile)
         if not checked.structurally_valid:
-            raise ValueError('Проверка общего диска: '+'; '.join(checked.errors[:8]))
+            raise ValueError(tr('Проверка общего диска: ')+'; '.join(checked.errors[:8]))
         if checked.size_bytes+32_000_000 > CAPACITIES[profile]:
-            raise ValueError(f'Фактический размер с резервом UDF {checked.size_bytes/1e9+.032:.2f} ГБ превышает {profile}. Уменьшите состав диска. Подготовленные фильмы сохранены в кэше.')
+            raise ValueError(tr('Фактический размер с резервом UDF {0} ГБ превышает {1}. Уменьшите состав диска. Подготовленные фильмы сохранены в кэше.', format(checked.size_bytes / 1000000000.0 + 0.032, f'.2f'), profile))
         files = [p for p in sorted(combined.rglob('*')) if p.is_file()]
         tracker = VerificationProgress(sum(p.stat().st_size for p in files), len(files), verification)
-        hashes = {p.relative_to(combined).as_posix(): tracker.digest(p, cancel, 'Проверка общего диска') for p in files}
+        hashes = {p.relative_to(combined).as_posix(): tracker.digest(p, cancel, tr('Проверка общего диска')) for p in files}
         tracker.finish()
         # Prove the combined streams are exactly the individually verified streams.
         for i, report in enumerate(reports):
             if hashes[f'BDMV/STREAM/{i:05}.m2ts'] != report['files']['BDMV/STREAM/00000.m2ts']:
-                raise ValueError('Поток фильма изменился при сборке коллекции.')
+                raise ValueError(tr('Поток фильма изменился при сборке коллекции.'))
         result = dict(passed=True, collection=True, titles=titles, files=hashes, title_reports=reports,
                       hardware_player_tested=False, playback_tested=False)
         if as_iso:
             if timing:
-                timing('Создание общего ISO', -1)
+                timing(tr('Создание общего ISO'), -1)
             create_iso(combined, pending, CAPACITIES[profile], cancel, log, progress=lambda f: progress(85+14*f))
             iso_report = inspect_iso(pending, profile)
             if not iso_report.valid:
-                raise ValueError('Проверка UDF: '+'; '.join(iso_report.errors))
+                raise ValueError(tr('Проверка UDF: ')+'; '.join(iso_report.errors))
             tracker = VerificationProgress(sum(v['size'] for v in hashes.values())+pending.stat().st_size,
                                            len(hashes)+1, verification, scope='iso-final')
             verify_image_payload(pending, hashes, cancel, tracker)
-            result['iso'] = tracker.digest(pending, cancel, 'Контрольная сумма общего ISO')
+            result['iso'] = tracker.digest(pending, cancel, tr('Контрольная сумма общего ISO'))
             result['iso_payload_verified'] = True
             tracker.finish()
         if cancel.is_set():
-            raise ValueError('Сборка отменена.')
+            raise ValueError(tr('Сборка отменена.'))
         shutil.move(str(pending if as_iso else combined), str(target))
         write_json(target.with_name(target.name+'.verification.json'), result)
     progress(100)
-    log('Готов общий диск: '+str(target))
+    log(tr('Готов общий диск: ')+str(target))
     return target
